@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block titulo %}Tipos de Doação{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Tipos de Doação</h2>
+    <a href="/doacoes" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div class="card-form" style="margin-bottom:2rem">
+    <h3 style="margin-bottom:1rem;font-size:1rem">Novo Tipo</h3>
+    <form method="post" action="/doacoes/tipos/novo">
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>Nome *</label>
+                <input type="text" name="nome" placeholder="Ex: Cesta Básica, Roupas, Calçados" required>
+            </div>
+            <div class="campo campo-largo">
+                <label>Descrição</label>
+                <input type="text" name="descricao" placeholder="Descrição (opcional)">
+            </div>
+        </div>
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Adicionar</button>
+        </div>
+    </form>
+</div>
+
+{% if tipos %}
+<div class="card-form">
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Descrição</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for t in tipos %}
+            <tr>
+                <td><strong>{{ t.nome }}</strong></td>
+                <td>{{ t.descricao or '-' }}</td>
+                <td>
+                    {% if t.ativo %}
+                    <span style="color:#1da851">✅ Ativo</span>
+                    {% else %}
+                    <span style="color:#999">⊘ Inativo</span>
+                    {% endif %}
+                </td>
+                <td style="display:flex; gap:0.3rem">
+                    <a href="#" onclick="editarTipo({{ t.id }}, '{{ t.nome }}', '{{ t.descricao or '' }}', {{ t.ativo }}); return false;"
+                       class="btn btn-secundario" style="padding:0.2rem 0.5rem; font-size:0.8rem">Editar</a>
+                    <form method="post" action="/doacoes/tipos/{{ t.id }}/remover" style="display:inline">
+                        <button type="submit" class="btn btn-secundario" style="padding:0.2rem 0.5rem; font-size:0.8rem; color:#ff4444"
+                                onclick="return confirm('Remover este tipo?')">Remover</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card-form">
+    <p style="color:var(--cor-texto-suave)">Nenhum tipo de doação cadastrado.</p>
+</div>
+{% endif %}
+
+<!-- Modal de edição -->
+<div id="modal-editar" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center">
+    <div class="card-form" style="width:90%; max-width:500px">
+        <h3 style="margin-bottom:1rem">Editar Tipo</h3>
+        <form method="post" id="form-editar" action="">
+            <div class="grade-form">
+                <div class="campo campo-largo">
+                    <label>Nome *</label>
+                    <input type="text" id="edit-nome" name="nome" required>
+                </div>
+                <div class="campo campo-largo">
+                    <label>Descrição</label>
+                    <input type="text" id="edit-descricao" name="descricao">
+                </div>
+                <div class="campo">
+                    <label>
+                        <input type="checkbox" id="edit-ativo" name="ativo" value="1" style="width:auto;margin-right:.4rem">
+                        Ativo
+                    </label>
+                </div>
+            </div>
+            <div class="acoes-form">
+                <button type="submit" class="btn btn-primario">Salvar</button>
+                <button type="button" onclick="fecharModal()" class="btn btn-secundario">Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function editarTipo(id, nome, descricao, ativo) {
+    document.getElementById('form-editar').action = '/doacoes/tipos/' + id + '/editar';
+    document.getElementById('edit-nome').value = nome;
+    document.getElementById('edit-descricao').value = descricao;
+    document.getElementById('edit-ativo').checked = ativo ? true : false;
+    document.getElementById('modal-editar').style.display = 'flex';
+}
+
+function fecharModal() {
+    document.getElementById('modal-editar').style.display = 'none';
+}
+
+// Fechar modal ao clicar fora
+document.getElementById('modal-editar').addEventListener('click', function(e) {
+    if (e.target === this) fecharModal();
+});
+</script>
+{% endblock %}

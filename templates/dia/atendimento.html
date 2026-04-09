@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block titulo %}Fila — {{ medium.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>{{ medium.nome_completo }}</h2>
+    <div style="display:flex;gap:.5rem">
+        <a href="/dia/checkin" class="btn btn-primario">+ Check-in</a>
+        <a href="/dia" class="btn btn-secundario">← Painel</a>
+    </div>
+</div>
+
+{% if fila %}
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Senha</th>
+            <th>Pessoa</th>
+            <th>Chegada</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in fila %}
+        {% set idoso = c.data_nascimento and (hoje[:4]|int - c.data_nascimento[:4]|int) >= 70 %}
+        {% set tem_prio = c.prioridade or c.deficiencia or idoso %}
+        <tr {% if tem_prio %}style="color:var(--cor-erro);font-weight:600"{% endif %}>
+            <td>{{ loop.index }}</td>
+            <td><strong style="font-size:1.2rem">{{ c.codigo_atendimento }}</strong></td>
+            <td>{{ c.nome_completo }}
+                {% if c.prioridade %} ⚑{% endif %}
+                {% if c.deficiencia %} ♿{% endif %}
+                {% if idoso %} ★{% endif %}
+            </td>
+            <td>{{ c.hora_checkin }}</td>
+            <td class="acoes" style="display:flex;gap:.3rem;flex-wrap:wrap">
+                <form method="post" action="/dia/atendimento/{{ c.id }}/chamar" style="display:inline">
+                    <button type="submit" class="btn btn-primario btn-sm">📢 Chamar</button>
+                </form>
+                <form method="post" action="/dia/atendimento/{{ c.id }}/realizado" style="display:inline">
+                    <button type="submit" class="btn btn-secundario btn-sm">✓ Realizado</button>
+                </form>
+                {% if outros_mediuns %}
+                <form method="post" action="/dia/atendimento/{{ c.id }}/transferir"
+                      style="display:inline;display:flex;gap:.3rem;align-items:center">
+                    <select name="novo_medium_id" style="padding:.2rem .3rem;font-size:.8rem">
+                        {% for m in outros_mediuns %}
+                        <option value="{{ m.id }}">{{ m.nome_completo }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-secundario btn-sm"
+                            onclick="return confirm('Transferir este atendimento?')">↔ Transferir</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="vazio">Nenhum atendimento aguardando.</div>
+{% endif %}
+
+{% if agendados_sem_checkin %}
+<details style="margin-top:1.5rem" open>
+    <summary style="cursor:pointer;font-size:.9rem;font-weight:600;color:var(--cor-alerta)">
+        Agendados aguardando check-in ({{ agendados_sem_checkin|length }})
+    </summary>
+    <table style="margin-top:.5rem">
+        <thead>
+            <tr><th>Pessoa</th><th>Passe?</th><th>Encaixe?</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for ag in agendados_sem_checkin %}
+            <tr>
+                <td>{{ ag.nome_completo }}</td>
+                <td>{{ 'Sim' if ag.requer_passe else 'Não' }}</td>
+                <td>{{ 'Sim' if ag.encaixe else 'Não' }}</td>
+                <td>
+                    <a href="/dia/checkin/{{ ag.pessoa_id }}"
+                       class="btn btn-primario btn-sm">Check-in</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</details>
+{% endif %}
+
+{% if realizados %}
+<details open style="margin-top:2rem">
+    <summary style="cursor:pointer;color:var(--cor-texto-suave);font-size:0.9rem;font-weight:600">
+        Atendidos hoje ({{ realizados|length }})
+    </summary>
+    <table style="margin-top:.5rem">
+        <thead>
+            <tr><th>Senha</th><th>Pessoa</th><th>Chegada</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for c in realizados %}
+            <tr>
+                <td>{{ c.codigo_atendimento }}</td>
+                <td>{{ c.nome_completo }}</td>
+                <td>{{ c.hora_checkin }}</td>
+                <td>
+                    <form method="post" action="/dia/atendimento/{{ c.id }}/desfazer" style="display:inline">
+                        <button type="submit" class="btn btn-secundario btn-sm"
+                                onclick="return confirm('Reabrir este atendimento?')">↩ Reabrir</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</details>
+{% endif %}
+{% endblock %}

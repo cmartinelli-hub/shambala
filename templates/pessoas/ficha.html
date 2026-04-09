@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block titulo %}Ficha — {{ pessoa.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>{{ pessoa.nome_completo }}</h2>
+    <div style="display:flex;gap:.5rem">
+        <a href="/cadastros/pessoas/{{ pessoa.id }}/editar" class="btn btn-primario">Editar</a>
+        <a href="/cadastros/pessoas/{{ pessoa.id }}/lacos" class="btn btn-secundario">Laços</a>
+        <a href="/cadastros/pessoas" class="btn btn-secundario">← Voltar</a>
+    </div>
+</div>
+
+{# ── Dados pessoais ── #}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <div class="grade-form">
+        {% if pessoa.data_nascimento %}
+        <div class="campo">
+            <label>Data de nascimento</label>
+            <div>{{ pessoa.data_nascimento | data_br }}</div>
+        </div>
+        {% endif %}
+        {% if pessoa.telefone %}
+        <div class="campo">
+            <label>Telefone</label>
+            <div>{{ pessoa.telefone }}</div>
+        </div>
+        {% endif %}
+        {% if pessoa.email %}
+        <div class="campo">
+            <label>E-mail</label>
+            <div>{{ pessoa.email }}</div>
+        </div>
+        {% endif %}
+        {% if pessoa.deficiencia %}
+        <div class="campo">
+            <div>♿ Possui deficiência</div>
+        </div>
+        {% endif %}
+        {% if pessoa.prioridade %}
+        <div class="campo">
+            <div>⚑ Atendimento prioritário</div>
+        </div>
+        {% endif %}
+        {% if pessoa.logradouro %}
+        <div class="campo campo-largo">
+            <label>Endereço</label>
+            <div>{{ pessoa.logradouro }}{% if pessoa.numero %}, {{ pessoa.numero }}{% endif %}
+            {% if pessoa.complemento %} — {{ pessoa.complemento }}{% endif %}<br>
+            {% if pessoa.bairro %}{{ pessoa.bairro }} · {% endif %}
+            {{ pessoa.cidade or '' }}{% if pessoa.uf %}/{{ pessoa.uf }}{% endif %}
+            {% if pessoa.cep %} · CEP {{ pessoa.cep }}{% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{# ── Laços ── #}
+{% if lacos %}
+<h3 class="subtitulo-secao">Laços familiares</h3>
+<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem">
+    {% for l in lacos %}
+    <span style="background:var(--cor-superficie);border:1px solid var(--cor-borda);border-radius:var(--raio);padding:.3rem .7rem;font-size:.85rem">
+        {{ l.tipo_laco }}: <a href="/cadastros/pessoas/{{ l.relacionada_id }}">{{ l.nome_completo }}</a>
+    </span>
+    {% endfor %}
+</div>
+{% endif %}
+
+{# ── Planos de tratamento ── #}
+{% if planos %}
+<h3 class="subtitulo-secao">Planos de tratamento</h3>
+<table style="margin-bottom:1.5rem">
+    <thead>
+        <tr>
+            <th>Médium</th>
+            <th>Início</th>
+            <th>Sessões</th>
+            <th>Frequência</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in planos %}
+        <tr>
+            <td>{{ p.medium_nome }}</td>
+            <td>{{ p.data_inicio | data_br }}</td>
+            <td>{{ p.sessoes_realizadas }}/{{ p.sessoes_total }}</td>
+            <td>{{ p.frequencia }}</td>
+            <td>
+                {% if p.status == 'ativo' %}<span style="color:var(--cor-sucesso)">ativo</span>
+                {% elif p.status == 'alta' %}<span style="color:var(--cor-texto-suave)">alta</span>
+                {% else %}<span style="color:var(--cor-erro)">{{ p.status }}</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{# ── Histórico de check-ins ── #}
+<h3 class="subtitulo-secao">Histórico de atendimentos</h3>
+{% if historico %}
+<table>
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Hora</th>
+            <th>Passe</th>
+            <th>Reiki</th>
+            <th>Fraterno</th>
+            <th>Atendimento</th>
+            <th>Médium</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for h in historico %}
+        <tr>
+            <td>{{ h.data | data_br }}</td>
+            <td>{{ h.hora_checkin }}</td>
+            <td>
+                {% if h.codigo_passe %}
+                    {{ h.codigo_passe }}
+                    {% if h.passe_realizado %}✓{% else %}⏳{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td>
+                {% if h.codigo_reiki %}
+                    {{ h.codigo_reiki }}
+                    {% if h.reiki_realizado %}✓{% else %}⏳{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td>
+                {% if h.codigo_acolhimento %}
+                    {{ h.codigo_acolhimento }}
+                    {% if h.acolhimento_realizado %}✓{% else %}⏳{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td>
+                {% if h.codigo_atendimento %}
+                    {{ h.codigo_atendimento }}
+                    {% if h.atendimento_realizado %}✓{% else %}⏳{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td>{{ h.medium_nome or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="vazio">Nenhum atendimento registrado.</div>
+{% endif %}
+{% endblock %}

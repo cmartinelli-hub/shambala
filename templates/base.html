@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shambala — {% block titulo %}{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/base.css">
+    {% block estilos %}{% endblock %}
+</head>
+<body>
+    <div class="topo">
+        <a href="/menu" class="topo-marca">
+            <img src="/static/logo-branca.svg" alt="Logo" class="logo-topo">
+            <span>Shambala</span>
+        </a>
+        <span>{{ atendente.nome_completo }} &nbsp;|&nbsp; <a href="/logout">Sair</a></span>
+    </div>
+
+    <div class="conteudo">
+        {% block conteudo %}{% endblock %}
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

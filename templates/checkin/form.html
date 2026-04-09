@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block titulo %}Check-in — {{ pessoa.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Check-in — {{ pessoa.nome_completo }}</h2>
+    <a href="/dia/checkin" class="btn btn-secundario">← Busca</a>
+</div>
+
+{% if erro %}
+<div class="erro">{{ erro }}</div>
+{% endif %}
+
+{% if checkin_existente %}
+<div class="alerta">
+    Check-in já registrado hoje.
+    {% if checkin_existente.codigo_passe %}Passe: <strong>{{ checkin_existente.codigo_passe }}</strong>.{% endif %}
+    {% if checkin_existente.codigo_acolhimento %}Fraterno: <strong>{{ checkin_existente.codigo_acolhimento }}</strong>.{% endif %}
+    {% if checkin_existente.codigo_atendimento %}Atendimento: <strong>{{ checkin_existente.codigo_atendimento }}</strong>.{% endif %}
+    Você pode complementar com novas senhas abaixo.
+</div>
+{% endif %}
+
+{# ── Painel de situação ─────────────────────────────────────────────────── #}
+{% set sit = situacao %}
+
+{% if sit.agendamento %}
+{# Sessão agendada para hoje #}
+<div class="alerta" style="background:rgba(34,139,34,.12);border-color:var(--cor-sucesso);color:inherit">
+    <strong>Sessão agendada hoje</strong> com <strong>{{ sit.agendamento.medium_nome }}</strong>.<br>
+    Passe: <strong>{{ 'obrigatório' if sit.agendamento.requer_passe else 'não obrigatório' }}</strong>
+    {% if sit.agendamento.encaixe %} · <em>Encaixe</em>{% endif %}
+</div>
+
+{% elif sit.plano_ativo %}
+{# Plano ativo mas sem sessão hoje #}
+<div class="alerta" style="background:rgba(200,100,0,.10);border-color:var(--cor-alerta);color:inherit">
+    <strong>Plano ativo</strong> com <strong>{{ sit.plano_ativo.medium_nome }}</strong>
+    ({{ sit.plano_ativo.sessoes_realizadas }}/{{ sit.plano_ativo.sessoes_total }} sessões).<br>
+    Sem sessão agendada hoje.
+    {% if sit.proxima_sessao %}
+        Próxima: <strong>{{ sit.proxima_sessao | data_br }}</strong>.
+    {% else %}
+        Nenhuma sessão futura agendada.
+    {% endif %}
+    {% if sit.vagas_info %}
+        <br>Encaixe hoje: <strong>{{ sit.vagas_info.disponiveis }}</strong> vaga(s) disponível(is)
+        com {{ sit.vagas_info.medium_nome }}.
+    {% endif %}
+</div>
+
+{% elif sit.sugere_fraterno %}
+{# Sem plano ativo / nunca teve #}
+<div class="alerta" style="background:rgba(100,100,200,.10);border-color:#99b;color:inherit">
+    <strong>Sem plano de tratamento ativo.</strong>
+    Verificar necessidade de <strong>Atendimento Fraterno</strong>.
+</div>
+{% endif %}
+
+{# ── Formulário ─────────────────────────────────────────────────────────── #}
+<div class="card-form">
+    <form method="post" action="/dia/checkin/{{ pessoa.id }}">
+
+        {# Agendamento vinculado (hidden) #}
+        {% if sit.agendamento %}
+        <input type="hidden" name="agendamento_id" value="{{ sit.agendamento.id }}">
+        {% else %}
+        <input type="hidden" name="agendamento_id" value="">
+        {% endif %}
+
+        <div class="grade-form">
+
+            <div class="campo">
+                <label>Senha — Passe
+                    {% if sit.agendamento and sit.agendamento.requer_passe %}
+                    <span style="color:var(--cor-perigo)">*</span>
+                    {% endif %}
+                </label>
+                <input type="text" name="codigo_passe"
+                       placeholder="Deixe em branco se não fará passe"
+                       value="{{ checkin_existente.codigo_passe if checkin_existente and checkin_existente.codigo_passe else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Senha — Reiki</label>
+                <input type="text" name="codigo_reiki"
+                       placeholder="Deixe em branco se não fará Reiki"
+                       value="{{ checkin_existente.codigo_reiki if checkin_existente and checkin_existente.codigo_reiki else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Senha — Atendimento Fraterno</label>
+                <input type="text" name="codigo_acolhimento"
+                       placeholder="Apenas para Atendimento Fraterno"
+                       value="{{ checkin_existente.codigo_acolhimento if checkin_existente and checkin_existente.codigo_acolhimento else '' }}">
+            </div>
+
+            {% if mediuns_hoje %}
+            <div class="campo">
+                <label>Senha — Sessão de tratamento</label>
+                <input type="text" name="codigo_atendimento"
+                       placeholder="Deixe em branco se não fará sessão"
+                       value="{{ checkin_existente.codigo_atendimento if checkin_existente and checkin_existente.codigo_atendimento else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Médium responsável</label>
+                <select name="medium_id">
+                    <option value="">— nenhum —</option>
+                    {% for m in mediuns_hoje %}
+                    <option value="{{ m.id }}"
+                        {% if sit.agendamento and sit.agendamento.medium_id == m.id %}selected
+                        {% elif checkin_existente and checkin_existente.medium_id == m.id %}selected{% endif %}>
+                        {{ m.nome_completo }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <input type="hidden" name="codigo_atendimento" value="">
+            <input type="hidden" name="medium_id" value="">
+            {% endif %}
+
+        </div>
+
+        {# ── Acompanhantes (#10) ──────────────────────────────────────── #}
+        <div style="margin-top:1.2rem;border-top:1px solid var(--cor-borda);padding-top:1rem">
+            <label style="font-weight:600;font-size:.9rem">Acompanhantes na sessão de tratamento</label>
+            <p style="font-size:.82rem;color:var(--cor-texto-suave);margin:.2rem 0 .6rem">
+                Busque pelo nome e clique para adicionar quem compartilha a mesma senha de atendimento.
+            </p>
+            <div style="position:relative;max-width:340px">
+                <input type="text" id="acomp-busca" placeholder="Buscar pessoa…"
+                       autocomplete="off"
+                       style="width:100%">
+                <div id="acomp-sugestoes"
+                     style="display:none;position:absolute;z-index:100;width:100%;
+                            background:var(--cor-superficie);border:1px solid var(--cor-borda);
+                            border-radius:var(--raio);box-shadow:var(--sombra);max-height:200px;overflow-y:auto">
+                </div>
+            </div>
+            <div id="acomp-lista" style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem"></div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Confirmar check-in</button>
+            <a href="/dia/dashboard" class="btn btn-secundario">← Dashboard</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const pessoaAtualId = {{ pessoa.id }};
+const adicionados = new Set();
+
+const inputBusca   = document.getElementById('acomp-busca');
+const divSugestoes = document.getElementById('acomp-sugestoes');
+const divLista     = document.getElementById('acomp-lista');
+
+let timer = null;
+
+inputBusca.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = inputBusca.value.trim();
+    if (q.length < 2) { divSugestoes.style.display = 'none'; return; }
+    timer = setTimeout(() => buscar(q), 250);
+});
+
+inputBusca.addEventListener('blur', () => {
+    setTimeout(() => { divSugestoes.style.display = 'none'; }, 200);
+});
+
+async function buscar(q) {
+    const res = await fetch(`/cadastros/pessoas/buscar?nome=${encodeURIComponent(q)}&excluir=${pessoaAtualId}`);
+    const lista = await res.json();
+    if (!lista.length) { divSugestoes.style.display = 'none'; return; }
+    divSugestoes.innerHTML = lista.map(p =>
+        `<div data-id="${p.id}" data-nome="${p.nome}"
+              style="padding:.45rem .7rem;cursor:pointer;font-size:.88rem"
+              onmousedown="adicionar(${p.id}, '${p.nome.replace(/'/g,"\\'")}')">
+           ${p.nome}
+         </div>`
+    ).join('');
+    divSugestoes.querySelectorAll('div').forEach(el => {
+        el.addEventListener('mouseenter', () => el.style.background = 'var(--cor-fundo)');
+        el.addEventListener('mouseleave', () => el.style.background = '');
+    });
+    divSugestoes.style.display = 'block';
+}
+
+function adicionar(id, nome) {
+    if (adicionados.has(id)) return;
+    adicionados.add(id);
+    divSugestoes.style.display = 'none';
+    inputBusca.value = '';
+
+    const chip = document.createElement('div');
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:.3rem;background:var(--cor-primaria);color:#fff;border-radius:20px;padding:.2rem .65rem;font-size:.82rem';
+    chip.innerHTML = `
+        ${nome}
+        <input type="hidden" name="acompanhante_id" value="${id}">
+        <button type="button" onclick="remover(this, ${id})"
+                style="background:none;border:none;color:#fff;cursor:pointer;font-size:.9rem;line-height:1;padding:0 0 0 .2rem">✕</button>
+    `;
+    divLista.appendChild(chip);
+}
+
+function remover(btn, id) {
+    adicionados.delete(id);
+    btn.closest('div').remove();
+}
+</script>
+{% endblock %}

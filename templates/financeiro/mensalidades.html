@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block titulo %}Mensalidades{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Mensalidades</h2>
+    <div style="display:flex; gap:0.5rem">
+        <a href="/financeiro" class="btn btn-secundario">← Voltar</a>
+    </div>
+</div>
+
+<!-- Filtro mês -->
+<form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:center">
+    <label style="font-weight:600">Referência:</label>
+    <input type="month" name="mes" value="{{ mes_ref }}" style="padding:0.4rem; border:1px solid var(--cor-borda); border-radius:var(--raio)">
+    <button type="submit" class="btn btn-primario" style="padding:0.4rem 1rem">Filtrar</button>
+</form>
+
+{% if lista %}
+<div style="overflow-x:auto">
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Trabalhador</th>
+            <th>Valor</th>
+            <th>Vencimento</th>
+            <th>Status</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for item in lista %}
+        <tr style="{% if item.vencido %}background:#ff444410{% endif %}">
+            <td>{{ item.trabalhador.nome_completo }}</td>
+            <td style="font-weight:600">R$ {{ item.valor|replace('.', ',') }}</td>
+            <td>{{ item.data_vencimento|data_br }}</td>
+            <td>
+                {% if item.mov_status == 'pago' %}
+                    <span style="color:#1da851;font-weight:600">✅ Pago</span>
+                {% elif item.mov_status == 'pendente' %}
+                    <span style="color:#ffa400;font-weight:600">⏳ Pendente</span>
+                {% else %}
+                    <span style="color:var(--cor-texto-suave)">Gerar</span>
+                {% endif %}
+                {% if item.vencido %}
+                    <span style="color:#ff4444;font-weight:600;font-size:0.8rem"> (Vencido)</span>
+                {% endif %}
+            </td>
+            <td style="display:flex; gap:0.3rem">
+                {% if not item.mov_id %}
+                <form method="post" action="/financeiro/mensalidades/gerar" style="display:inline">
+                    <input type="hidden" name="trabalhador_id" value="{{ item.trabalhador.id }}">
+                    <input type="hidden" name="mes_ref" value="{{ mes_ref }}">
+                    <button type="submit" class="btn btn-primario" style="padding:0.25rem 0.6rem; font-size:0.85rem">Gerar</button>
+                </form>
+                {% endif %}
+                {% if item.mov_id and item.mov_status != 'pago' %}
+                <form method="post" action="/financeiro/mensalidades/{{ item.mov_id }}/baixar" style="display:inline">
+                    <input type="hidden" name="pix" value="">
+                    <button type="submit" class="btn btn-primario" style="padding:0.25rem 0.6rem; font-size:0.85rem"
+                            onclick="return confirm('Marcar como pago?')">Baixar</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p style="color:var(--cor-texto-suave)">Nenhum trabalhador com mensalidade configurada.</p>
+{% endif %}
+{% endblock %}

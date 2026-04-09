@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block titulo %}Frequência Geral{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Frequência Geral</h2>
+    <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
+</div>
+
+<form method="get" class="barra-busca" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        De <input type="date" name="data_ini" value="{{ data_ini }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Até <input type="date" name="data_fim" value="{{ data_fim }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Top <input type="number" name="limite" value="{{ limite }}" min="10" max="500"
+                   style="padding:0.4rem 0.6rem;width:5rem">
+    </label>
+    <button type="submit" class="btn btn-primario">Filtrar</button>
+</form>
+
+{% if pessoas %}
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Nome</th>
+            <th style="text-align:center">Visitas</th>
+            <th style="text-align:center">Passes</th>
+            <th style="text-align:center">Acolhimentos</th>
+            <th style="text-align:center">Atendimentos</th>
+            <th>Última visita</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in pessoas %}
+        <tr>
+            <td style="color:var(--cor-texto-suave)">{{ loop.index }}</td>
+            <td>
+                <a href="/relatorios/por-pessoa?pessoa_id={{ p.id }}&data_ini={{ data_ini }}&data_fim={{ data_fim }}"
+                   style="color:inherit">{{ p.nome_completo }}</a>
+            </td>
+            <td style="text-align:center;font-weight:600">{{ p.visitas }}</td>
+            <td style="text-align:center">{{ p.passes }}</td>
+            <td style="text-align:center">{{ p.acolhimentos }}</td>
+            <td style="text-align:center">{{ p.atendimentos }}</td>
+            <td>{{ p.ultima_visita | data_br }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p style="margin-top:1rem;color:var(--cor-texto-suave);font-size:0.9rem">
+    {{ pessoas | length }} pessoa{{ 's' if pessoas | length != 1 }} com presença no período.
+</p>
+{% else %}
+<p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
+    Nenhuma presença registrada no período.
+</p>
+{% endif %}
+{% endblock %}

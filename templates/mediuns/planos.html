@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block titulo %}Planos — {{ medium.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Planos de tratamento — {{ medium.nome_completo }}</h2>
+    <a href="/cadastros/mediuns" class="btn btn-secundario">← Voltar</a>
+</div>
+
+{% set ativos     = planos | selectattr("status", "equalto", "ativo")    | list %}
+{% set encerrados = planos | rejectattr("status", "equalto", "ativo")    | list %}
+
+{% if ativos %}
+<table style="margin-bottom:2rem">
+    <thead>
+        <tr>
+            <th>Pessoa(s)</th>
+            <th>Frequência</th>
+            <th>Sessões</th>
+            <th>Próxima sessão</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in ativos %}
+        <tr>
+            <td>
+                {% for pe in p.pessoas %}
+                    {{ pe.nome_completo }}{% if not loop.last %}, {% endif %}
+                {% else %}
+                    <span style="color:var(--cor-texto-suave)">—</span>
+                {% endfor %}
+            </td>
+            <td>
+                {% if p.frequencia == 'semanal' %}Semanal
+                {% elif p.frequencia == 'quinzenal' %}Quinzenal
+                {% elif p.frequencia == 'mensal' %}Mensal
+                {% else %}Avulso{% endif %}
+            </td>
+            <td>{{ p.sessoes_realizadas }}/{{ p.sessoes_total }}
+                {% if p.sessoes_realizadas >= p.sessoes_total %}
+                <span style="color:var(--cor-sucesso);font-size:.8rem"> ✓ completo</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if p.proxima_sessao %}
+                    {{ p.proxima_sessao | data_br }}
+                {% else %}
+                    <span style="color:var(--cor-texto-suave)">—</span>
+                {% endif %}
+            </td>
+            <td class="acoes" style="display:flex;gap:.4rem;flex-wrap:wrap">
+                <a href="/cadastros/mediuns/{{ medium.id }}/planos/{{ p.id }}/agenda"
+                   class="btn btn-secundario btn-sm">Agenda</a>
+                <form method="post"
+                      action="/cadastros/mediuns/{{ medium.id }}/planos/{{ p.id }}/alta"
+                      onsubmit="return confirm('Dar alta neste plano?')">
+                    <button type="submit" class="btn btn-primario btn-sm">Alta</button>
+                </form>
+                <form method="post"
+                      action="/cadastros/mediuns/{{ medium.id }}/planos/{{ p.id }}/cancelar"
+                      onsubmit="return confirm('Cancelar este plano?')">
+                    <button type="submit" class="btn btn-perigo btn-sm">Cancelar</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">Nenhum plano ativo.</p>
+{% endif %}
+
+<!-- Novo plano -->
+<div class="card-form">
+    <h3 style="margin-bottom:1rem;font-size:1rem">Novo plano de tratamento</h3>
+    <form method="post" action="/cadastros/mediuns/{{ medium.id }}/planos/novo">
+        <input type="hidden" name="next" value="">
+        <div class="grade-form">
+            <div class="campo">
+                <label>Nº de sessões *</label>
+                <input type="number" name="sessoes_total" min="1" value="6" required style="max-width:100px">
+            </div>
+            <div class="campo">
+                <label>Frequência *</label>
+                <select name="frequencia" required>
+                    <option value="semanal">Semanal</option>
+                    <option value="quinzenal">Quinzenal</option>
+                    <option value="mensal">Mensal</option>
+                    <option value="avulso">Avulso (sem agenda automática)</option>
+                </select>
+            </div>
+            <div class="campo">
+                <label>Passe obrigatório nas primeiras N sessões</label>
+                <input type="number" name="sessoes_com_passe" min="0" value="3" style="max-width:100px"
+                       title="0 = nunca, -1 = sempre, N = primeiras N sessões">
+                <small style="color:var(--cor-texto-suave)">0=nunca · -1=sempre</small>
+            </div>
+            <div class="campo">
+                <label>Data da 1ª sessão</label>
+                <input type="date" name="data_inicio" value="{{ hoje }}">
+            </div>
+            <div class="campo campo-largo">
+                <label>Pessoa(s) *</label>
+                <input type="text" id="busca-pessoa" placeholder="Digite o nome para buscar…"
+                       autocomplete="off" style="margin-bottom:.4rem">
+                <select name="pessoas_ids" multiple required size="6" style="height:auto" id="lista-pessoas">
+                    {% for p in todas_pessoas %}
+                    <option value="{{ p.id }}">{{ p.nome_completo }}</option>
+                    {% endfor %}
+                </select>
+                <small style="color:var(--cor-texto-suave)">Segure Ctrl para selecionar mais de uma</small>
+            </div>
+        </div>
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Criar plano e gerar agenda</button>
+        </div>
+    </form>
+</div>
+
+<!-- Planos encerrados -->
+{% if encerrados %}
+<details style="margin-top:2rem">
+    <summary style="cursor:pointer;color:var(--cor-texto-suave);font-size:.9rem">
+        Histórico ({{ encerrados|length }})
+    </summary>
+    <table style="margin-top:.5rem;opacity:.6">
+        <thead>
+            <tr><th>Pessoa(s)</th><th>Frequência</th><th>Sessões</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+            {% for p in encerrados %}
+            <tr>
+                <td>{% for pe in p.pessoas %}{{ pe.nome_completo }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+                <td>{{ p.frequencia }}</td>
+                <td>{{ p.sessoes_realizadas }}/{{ p.sessoes_total }}</td>
+                <td>
+                    {% if p.status == 'alta' %}Alta
+                    {% elif p.status == 'cancelado' %}Cancelado
+                    {% else %}{{ p.status }}{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</details>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const busca = document.getElementById('busca-pessoa');
+const lista = document.getElementById('lista-pessoas');
+if (busca && lista) {
+    const opcoes = Array.from(lista.options);
+    busca.addEventListener('input', () => {
+        const termo = busca.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        opcoes.forEach(op => {
+            const texto = op.text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            op.hidden = termo.length > 0 && !texto.includes(termo);
+        });
+    });
+}
+</script>
+{% endblock %}

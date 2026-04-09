@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block titulo %}Dia de Trabalho{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Dia de trabalho — {{ dia.data | data_br }}</h2>
+    <a href="/cadastros/pessoas/novo" class="btn btn-primario">+ Nova Pessoa</a>
+</div>
+
+<!-- Resumo (clique para ver a lista) -->
+<div class="grade-cards">
+    <a href="/dia/lista?tipo=checkins" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ total_checkins }}</div>
+        <div class="stat-label">Check-ins</div>
+    </a>
+    <a href="/dia/lista?tipo=passe-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ passe_aguardando }}</div>
+        <div class="stat-label">Passes aguardando</div>
+    </a>
+    <a href="/dia/lista?tipo=passe-realizado" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ passe_realizado }}</div>
+        <div class="stat-label">Passes realizados</div>
+    </a>
+    <a href="/dia/lista?tipo=acolhimento-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ acolh_aguardando }}</div>
+        <div class="stat-label">Acolhimentos aguardando</div>
+    </a>
+    <a href="/dia/lista?tipo=acolhimento-realizado" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ acolh_realizado }}</div>
+        <div class="stat-label">Acolhimentos realizados</div>
+    </a>
+    <a href="/dia/lista?tipo=reiki-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ reiki_aguardando }}</div>
+        <div class="stat-label">Reiki aguardando</div>
+    </a>
+    <a href="/dia/lista?tipo=reiki-realizado" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ reiki_realizado }}</div>
+        <div class="stat-label">Reiki realizado</div>
+    </a>
+    <a href="/dia/lista?tipo=atendimento-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ atend_aguardando }}</div>
+        <div class="stat-label">Atendimentos aguardando</div>
+    </a>
+    <a href="/dia/lista?tipo=atendimento-realizado" class="card-stat" style="text-decoration:none;color:inherit">
+        <div class="stat-valor">{{ atend_realizado }}</div>
+        <div class="stat-label">Atendimentos realizados</div>
+    </a>
+</div>
+
+<!-- Ações rápidas -->
+<div class="grade-acoes">
+    <a href="/dia/checkin" class="card-acao destaque">
+        <div class="icone">✅</div>
+        <span>Check-in</span>
+    </a>
+    <a href="/dia/dashboard" class="card-acao">
+        <div class="icone">🗂️</div>
+        <span>Dashboard</span>
+    </a>
+    <a href="/dia/passe" class="card-acao">
+        <img src="/static/passe.svg" class="icone-svg" alt="Passe">
+        <span>Fila de Passe</span>
+        {% if passe_aguardando > 0 %}
+        <span class="badge-numero">{{ passe_aguardando }}</span>
+        {% endif %}
+    </a>
+    <a href="/dia/acolhimento" class="card-acao">
+        <div class="icone">🤝</div>
+        <span>Fila de Acolhimento</span>
+        {% if acolh_aguardando > 0 %}
+        <span class="badge-numero">{{ acolh_aguardando }}</span>
+        {% endif %}
+    </a>
+    <a href="/dia/reiki" class="card-acao">
+        <div class="icone">🙌</div>
+        <span>Fila de Reiki</span>
+        {% if reiki_aguardando > 0 %}
+        <span class="badge-numero">{{ reiki_aguardando }}</span>
+        {% endif %}
+    </a>
+</div>
+
+<!-- Filas por médium -->
+{% if filas_mediuns %}
+<h3 class="subtitulo-secao">Filas por médium</h3>
+<div class="grade-acoes">
+    {% for m in filas_mediuns %}
+    <a href="/dia/mediuns/{{ m.id }}" class="card-acao {% if m.fim %}destaque{% endif %}">
+        <img src="/static/medium.svg" class="icone-svg" alt="Médium">
+        <span>{{ m.nome_completo }}{% if m.vagas_restantes is not none %} <span style="font-size:.8rem;font-weight:normal">({{ m.vagas_restantes }}/{{ m.vagas_restantes + m.aguardando }})</span>{% endif %}</span>
+        {% if m.aguardando > 0 %}
+        <span class="badge-numero">{{ m.aguardando }}</span>
+        {% endif %}
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Médiuns do dia -->
+<p style="margin-top:2rem;color:var(--cor-texto-suave);font-size:0.9rem">
+    Médiuns presentes:
+    {% for m in mediuns_dia %}{{ m.nome_completo }}{% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+
+<!-- Adicionar médium ao dia (com campo de vagas) -->
+<form method="post" action="/dia/adicionar-medium" style="margin-top:1rem;display:flex;gap:.5rem;align-items:flex-end">
+    <div class="campo" style="min-width:220px">
+        <label>Adicionar médium presente</label>
+        <select name="medium_id" required>
+            <option value="">Selecione…</option>
+            {% set ids_presentes = mediuns_dia | map(attribute='id') | list %}
+            {% for m in (todos_mediuns or []) %}
+                {% if m.id not in ids_presentes %}
+                <option value="{{ m.id }}">{{ m.nome_completo }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+    <div class="campo" style="min-width:120px">
+        <label>Limite (vazio = sem limite)</label>
+        <input type="number" name="vagas_dia" min="1"
+               style="width:120px;padding:.35rem .5rem;border:1px solid var(--cor-borda);
+                      border-radius:var(--raio);font-size:.9rem">
+    </div>
+    <button type="submit" class="btn btn-primario btn-sm">+ Adicionar</button>
+</form>
+
+<!-- Rodapé com encerrar dia -->
+<div style="display:flex;justify-content:flex-end;margin-top:3rem;padding-top:1.5rem;border-top:1px solid var(--cor-borda)">
+    <form method="post" action="/dia/encerrar"
+          onsubmit="return confirm('Encerrar o dia de hoje? Esta ação não pode ser desfeita.')">
+        <button type="submit" class="btn btn-perigo">Encerrar dia</button>
+    </form>
+</div>
+{% endblock %}

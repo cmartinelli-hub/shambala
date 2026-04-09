@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block titulo %}Laços — {{ pessoa.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Laços de {{ pessoa.nome_completo }}</h2>
+    <a href="/cadastros/pessoas" class="btn btn-secundario">← Voltar</a>
+</div>
+
+{% if erro %}
+<div class="erro">{{ erro }}</div>
+{% endif %}
+
+{% if lacos %}
+<table style="margin-bottom:2rem">
+    <thead>
+        <tr>
+            <th>Pessoa relacionada</th>
+            <th>Tipo de laço</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for l in lacos %}
+        <tr>
+            <td>{{ l.nome_completo }}</td>
+            <td>{{ l.tipo_laco }}</td>
+            <td class="acoes">
+                <form method="post" action="/cadastros/pessoas/{{ pessoa.id }}/lacos/{{ l.id }}/remover">
+                    <button type="submit" class="btn btn-perigo btn-sm"
+                        onclick="return confirm('Remover este laço?')">Remover</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">Nenhum laço cadastrado.</p>
+{% endif %}
+
+<div class="card-form">
+    <h3 style="margin-bottom:1rem;font-size:1rem">Adicionar laço</h3>
+    <form method="post" action="/cadastros/pessoas/{{ pessoa.id }}/lacos">
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>Pessoa relacionada</label>
+                <div style="position:relative">
+                    <input
+                        type="text"
+                        id="busca-pessoa-laco"
+                        placeholder="Digite para buscar a pessoa…"
+                        autocomplete="off"
+                        style="width:100%"
+                    >
+                    <input
+                        type="hidden"
+                        id="pessoa-laco-id"
+                        name="pessoa_relacionada_id"
+                        required
+                    >
+                    <ul id="lista-pessoas-laco" style="
+                        position:absolute;
+                        top:100%;
+                        left:0;
+                        right:0;
+                        background:white;
+                        border:1px solid var(--cor-borda);
+                        border-top:none;
+                        list-style:none;
+                        padding:0;
+                        margin:0;
+                        max-height:200px;
+                        overflow-y:auto;
+                        display:none;
+                        z-index:100;
+                        box-shadow:0 4px 6px rgba(0,0,0,0.1);
+                    "></ul>
+                </div>
+            </div>
+            <div class="campo">
+                <label>Tipo de laço</label>
+                <input type="text" name="tipo_laco" placeholder="ex: esposo(a), filho(a)" required>
+            </div>
+        </div>
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Adicionar</button>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const inputBusca = document.getElementById('busca-pessoa-laco');
+    const inputId = document.getElementById('pessoa-laco-id');
+    const listaResultados = document.getElementById('lista-pessoas-laco');
+    const pessoaAtualId = {{ pessoa.id }};
+
+    inputBusca.addEventListener('input', async function(e) {
+        const termo = e.target.value.trim();
+
+        if (termo.length < 2) {
+            listaResultados.style.display = 'none';
+            inputId.value = '';
+            return;
+        }
+
+        try {
+            const resp = await fetch(`/cadastros/pessoas/buscar?nome=${encodeURIComponent(termo)}&excluir=${pessoaAtualId}`);
+            const dados = await resp.json();
+
+            listaResultados.innerHTML = '';
+
+            if (dados.length === 0) {
+                const li = document.createElement('li');
+                li.style.padding = '0.75rem 1rem';
+                li.style.color = 'var(--cor-texto-suave)';
+                li.textContent = 'Nenhuma pessoa encontrada';
+                listaResultados.appendChild(li);
+                listaResultados.style.display = 'block';
+                return;
+            }
+
+            dados.forEach(pessoa => {
+                const li = document.createElement('li');
+                li.style.padding = '0.75rem 1rem';
+                li.style.cursor = 'pointer';
+                li.style.borderBottom = '1px solid var(--cor-borda-clara)';
+                li.textContent = pessoa.nome;
+
+                li.addEventListener('mouseenter', function() {
+                    li.style.backgroundColor = 'var(--cor-fundo-hover)';
+                });
+
+                li.addEventListener('mouseleave', function() {
+                    li.style.backgroundColor = 'transparent';
+                });
+
+                li.addEventListener('click', function() {
+                    inputBusca.value = pessoa.nome;
+                    inputId.value = pessoa.id;
+                    listaResultados.style.display = 'none';
+                });
+
+                listaResultados.appendChild(li);
+            });
+
+            listaResultados.style.display = 'block';
+        } catch (erro) {
+            console.error('Erro ao buscar:', erro);
+        }
+    });
+
+    // Fechar lista ao clicar fora
+    document.addEventListener('click', function(e) {
+        if (e.target !== inputBusca && e.target !== listaResultados) {
+            listaResultados.style.display = 'none';
+        }
+    });
+
+    // Impedir submissão sem pessoa selecionada
+    document.querySelector('form').addEventListener('submit', function(e) {
+        if (!inputId.value.trim()) {
+            e.preventDefault();
+            alert('Selecione uma pessoa relacionada');
+            inputBusca.focus();
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block titulo %}Biblioteca — Livros{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Biblioteca</h2>
+    <div style="display:flex; gap:0.5rem">
+        <a href="/biblioteca/livro/novo" class="btn btn-primario">+ Novo Livro</a>
+        <a href="/biblioteca/emprestimo/novo" class="btn btn-primario">+ Emprestar</a>
+    </div>
+</div>
+
+<!-- Busca -->
+<form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:center">
+    <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar por título, autor ou ISBN..."
+           style="flex:1; padding:0.5rem; border:1px solid var(--cor-borda); border-radius:var(--raio)">
+    <button type="submit" class="btn btn-primario" style="padding:0.5rem 1rem">Buscar</button>
+    {% if busca %}
+    <a href="/biblioteca" class="btn btn-secundario">Limpar</a>
+    {% endif %}
+</form>
+
+{% if livros %}
+<div style="overflow-x:auto">
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>ISBN</th>
+            <th>Título</th>
+            <th>Autor</th>
+            <th>Ano</th>
+            <th>Estoque</th>
+            <th>Emprestados</th>
+            <th>Disponíveis</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for lv in livros %}
+        <tr style="{% if lv.disponivel == 0 %}background:#ff444410{% endif %}">
+            <td style="font-family:monospace; font-size:0.85rem">{{ lv.isbn or '-' }}</td>
+            <td>
+                <a href="/biblioteca/emprestimo/novo?livro_id={{ lv.id }}">{{ lv.titulo }}</a>
+            </td>
+            <td>{{ lv.autor or '' }}</td>
+            <td>{{ lv.ano or '' }}</td>
+            <td style="text-align:center; font-weight:600">{{ lv.quantidade }}</td>
+            <td style="text-align:center">{{ lv.emprestados }}</td>
+            <td style="text-align:center; font-weight:600; color:{{ '#1da851' if lv.disponivel > 0 else '#ff4444' }}">
+                {{ lv.disponivel }}
+            </td>
+            <td style="display:flex; gap:0.3rem">
+                <form method="post" action="/biblioteca/livro/{{ lv.id }}/vender" style="display:inline">
+                    <input type="hidden" name="quantidade" value="1">
+                    <input type="hidden" name="pessoa_id" value="">
+                    <button type="submit" class="btn btn-primario" style="padding:0.2rem 0.5rem; font-size:0.8rem"
+                            onclick="return confirm('Vender 1 unidade de \'{0}\'?'.replace('{0}', '{{ lv.titulo }}'))">
+                        Vender
+                    </button>
+                </form>
+                <a href="/biblioteca/livro/{{ lv.id }}/editar" class="btn btn-secundario" style="padding:0.2rem 0.5rem; font-size:0.8rem">Editar</a>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="card-form">
+    <p style="color:var(--cor-texto-suave)">
+        {% if busca %}Nenhum livro encontrado para "{{ busca }}".{% else %}Nenhum livro cadastrado.{% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

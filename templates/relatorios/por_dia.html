@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}Relatório por Dia{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Relatório por Dia</h2>
+    <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
+</div>
+
+<form method="get" class="barra-busca" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        De <input type="date" name="data_ini" value="{{ data_ini }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Até <input type="date" name="data_fim" value="{{ data_fim }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <button type="submit" class="btn btn-primario">Filtrar</button>
+</form>
+
+{% if dias %}
+<table>
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th style="text-align:center">Check-ins</th>
+            <th style="text-align:center">Passes<br><small>agend. / real.</small></th>
+            <th style="text-align:center">Acolhimentos<br><small>agend. / real.</small></th>
+            <th style="text-align:center">Atendimentos<br><small>agend. / real.</small></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for d in dias %}
+        <tr>
+            <td>{{ d.data | data_br }}</td>
+            <td style="text-align:center">{{ d.total }}</td>
+            <td style="text-align:center">{{ d.passes_agend }} / {{ d.passes_real }}</td>
+            <td style="text-align:center">{{ d.acolh_agend }} / {{ d.acolh_real }}</td>
+            <td style="text-align:center">{{ d.atend_agend }} / {{ d.atend_real }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr style="font-weight:600;border-top:2px solid var(--cor-borda)">
+            <td>Total</td>
+            <td style="text-align:center">{{ dias | sum(attribute='total') }}</td>
+            <td style="text-align:center">
+                {{ dias | sum(attribute='passes_agend') }} /
+                {{ dias | sum(attribute='passes_real') }}
+            </td>
+            <td style="text-align:center">
+                {{ dias | sum(attribute='acolh_agend') }} /
+                {{ dias | sum(attribute='acolh_real') }}
+            </td>
+            <td style="text-align:center">
+                {{ dias | sum(attribute='atend_agend') }} /
+                {{ dias | sum(attribute='atend_real') }}
+            </td>
+        </tr>
+    </tfoot>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
+    Nenhum dia de trabalho encontrado no período.
+</p>
+{% endif %}
+{% endblock %}

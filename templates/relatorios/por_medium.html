@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block titulo %}Relatório por Médium{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Relatório por Médium</h2>
+    <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
+</div>
+
+<form method="get" class="barra-busca" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        De <input type="date" name="data_ini" value="{{ data_ini }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Até <input type="date" name="data_fim" value="{{ data_fim }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Dia
+        <select name="dia_semana" style="padding:0.4rem 0.6rem">
+            <option value="">Todos</option>
+            <option value="1" {% if dia_semana == '1' %}selected{% endif %}>Segunda-feira</option>
+            <option value="3" {% if dia_semana == '3' %}selected{% endif %}>Quarta-feira</option>
+        </select>
+    </label>
+    <button type="submit" class="btn btn-primario">Filtrar</button>
+</form>
+
+{% if mediuns %}
+<table>
+    <thead>
+        <tr>
+            <th>Médium</th>
+            <th style="text-align:center">Agendados</th>
+            <th style="text-align:center">Realizados</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in mediuns %}
+        <tr>
+            <td>{{ m.nome_completo }}</td>
+            <td style="text-align:center">{{ m.agendados }}</td>
+            <td style="text-align:center">{{ m.realizados }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr style="font-weight:600;border-top:2px solid var(--cor-borda)">
+            <td>Total</td>
+            <td style="text-align:center">{{ mediuns | sum(attribute='agendados') }}</td>
+            <td style="text-align:center">{{ mediuns | sum(attribute='realizados') }}</td>
+        </tr>
+    </tfoot>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
+    Nenhum dado encontrado para o período.
+</p>
+{% endif %}
+{% endblock %}

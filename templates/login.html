@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shambala — Login</title>
+    <link rel="stylesheet" href="/static/css/base.css">
+</head>
+<body class="pagina-login">
+    <div class="caixa-login">
+        <img src="/static/logo.svg" alt="Estrela de Davi" class="logo-login">
+        <h1>Shambala</h1>
+        <p class="subtitulo">Sistema de Atendimentos</p>
+
+        {% if erro %}
+        <div class="erro">{{ erro }}</div>
+        {% endif %}
+
+        <form method="post" action="/login">
+            <div class="campo">
+                <label for="nome_usuario">Usuário</label>
+                <input type="text" id="nome_usuario" name="nome_usuario" autofocus required>
+            </div>
+            <div class="campo">
+                <label for="senha">Senha</label>
+                <input type="password" id="senha" name="senha" required>
+            </div>
+            <button type="submit">Entrar</button>
+        </form>
+    </div>
+</body>
+</html>

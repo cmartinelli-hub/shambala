@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>{{ titulo }} — {{ dia.data | data_br }}</h2>
+    <a href="/dia" class="btn btn-secundario">← Painel</a>
+</div>
+
+{% if pessoas %}
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Nome</th>
+            {% if pessoas[0].senha is defined %}
+            <th>Senha</th>
+            {% endif %}
+            {% if pessoas[0].medium_nome is defined %}
+            <th>Médium</th>
+            {% endif %}
+            <th>Hora</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in pessoas %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ p.nome_completo }}</td>
+            {% if p.senha is defined %}
+            <td><strong>{{ p.senha or '—' }}</strong></td>
+            {% endif %}
+            {% if p.medium_nome is defined %}
+            <td>{{ p.medium_nome or '—' }}</td>
+            {% endif %}
+            <td>{{ p.hora_checkin }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p style="color:var(--cor-texto-suave);font-size:.85rem;margin-top:.8rem">
+    Total: {{ pessoas|length }} pessoa(s).
+</p>
+{% else %}
+<div class="vazio">Nenhuma pessoa nesta lista.</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block titulo %}Check-in — Trabalhadores{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Check-in de Trabalhadores</h2>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a href="/cadastros/trabalhadores" class="btn btn-secundario">← Voltar</a>
+        <a href="/cadastros/trabalhadores" class="btn btn-secundario">Trabalhadores</a>
+    </div>
+</div>
+
+{% if erro %}
+<div class="erro">{{ erro }}</div>
+{% endif %}
+
+{% if dia %}
+<p style="color:var(--cor-texto-suave);margin-bottom:1rem">
+    Dia: {{ dia.data | data_br }}
+</p>
+
+{% if not trabalhadores_agenda %}
+<p style="color:var(--cor-texto-suave)">Nenhum trabalhador com agenda para hoje.</p>
+{% else %}
+
+<table>
+    <thead>
+        <tr>
+            <th>Trabalhador</th>
+            <th>Situação</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% set presenca_map = {} %}
+        {% for p in presencas %}
+        {{ presenca_map.__setitem__(p.trabalhador_id, p.presente) }}
+        {% endfor %}
+
+        {% for t in trabalhadores_agenda %}
+        <tr>
+            <td>{{ t.nome_completo }}</td>
+            <td>
+                {% if t.id in presenca_map %}
+                    {% if presenca_map[t.id] %}
+                    <span class="badge badge-ativo">Presente</span>
+                    {% else %}
+                    <span class="badge badge-inativo">Ausente</span>
+                    {% endif %}
+                {% else %}
+                <span class="badge" style="background:#666;color:#fff">Aguardando</span>
+                {% endif %}
+            </td>
+            <td class="acoes">
+                {% if t.id not in presenca_map %}
+                <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/presente" style="display:inline">
+                    <button type="submit" class="btn btn-sm" style="background:#1a8a4a">Presente</button>
+                </form>
+                <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/ausente" style="display:inline">
+                    <button type="submit" class="btn btn-sm btn-perigo">Ausente</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endif %}
+
+{% else %}
+<div class="erro" style="margin-top:1rem">
+    Nenhum dia de trabalho aberto hoje. Abra o dia primeiro em <a href="/dia">Dia de Trabalho</a>.
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Editar' if registro else 'Novo' }} Atendente{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>{{ 'Editar' if registro else 'Novo' }} Atendente</h2>
+    <a href="/cadastros/atendentes" class="btn btn-secundario">← Voltar</a>
+</div>
+
+{% if erro %}
+<div class="erro">{{ erro }}</div>
+{% endif %}
+
+<div class="card-form">
+    <form method="post">
+        <div class="grade-form">
+            <div class="campo">
+                <label>Nome completo *</label>
+                <input type="text" name="nome_completo" value="{{ registro.nome_completo if registro else '' }}" required autofocus>
+            </div>
+            <div class="campo">
+                <label>Nome de usuário *</label>
+                <input type="text" name="nome_usuario" value="{{ registro.nome_usuario if registro else '' }}" required>
+            </div>
+            <div class="campo">
+                <label>Senha {% if registro %}(deixe em branco para manter){% else %}*{% endif %}</label>
+                <input type="password" name="senha" {% if not registro %}required{% endif %}>
+            </div>
+            <div class="campo">
+                <label>Telefone</label>
+                <input type="tel" name="telefone" value="{{ registro.telefone if registro else '' }}">
+            </div>
+            <div class="campo campo-largo">
+                <label>E-mail</label>
+                <input type="email" name="email" value="{{ registro.email if registro else '' }}">
+            </div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar</button>
+            <a href="/cadastros/atendentes" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

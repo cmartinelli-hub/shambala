@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Atendimento Fraterno</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f0f4f8;
+            color: #1a1a2e;
+            font-size: 17px;
+            line-height: 1.5;
+            padding: 0;
+        }
+        .topo {
+            background: #1a5fa8;
+            color: #fff;
+            padding: .9rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .topo a { color: #fff; text-decoration: none; font-size: .9rem; }
+        .topo h1 { font-size: 1.05rem; }
+        .corpo { padding: 1rem; max-width: 540px; margin: 0 auto; }
+
+        .card {
+            background: #fff;
+            border-radius: 10px;
+            padding: 1rem 1.2rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,.10);
+        }
+        .card h2 { font-size: 1rem; color: #444; margin-bottom: .6rem; }
+
+        .nome-pessoa {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: .3rem;
+        }
+        .badges { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+        .badge {
+            display: inline-block;
+            padding: .2rem .6rem;
+            border-radius: 20px;
+            font-size: .8rem;
+            font-weight: 600;
+        }
+        .badge-idoso    { background: #fff3cd; color: #856404; }
+        .badge-def      { background: #cfe2ff; color: #084298; }
+        .badge-prio     { background: #f8d7da; color: #842029; }
+
+        .btn-editar {
+            display: inline-block;
+            padding: .5rem 1rem;
+            background: #e9ecef;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #1a1a2e;
+            font-size: .9rem;
+            margin-top: .4rem;
+        }
+
+        label { display: block; font-size: .9rem; color: #555; margin-bottom: .25rem; margin-top: .8rem; }
+        input, select {
+            width: 100%;
+            padding: .7rem .8rem;
+            font-size: 1rem;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            background: #fff;
+        }
+        .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+
+        .btn-salvar {
+            display: block;
+            width: 100%;
+            padding: 1rem;
+            background: #1a5fa8;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-top: 1.2rem;
+            cursor: pointer;
+        }
+        .btn-salvar:active { background: #144d8c; }
+
+        .historico-item {
+            font-size: .85rem;
+            padding: .3rem 0;
+            border-bottom: 1px solid #eee;
+            color: #555;
+        }
+        .historico-item:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+<div class="topo">
+    <h1>Atendimento Fraterno</h1>
+    <a href="/dia/acolhimento">← Fila</a>
+</div>
+
+<div class="corpo">
+
+    <!-- Dados da pessoa -->
+    <div class="card">
+        <div class="nome-pessoa">{{ checkin.nome_completo }}</div>
+
+        <div class="badges">
+            {% if checkin.prioridade %}
+            <span class="badge badge-prio">⚑ Prioridade</span>
+            {% endif %}
+            {% if checkin.deficiencia %}
+            <span class="badge badge-def">♿ Deficiência</span>
+            {% endif %}
+            {% if checkin.data_nascimento %}
+                {% set ano_nasc = checkin.data_nascimento[:4] | int %}
+                {% set ano_atual = hoje[:4] | int %}
+                {% if (ano_atual - ano_nasc) >= 70 %}
+                <span class="badge badge-idoso">★ Idoso ({{ ano_atual - ano_nasc }} anos)</span>
+                {% endif %}
+            {% endif %}
+        </div>
+
+        <a class="btn-editar" href="/cadastros/pessoas/{{ checkin.pessoa_id }}/editar?next=/dia/fraterno/{{ checkin.id }}">
+            ✏ Editar cadastro
+        </a>
+    </div>
+
+    <!-- Histórico de planos -->
+    {% if planos_anteriores %}
+    <div class="card">
+        <h2>Histórico de tratamentos</h2>
+        {% for p in planos_anteriores %}
+        <div class="historico-item">
+            {{ p.medium_nome }} — {{ p.sessoes_realizadas }}/{{ p.sessoes_total }} sessões —
+            {% if p.status == 'ativo' %}<strong>Em andamento</strong>
+            {% elif p.status == 'alta' %}Alta
+            {% else %}Cancelado{% endif %}
+            ({{ p.data_inicio }})
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Formulário do plano -->
+    <div class="card">
+        <h2>Definir plano de tratamento</h2>
+        <form method="post" action="/dia/fraterno/{{ checkin.id }}">
+
+            <label>Médium responsável *</label>
+            <select name="medium_id" required>
+                <option value="">— selecione —</option>
+                {% for m in mediuns %}
+                <option value="{{ m.id }}">{{ m.nome_completo }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="grade2">
+                <div>
+                    <label>Nº de sessões</label>
+                    <input type="number" name="sessoes_total" min="1" value="6" required>
+                </div>
+                <div>
+                    <label>Passes iniciais</label>
+                    <input type="number" name="sessoes_com_passe" min="0" value="3" required
+                           title="Quantidade de sessões iniciais com passe obrigatório">
+                </div>
+            </div>
+
+            <label>Frequência</label>
+            <select name="frequencia">
+                <option value="semanal">Semanal</option>
+                <option value="quinzenal">Quinzenal</option>
+                <option value="mensal">Mensal</option>
+                <option value="avulso">Avulso</option>
+            </select>
+
+            <label>Data da 1ª sessão</label>
+            <input type="date" name="data_inicio" value="{{ hoje }}" required>
+
+            <button type="submit" class="btn-salvar">Salvar plano e finalizar atendimento</button>
+        </form>
+    </div>
+
+</div>
+</body>
+</html>

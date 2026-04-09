@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block titulo %}Financeiro — Relatórios{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Financeiro — Relatórios</h2>
+    <a href="/financeiro" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<!-- Filtros -->
+<div class="card-form" style="margin-bottom:1.5rem">
+    <form method="get" style="display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap">
+        <div class="campo" style="margin:0">
+            <label>Data início</label>
+            <input type="date" name="data_inicio" value="{{ data_inicio }}">
+        </div>
+        <div class="campo" style="margin:0">
+            <label>Data fim</label>
+            <input type="date" name="data_fim" value="{{ data_fim }}">
+        </div>
+        <div class="campo" style="margin:0">
+            <label>Tipo</label>
+            <select name="tipo">
+                <option value="" {% if not tipo %}selected{% endif %}>Todos</option>
+                <option value="entrada" {% if tipo == 'entrada' %}selected{% endif %}>Entrada</option>
+                <option value="saida" {% if tipo == 'saida' %}selected{% endif %}>Saída</option>
+            </select>
+        </div>
+        <div class="campo" style="margin:0">
+            <label>Categoria</label>
+            <select name="categoria">
+                <option value="" {% if not categoria %}selected{% endif %}>Todas</option>
+                <option value="mensalidade" {% if categoria == 'mensalidade' %}selected{% endif %}>Mensalidade</option>
+                <option value="doacao" {% if categoria == 'doacao' %}selected{% endif %}>Doação</option>
+                <option value="livro" {% if categoria == 'livro' %}selected{% endif %}>Livro/Material</option>
+                <option value="manutencao" {% if categoria == 'manutencao' %}selected{% endif %}>Manutenção</option>
+                <option value="energia" {% if categoria == 'energia' %}selected{% endif %}>Energia</option>
+                <option value="agua" {% if categoria == 'agua' %}selected{% endif %}>Água</option>
+                <option value="aluguel" {% if categoria == 'aluguel' %}selected{% endif %}>Aluguel</option>
+                <option value="outros" {% if categoria == 'outros' %}selected{% endif %}>Outros</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primario" style="margin:0; padding:0.5rem 1.2rem">Filtrar</button>
+    </form>
+</div>
+
+<!-- Resumo -->
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1.5rem">
+    <div class="card-form" style="text-align:center; border-left: 4px solid #1da851">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Total Entradas</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1da851">R$ {{ total_entradas|replace('.', ',') }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left: 4px solid #ff4444">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Total Saídas</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#ff4444">R$ {{ total_saidas|replace('.', ',') }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left: 4px solid {{ '#1da851' if total_entradas >= total_saidas else '#ff4444' }}">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Saldo</div>
+        <div style="font-size:1.5rem; font-weight:700; color:{{ '#1da851' if total_entradas >= total_saidas else '#ff4444' }}">
+            R$ {{ (total_entradas - total_saidas)|abs|replace('.', ',') }}
+        </div>
+    </div>
+</div>
+
+<!-- Lista -->
+<div class="card-form">
+    {% if movs %}
+    <div style="overflow-x:auto">
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Categoria</th>
+                <th>Descrição</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Vinculado</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for m in movs %}
+            <tr>
+                <td>{{ m.data_movimentacao|data_br }}</td>
+                <td>
+                    {% if m.tipo == 'entrada' %}
+                        <span style="color:#1da851;font-weight:600">+ Entrada</span>
+                    {% else %}
+                        <span style="color:#ff4444;font-weight:600">- Saída</span>
+                    {% endif %}
+                </td>
+                <td>{{ m.categoria }}</td>
+                <td>{{ m.descricao or '-' }}</td>
+                <td style="font-weight:600">R$ {{ m.valor|replace('.', ',') }}</td>
+                <td>
+                    {% if m.status == 'pago' %}
+                        <span style="color:#1da851">Pago</span>
+                    {% elif m.status == 'pendente' %}
+                        <span style="color:#ffa400">Pendente</span>
+                    {% else %}
+                        <span style="color:#ff4444">Cancelado</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if m.trabalhador_nome %}
+                        <a href="/financeiro/trabalhador/{{ m.trabalhador_id }}">{{ m.trabalhador_nome }}</a>
+                    {% elif m.pessoa_nome %}
+                        <a href="/financeiro/pessoa/{{ m.pessoa_id }}">{{ m.pessoa_nome }}</a>
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:var(--cor-texto-suave)">Nenhuma movimentação encontrada para os filtros selecionados.</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block titulo %}Presença — {{ trabalhador.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Presença</h2>
+    <a href="/cadastros/trabalhadores" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<h3 style="margin:1rem 0">{{ trabalhador.nome_completo }}</h3>
+
+<form method="get" style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:1rem">
+    <div class="campo">
+        <label>Mês/Ano</label>
+        <input type="text" name="mes" id="mes"
+               value="{{ mes_atual }}" placeholder="AAAA-MM" maxlength="7"
+               pattern="\d{4}-\d{2}" style="width:120px">
+    </div>
+    <button type="submit" class="btn btn-secundario">Filtrar</button>
+</form>
+
+<table>
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Presença</th>
+            <th>Chegada</th>
+            <th>Saída</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in registros %}
+        <tr>
+            <td>{{ r.data | data_br }}</td>
+            <td>
+                <span class="badge {% if r.presente %}badge-ativo{% else %}badge-inativo{% endif %}">
+                    {{ 'Presente' if r.presente else 'Ausente' }}
+                </span>
+            </td>
+            <td>{{ r.hora_chegada or '—' }}</td>
+            <td>{{ r.hora_saida or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" style="text-align:center;color:var(--cor-texto-suave)">
+            Nenhum registro para este período.
+        </td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Máscara de mês AAAA-MM
+const campoMes = document.getElementById('mes');
+if (campoMes) {
+    campoMes.addEventListener('input', function() {
+        let v = this.value.replace(/\D/g, '');
+        if (v.length > 4) v = v.slice(0,4) + '-' + v.slice(4);
+        this.value = v.slice(0, 7);
+    });
+}
+</script>
+{% endblock %}

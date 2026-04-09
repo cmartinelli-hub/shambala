@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titulo %}Financeiro — {{ trabalhador.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Financeiro — {{ trabalhador.nome_completo }}</h2>
+    <a href="/financeiro" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div class="card-form" style="margin-bottom:1rem; padding:0.8rem; background:var(--cor-fundo); border-radius:var(--raio)">
+    <strong>Mensalidade: R$ {{ trabalhador.valor_mensalidade|replace('.', ',') }}</strong>
+    &nbsp;&nbsp;|&nbsp;&nbsp;<strong>Vencimento: dia {{ trabalhador.dia_vencimento or 10 }}</strong>
+</div>
+
+{% if movs %}
+<div class="card-form">
+    <div style="overflow-x:auto">
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Categoria</th>
+                <th>Descrição</th>
+                <th>Valor</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for m in movs %}
+            <tr>
+                <td>{{ m.data_movimentacao|data_br }}</td>
+                <td>
+                    {% if m.tipo == 'entrada' %}
+                        <span style="color:#1da851;font-weight:600">+ Entrada</span>
+                    {% else %}
+                        <span style="color:#ff4444;font-weight:600">- Saída</span>
+                    {% endif %}
+                </td>
+                <td>{{ m.categoria }}</td>
+                <td>{{ m.descricao or '-' }}</td>
+                <td style="font-weight:600">R$ {{ m.valor|replace('.', ',') }}</td>
+                <td>
+                    {% if m.status == 'pago' %}
+                        <span style="color:#1da851">Pago</span>
+                    {% elif m.status == 'pendente' %}
+                        <span style="color:#ffa400">Pendente</span>
+                    {% else %}
+                        <span style="color:#ff4444">Cancelado</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% else %}
+<div class="card-form">
+    <p style="color:var(--cor-texto-suave)">Nenhuma movimentação financeira vinculada a este trabalhador.</p>
+</div>
+{% endif %}
+{% endblock %}

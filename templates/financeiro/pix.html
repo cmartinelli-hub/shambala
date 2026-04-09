@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block titulo %}Gerar PIX{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Gerar QR Code PIX</h2>
+    <div style="display:flex; gap:0.5rem">
+        <a href="/financeiro" class="btn btn-secundario">← Voltar</a>
+    </div>
+</div>
+
+<div class="card-form">
+    <form method="get" action="/financeiro/pix" style="display:flex; gap:0.5rem; align-items:flex-end; margin-bottom:1.5rem; flex-wrap:wrap">
+        <div class="campo" style="margin:0">
+            <label>Chave PIX</label>
+            <input type="text" name="chave" value="{{ chave }}" placeholder="CPF, e-mail, telefone ou chave aleatória">
+        </div>
+        <div class="campo" style="margin:0">
+            <label>Valor (R$)</label>
+            <input type="number" name="valor" step="0.01" min="0" value="{{ valor if valor > 0 else '' }}">
+        </div>
+        <div class="campo" style="margin:0">
+            <label>Descrição</label>
+            <input type="text" name="descricao" value="{{ descricao }}" placeholder="Ex: Mensalidade João - 04/2026">
+        </div>
+        <button type="submit" class="btn btn-primario" style="margin:0;padding:0.5rem 1.2rem">Gerar QR Code</button>
+    </form>
+
+    {% if qr_base64 %}
+    <div style="text-align:center; padding:1.5rem; background:var(--cor-fundo); border-radius:var(--raio); margin-bottom:1rem">
+        <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR Code PIX" style="border:2px solid var(--cor-borda); border-radius:var(--raio); padding:1rem; background:white; max-width:250px">
+        <div style="margin-top:1rem">
+            {% if valor > 0 %}
+            <h3 style="color:var(--cor-primaria); font-size:1.5rem">R$ {{ valor|replace('.', ',') }}</h3>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="campo-copiar" style="display:flex; gap:0.5rem; align-items:flex-start">
+        <input type="text" value="{{ pix_code }}" id="campo-pix-copia" readonly
+               style="flex:1; padding:0.5rem; border:1px solid var(--cor-borda); border-radius:var(--raio); font-family:monospace; font-size:0.85rem;">
+        <button class="btn btn-secundario" onclick="copiarPix()">Copiar código</button>
+    </div>
+    <p class="dica" style="color:var(--cor-texto-suave); font-size:0.85rem; margin-top:0.3rem">Cole este código no app do seu banco para efetuar o pagamento.</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copiarPix() {
+    const campo = document.getElementById('campo-pix-copia');
+    campo.select();
+    campo.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(campo.value).then(async function() {
+        alert('Código PIX copiado!');
+    });
+}
+</script>
+{% endblock %}

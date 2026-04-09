@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shambala — Chamada</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #0d2d5e;
+            color: #fff;
+            font-family: system-ui, -apple-system, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            transition: background 0.6s ease;
+        }
+
+        .cabecalho {
+            position: fixed;
+            bottom: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: .6rem;
+            opacity: .45;
+        }
+
+        .logo-chamada {
+            width: 28px;
+        }
+
+        .titulo {
+            font-size: .95rem;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+        }
+
+        .label {
+            font-size: clamp(.75rem, 1.5vw, 1rem);
+            letter-spacing: .2em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,.6);
+            margin-bottom: .5rem;
+        }
+
+        .codigo {
+            font-size: clamp(10rem, 42vw, 30rem);
+            font-weight: 900;
+            line-height: 1;
+            color: #fff;
+            letter-spacing: .04em;
+            text-shadow: 0 4px 40px rgba(0,0,0,.3);
+        }
+
+        .codigo.entrada {
+            animation: entrada 5s ease forwards;
+        }
+
+        @keyframes entrada {
+            0%   { transform: scale(.05); opacity: 0; }
+            12%  { transform: scale(1.2);  opacity: 1; }
+            20%  { transform: scale(.92); }
+            30%  { transform: scale(1.1); }
+            40%  { transform: scale(.96); }
+            52%  { transform: scale(1.06); }
+            63%  { transform: scale(.98); }
+            75%  { transform: scale(1.03); }
+            88%  { transform: scale(1.0); }
+            100% { transform: scale(1.0); }
+        }
+
+        .aguardando {
+            font-size: clamp(1rem, 3vw, 2rem);
+            color: rgba(255,255,255,.2);
+            letter-spacing: .1em;
+        }
+
+        .status {
+            position: fixed;
+            bottom: .8rem;
+            right: 1.2rem;
+            font-size: .7rem;
+            color: rgba(255,255,255,.18);
+        }
+    </style>
+</head>
+<body>
+    <div class="cabecalho">
+        <img src="/static/logo-branca.svg" alt="Logo" class="logo-chamada">
+        <span class="titulo">Centro Espírita Shambala</span>
+    </div>
+
+    <div id="conteudo-codigo" style="text-align:center">
+        <div class="aguardando">aguardando chamada…</div>
+    </div>
+
+    <div class="status" id="status">conectando…</div>
+
+    <script>
+        const conteudo = document.getElementById("conteudo-codigo");
+        const statusEl = document.getElementById("status");
+
+        const cores = [
+            "#0D47A1",  // azul royal
+            "#B71C1C",  // vermelho
+            "#E65100",  // laranja
+            "#1B5E20",  // verde
+            "#4A148C",  // roxo
+            "#004D40",  // verde-azulado
+        ];
+        let indiceCor = 0;
+
+        function proximaCor() {
+            indiceCor = (indiceCor + 1) % cores.length;
+            document.body.style.background = cores[indiceCor];
+        }
+
+        function conectar() {
+            const proto = location.protocol === "https:" ? "wss" : "ws";
+            const ws = new WebSocket(`${proto}://${location.host}/chamada/ws`);
+
+            ws.onopen = () => {
+                statusEl.textContent = "conectado";
+            };
+
+            ws.onmessage = (ev) => {
+                const codigo = ev.data.trim();
+                proximaCor();
+                conteudo.innerHTML = `
+                    <div class="label">senha</div>
+                    <div class="codigo entrada" id="cod">${codigo}</div>
+                `;
+            };
+
+            ws.onclose = () => {
+                statusEl.textContent = "desconectado — reconectando…";
+                setTimeout(conectar, 3000);
+            };
+
+            ws.onerror = () => ws.close();
+        }
+
+        conectar();
+    </script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shambala — Menu</title>
+    <link rel="stylesheet" href="/static/css/base.css">
+</head>
+<body>
+    <div class="topo">
+        <a href="/menu" class="topo-marca">
+            <img src="/static/logo-branca.svg" alt="Logo" class="logo-topo">
+            <span>Shambala</span>
+        </a>
+        <span>{{ atendente.nome_completo }} &nbsp;|&nbsp; <a href="/logout">Sair</a></span>
+    </div>
+
+    <div class="conteudo">
+        <div class="grade-menu">
+            <a href="/dia" class="card-menu">
+                <div class="icone">📋</div>
+                <span>Dia de Trabalho</span>
+            </a>
+            <a href="/cadastros/pessoas" class="card-menu">
+                <div class="icone">👥</div>
+                <span>Pessoas</span>
+            </a>
+            <a href="/cadastros/mediuns" class="card-menu">
+                <div class="icone"><img src="/static/medium.svg" class="icone-svg" alt="Médiuns"></div>
+                <span>Médiuns</span>
+            </a>
+            <a href="/cadastros/atendentes" class="card-menu">
+                <div class="icone">🔑</div>
+                <span>Atendentes</span>
+            </a>
+            <a href="/agenda" class="card-menu">
+                <div class="icone">📅</div>
+                <span>Agenda</span>
+            </a>
+            <a href="/relatorios" class="card-menu">
+                <div class="icone">📊</div>
+                <span>Relatórios</span>
+            </a>
+            <a href="/configuracoes" class="card-menu">
+                <div class="icone">⚙️</div>
+                <span>Configurações</span>
+            </a>
+            <a href="/mala-direta" class="card-menu">
+                <div class="icone">✉️</div>
+                <span>Mala Direta</span>
+            </a>
+            <a href="/cadastros/trabalhadores" class="card-menu">
+                <div class="icone"><img src="/static/medium.svg" class="icone-svg" alt="Trabalhadores"></div>
+                <span>Trabalhadores</span>
+            </a>
+            <a href="/cadastros/permissoes" class="card-menu">
+                <div class="icone">🔒</div>
+                <span>Permissões</span>
+            </a>
+            <a href="/financeiro" class="card-menu">
+                <div class="icone">💰</div>
+                <span>Financeiro</span>
+            </a>
+            <a href="/doacoes" class="card-menu">
+                <div class="icone">📦</div>
+                <span>Doações</span>
+            </a>
+            <a href="/biblioteca" class="card-menu">
+                <div class="icone">📚</div>
+                <span>Biblioteca</span>
+            </a>
+        </div>
+    </div>
+</body>
+</html>

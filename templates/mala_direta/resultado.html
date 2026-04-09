@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block titulo %}Mala Direta — Resultado{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Mala Direta — Preparar Envio</h2>
+    <div style="display:flex; gap:0.5rem">
+        <a href="/mala-direta" class="btn btn-secundario">Voltar</a>
+        <a href="/menu" class="btn btn-secundario">Menu</a>
+    </div>
+</div>
+
+<!-- Resumo -->
+<div class="card-form" style="margin-bottom:1.5rem">
+    <p>
+        <strong>Canal:</strong> {% if canal == "email" %}E-mail{% else %}WhatsApp{% endif %}
+        {% if assunto %} &nbsp;|&nbsp; <strong>Assunto:</strong> {{ assunto }}{% endif %}
+    </p>
+    {% if lista_emails %}
+    <p><strong>Destinatrios (e-mail):</strong> {{ lista_emails|length }}</p>
+    {% endif %}
+    {% if lista_telefones %}
+    <p><strong>Destinatrios (WhatsApp):</strong> {{ lista_telefones|length }}</p>
+    {% endif %}
+</div>
+
+{% if canal == "email" %}
+<!-- Resultado para E-MAIL -->
+<div class="card-form">
+    {% if enviados %}
+    <div class="alerta-sucesso" style="margin-bottom:1rem;padding:.8rem 1rem;background:#1da85122;border:1px solid #1da851;border-radius:var(--raio)">
+        Enviados: <strong>{{ enviados }}</strong> e-mail(es) via SMTP.
+        {% if falhas %}{{ falhas|length }} falha(s).{% endif %}
+    </div>
+    {% endif %}
+    {% if falhas %}
+    <div style="margin-bottom:1rem;padding:.8rem 1rem;background:#ff444422;border:1px solid #ff4444;border-radius:var(--raio)">
+        <strong>Falhas:</strong>
+        <ul style="margin:.3rem 0 0; padding-left:1.2rem">
+        {% for f in falhas %}
+            <li>{{ f.nome }} ({{ f.email }}): {{ f.erro }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if lista_emails and emails_str_comma %}
+    <form method="post" action="/mala-direta/enviar" style="margin-bottom:1rem">
+        <input type="hidden" name="assunto" value="{{ assunto }}">
+        <input type="hidden" name="mensagem" value="{{ mensagem }}">
+        <input type="hidden" name="emails_selecionados" value="{{ emails_str }}">
+        <input type="hidden" name="telefones_selecionados" value="">
+        <input type="hidden" name="canal" value="email">
+        <input type="hidden" name="acao" value="enviar">
+        <button type="submit" class="btn btn-primario"
+                onclick="return confirm('Enviar {{ lista_emails|length }} e-mails via SMTP?')">
+            Enviar por SMTP
+        </button>
+    </form>
+
+    <h3 style="margin:1rem 0 0.5rem; color:var(--cor-primaria); font-size:1rem">1. Endereos de e-mail para copiar</h3>
+    <div class="campo-copiar">
+        <input type="text" value="{{ emails_str_comma }}" id="campo-emails" readonly>
+        <button class="btn-copiar" onclick="copiarTexto('campo-emails')">Copiar</button>
+    </div>
+    <p class="dica" style="margin-top:0.3rem">Cole no campo "Para:" (Cc:) do seu cliente de e-mail, ou use o botão "Enviar por SMTP" acima.</p>
+
+    <h3 style="margin:1.5rem 0 0.5rem; color:var(--cor-primaria); font-size:1rem">2. Assunto</h3>
+    <div class="campo-copiar">
+        <input type="text" value="{{ assunto }}" id="campo-assunto" readonly>
+        <button class="btn-copiar" onclick="copiarTexto('campo-assunto')">Copiar</button>
+    </div>
+
+    <h3 style="margin:1.5rem 0 0.5rem; color:var(--cor-primaria); font-size:1rem">3. Mensagem</h3>
+    <div class="campo-copiar">
+        <textarea id="campo-mensagem" class="textarea-resultado" readonly>{{ mensagem }}</textarea>
+        <button class="btn-copiar" onclick="copiarTexto('campo-mensagem')">Copiar</button>
+    </div>
+
+    <h3 style="margin:1.5rem 0 0.5rem; color:var(--cor-primaria); font-size:1rem">4. Abrir no cliente de e-mail (mensagem curta)</h3>
+    {% if mailto_link %}
+    <a href="{{ mailto_link }}" class="btn btn-primario">Abrir no cliente de e-mail</a>
+    <p class="dica">Se seus destinatrios e mensagem forem curtos, isso abrir o programa de e-mail padr com tudo preenchido.</p>
+    {% else %}
+    <p class="dica">O link mailto no pode ser gerado — a mensagem ou a lista de e-mails muito longa para a URL. Copie os dados manualmente conforme os campos acima.</p>
+    {% endif %}
+    {% else %}
+    <p style="color:var(--cor-alerta); font-weight:600">Nenhum e-mail selecionado para envio.</p>
+    {% endif %}
+</div>
+
+{% elif canal == "whatsapp" %}
+<!-- Resultado para WHATSAPP -->
+<div class="card-form">
+    <h3 style="margin:0 0 0.5rem; color:var(--cor-primaria); font-size:1rem">1. Mensagem para copiar</h3>
+    <div class="campo-copiar">
+        <textarea id="campo-mensagem-wa" class="textarea-resultado" readonly>{{ mensagem }}</textarea>
+        <button class="btn-copiar" onclick="copiarTexto('campo-mensagem-wa')">Copiar</button>
+    </div>
+    <p class="dica" style="margin-top:0.3rem">Copie esta mensagem e cole em cada conversa do WhatsApp.</p>
+
+    <h3 style="margin:1.5rem 0 0.5rem; color:var(--cor-primaria); font-size:1rem">2. Lista de telefones</h3>
+    {% if telefones_lista %}
+    <div class="campo-copiar">
+        <input type="text" value="{{ telefones_lista }}" id="campo-tels" readonly>
+        <button class="btn-copiar" onclick="copiarTexto('campo-tels')">Copiar</button>
+    </div>
+    <p class="dica" style="margin-top:0.3rem">Lista de nmeros para referncia.</p>
+    {% endif %}
+
+    <h3 style="margin:1.5rem 0 0.5rem; color:var(--cor-primaria); font-size:1rem">3. Abrir conversa individual (wa.me)</h3>
+    <p class="dica">Clique no boto ao lado de cada pessoa para abrir o WhatsApp Web com a mensagem pr-preenchida.</p>
+    {% if telefones_wa %}
+    <div class="lista-whatsapp">
+        {% for t in telefones_wa %}
+        <div class="item-whatsapp">
+            <span class="nome-wa">{{ t.nome }}</span>
+            <span class="tel-wa">{{ t.tel_display }}</span>
+            <form method="post" action="/mala-direta/whatsapp-abrir" target="_blank" style="display:inline">
+                <input type="hidden" name="numero" value="{{ t.tel_display }}">
+                <input type="hidden" name="mensagem" value="{{ mensagem }}">
+                <button type="submit" class="btn-wa-small">Abrir WhatsApp</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copiarTexto(id) {
+    var campo = document.getElementById(id);
+    if (campo.tagName === 'INPUT' || campo.tagName === 'TEXTAREA') {
+        campo.select();
+        campo.setSelectionRange(0, 99999);
+        navigator.clipboard.writeText(campo.value).then(function() {
+            mostrarConfirmao(campo);
+        });
+    }
+}
+
+function mostrarConfirmao(campo) {
+    var existente = campo.parentElement.querySelector('.copiado-ok');
+    if (existente) existente.remove();
+
+    var span = document.createElement('span');
+    span.className = 'copiado-ok';
+    span.textContent = 'Copiado!';
+    campo.parentElement.appendChild(span);
+    setTimeout(function() { span.remove(); }, 2000);
+}
+</script>
+
+<style>
+.campo-copiar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+.campo-copiar input,
+.campo-copiar textarea {
+    flex: 1;
+    background: var(--cor-fundo);
+    border: 1px solid var(--cor-borda);
+    color: var(--cor-texto);
+    border-radius: var(--raio);
+    padding: 0.5rem;
+    font-size: 0.95rem;
+    font-family: monospace;
+}
+.textarea-resultado {
+    min-height: 120px;
+    resize: vertical;
+    width: 100%;
+    box-sizing: border-box;
+}
+.btn-copiar {
+    background: var(--cor-fundo);
+    color: var(--cor-texto);
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+.btn-copiar:hover { background: var(--cor-borda); }
+.copiado-ok {
+    color: #1da851;
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-left: 0.5rem;
+}
+
+.dica {
+    color: var(--cor-texto-suave);
+    font-size: 0.85rem;
+    margin-top: 0.3rem;
+}
+
+.lista-whatsapp {
+    margin-top: 0.5rem;
+}
+.item-whatsapp {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--cor-borda);
+    font-size: 0.9rem;
+}
+.item-whatsapp:last-child { border-bottom: none; }
+.nome-wa { font-weight: 600; flex: 1; }
+.tel-wa { color: var(--cor-texto-suave); }
+
+.btn-wa-small {
+    background: #25d366;
+    color: #fff;
+    border: none;
+    border-radius: var(--raio);
+    padding: 0.35rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.btn-wa-small:hover { background: #1da851; }
+</style>
+{% endblock %}

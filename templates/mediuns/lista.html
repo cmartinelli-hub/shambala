@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block titulo %}Médiuns{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Médiuns</h2>
+    <a href="/cadastros/mediuns/novo" class="btn btn-primario">+ Novo médium</a>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Nome completo</th>
+            <th>Telefone</th>
+            <th>E-mail</th>
+            <th>Situação</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in mediuns %}
+        <tr class="{% if not m.ativo %}inativo{% endif %}">
+            <td>{{ m.nome_completo }}</td>
+            <td>{{ m.telefone or '—' }}</td>
+            <td>{{ m.email or '—' }}</td>
+            <td>
+                <span class="badge {% if m.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
+                    {{ 'Ativo' if m.ativo else 'Inativo' }}
+                </span>
+            </td>
+            <td class="acoes">
+<a href="/cadastros/mediuns/{{ m.id }}/editar" class="btn btn-secundario btn-sm">Editar</a>
+                <form method="post" action="/cadastros/mediuns/{{ m.id }}/toggle-ativo" style="display:inline">
+                    <button type="submit" class="btn btn-sm {% if m.ativo %}btn-perigo{% else %}btn-secundario{% endif %}">
+                        {{ 'Desativar' if m.ativo else 'Ativar' }}
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" style="text-align:center;color:var(--cor-texto-suave)">Nenhum médium cadastrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

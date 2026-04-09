@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block titulo %}Doações{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Doações</h2>
+    <div style="display:flex; gap:0.5rem">
+        <a href="/doacoes/nova" class="btn btn-primario">+ Nova Doação</a>
+        <a href="/doacoes/relatorio" class="btn btn-secundario">Relatório</a>
+    </div>
+</div>
+
+<!-- Filtros -->
+<form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap">
+    <div class="campo" style="margin:0">
+        <label>Data início</label>
+        <input type="date" name="data_inicio" value="{{ data_inicio }}">
+    </div>
+    <div class="campo" style="margin:0">
+        <label>Data fim</label>
+        <input type="date" name="data_fim" value="{{ data_fim }}">
+    </div>
+    <div class="campo" style="margin:0">
+        <label>Status</label>
+        <select name="entregue">
+            <option value="" {% if not entregue %}selected{% endif %}>Todas</option>
+            <option value="s" {% if entregue == 's' %}selected{% endif %}>Entregues</option>
+            <option value="n" {% if entregue == 'n' %}selected{% endif %}>Pendentes</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primario" style="margin:0; padding:0.5rem 1rem">Filtrar</button>
+</form>
+
+<!-- Resumo -->
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1.5rem">
+    <div class="card-form" style="text-align:center; border-left:4px solid var(--cor-primaria)">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Total Doações</div>
+        <div style="font-size:1.5rem; font-weight:700">{{ total_cestas }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left:4px solid #1da851">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Entregues</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1da851">{{ entregues_count }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left:4px solid #ffa400">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Pendentes</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#ffa400">{{ total_cestas - entregues_count }}</div>
+    </div>
+</div>
+
+<!-- Gerenciar tipos -->
+<div style="margin-bottom:1.5rem; text-align:right">
+    <a href="/doacoes/tipos" class="btn btn-secundario" style="font-size:0.9rem">⚙️ Gerenciar tipos de doação</a>
+</div>
+
+<!-- Lista -->
+<div class="card-form">
+{% if doacoes %}
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Pessoa</th>
+            <th>Tipos de Doação</th>
+            <th>Observação</th>
+            <th>Status</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for d in doacoes %}
+        <tr>
+            <td>{{ d.data_entrega|data_br }}</td>
+            <td>
+                <a href="/doacoes/pessoa/{{ d.pessoa_id }}">{{ d.pessoa_nome }}</a>
+            </td>
+            <td style="font-size:0.9rem">
+                {% if d.itens_list %}
+                    {% for item in d.itens_list %}
+                    <div>{{ item.nome }} ({{ item.quantidade }})</div>
+                    {% endfor %}
+                {% else %}
+                    <em style="color:var(--cor-texto-suave)">-</em>
+                {% endif %}
+            </td>
+            <td style="font-size:0.9rem">{{ d.observacao or '' }}</td>
+            <td>
+                {% if d.entregue %}
+                    <span style="color:#1da851;font-weight:600">Entregue</span>
+                {% else %}
+                    <span style="color:#ffa400;font-weight:600">Pendente</span>
+                {% endif %}
+            </td>
+            <td style="display:flex; gap:0.3rem">
+                {% if not d.entregue %}
+                <form method="post" action="/doacoes/{{ d.id }}/entregue" style="display:inline">
+                    <button type="submit" class="btn btn-primario" style="padding:0.2rem 0.5rem; font-size:0.8rem">Entregue</button>
+                </form>
+                {% else %}
+                <form method="post" action="/doacoes/{{ d.id }}/nao-entregue" style="display:inline">
+                    <button type="submit" class="btn btn-secundario" style="padding:0.2rem 0.5rem; font-size:0.8rem">Desfazer</button>
+                </form>
+                {% endif %}
+                <a href="/doacoes/{{ d.id }}/editar" class="btn btn-secundario" style="padding:0.2rem 0.5rem; font-size:0.8rem">Editar</a>
+                <form method="post" action="/doacoes/{{ d.id }}/remover" style="display:inline">
+                    <button type="submit" class="btn btn-secundario" style="padding:0.2rem 0.5rem; font-size:0.8rem; color:#ff4444"
+                            onclick="return confirm('Remover esta doação?')">Remover</button>
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave)">Nenhuma doação registrada no período.</p>
+{% endif %}
+</div>
+{% endblock %}

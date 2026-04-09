@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block titulo %}Doações — Relatório{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Doações — Relatório de Prestação de Contas</h2>
+    <a href="/doacoes" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<!-- Filtro período + tipo -->
+<form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap">
+    <div class="campo" style="margin:0">
+        <label>Data início</label>
+        <input type="date" name="data_inicio" value="{{ data_inicio }}">
+    </div>
+    <div class="campo" style="margin:0">
+        <label>Data fim</label>
+        <input type="date" name="data_fim" value="{{ data_fim }}">
+    </div>
+    <div class="campo" style="margin:0">
+        <label>Tipo de doação</label>
+        <select name="tipo_id">
+            <option value="">Todas</option>
+            {% for t in tipos %}
+            <option value="{{ t.id }}" {% if tipo_id_selecionado == t.id %}selected{% endif %}>{{ t.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primario" style="margin:0; padding:0.5rem 1rem">Gerar</button>
+</form>
+
+<!-- Resumo -->
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1.5rem">
+    <div class="card-form" style="text-align:center; border-left:4px solid var(--cor-primaria)">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Total Cestas no Período</div>
+        <div style="font-size:1.5rem; font-weight:700">{{ doacoes|length }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left:4px solid #1da851">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Entregues</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1da851">{{ entregues }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left:4px solid #ffa400">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Pendentes</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#ffa400">{{ pendentes }}</div>
+    </div>
+</div>
+
+<!-- Resumo por tipo (se houver) -->
+{% if resumo_tipos %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin:0 0 1rem; font-size:1rem; color:var(--cor-primaria)">Resumo por Tipo</h3>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1rem">
+        {% for tipo_nome, total_qtd in resumo_tipos.items() %}
+        <div style="padding:1rem; background:var(--cor-fundo); border-radius:var(--raio); border-left:4px solid var(--cor-primaria)">
+            <div style="font-size:0.85rem; color:var(--cor-texto-suave)">{{ tipo_nome }}</div>
+            <div style="font-size:1.5rem; font-weight:700">{{ total_qtd }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Tabela para impressão -->
+<div class="card-form" id="relatorio-impressao">
+    <h3 style="margin:0 0 1rem; font-size:1rem; color:var(--cor-primaria)">
+        Doações: {{ data_inicio|data_br }} a {{ data_fim|data_br }}
+    </h3>
+    {% if doacoes %}
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Data Entrega</th>
+                <th>Beneficiário</th>
+                <th>Endereço</th>
+                <th>Tipos Doados</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for d in doacoes %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ d.data_entrega|data_br }}</td>
+                <td>{{ d.pessoa_nome }}</td>
+                <td style="font-size:0.85rem">
+                    {% if d.logradouro %}
+                    {{ d.logradouro }}, {{ d.numero or '' }}<br>
+                    {{ d.bairro or '' }} — {{ d.cidade or '' }}/{{ d.uf or '' }}
+                    {% else %}
+                    <em>Endereço não informado</em>
+                    {% endif %}
+                </td>
+                <td style="font-size:0.85rem">
+                    {% if d.itens_list %}
+                        {% for item in d.itens_list %}
+                        <div>{{ item.nome }} ({{ item.quantidade }})</div>
+                        {% endfor %}
+                    {% else %}
+                        <em>-</em>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if d.entregue %}
+                        <span style="color:#1da851">✅ Entregue</span>
+                    {% else %}
+                        <span style="color:#ffa400">⏳ Pendente</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--cor-texto-suave)">Nenhuma doação registrada no período selecionado.</p>
+    {% endif %}
+</div>
+
+<button onclick="window.print()" class="btn btn-primario" style="margin-top:1rem">🖨️ Imprimir</button>
+
+<style>
+@media print {
+    .topo, .cabecalho-secao, form, button { display:none !important; }
+    .conteudo { max-width:100% !important; padding:0 !important; margin:0 !important; }
+    .card-form { box-shadow:none !important; border:1px solid #ccc !important; }
+}
+</style>
+{% endblock %}

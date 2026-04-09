@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block titulo %}Permissões – Grupos{% endblock %}
+{% block conteudo %}
+<h1>Grupos de Acesso</h1>
+
+<p class="texto-ajuda">
+    Grupos definem quais módulos cada atendente pode acessar.<br>
+    O grupo <strong>Admin</strong> tem acesso total e não pode ser removido.
+</p>
+
+<form method="post" action="/cadastros/permissoes/novo" class="form-grupo">
+    <h2>Novo Grupo</h2>
+    <div class="form-linha">
+        <input type="text" id="nome" name="nome" placeholder="Nome do grupo" required>
+        <input type="text" id="descricao" name="descricao" placeholder="Descrição (opcional)">
+        <button type="submit">Criar</button>
+    </div>
+</form>
+
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Grupo</th>
+            <th>Descrição</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for g in grupos %}
+        <tr>
+            <td>{{ g.nome }}</td>
+            <td>{{ g.descricao }}</td>
+            <td>
+                <a href="/cadastros/permissoes/{{ g.id }}/editar" class="btn btn-sm">Editar</a>
+                {% if g.nome != "Admin" %}
+                <form method="post" action="/cadastros/permissoes/{{ g.id }}/remover" style="display:inline"
+                      onsubmit="return confirm('Remover grupo {{ g.nome }}? Atendentes ficarão sem grupo.')">
+                    <button type="submit" class="btn btn-sm btn-perigo">Remover</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

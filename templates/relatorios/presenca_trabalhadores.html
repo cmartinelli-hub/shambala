@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block titulo %}Presenças dos Trabalhadores{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Presenças dos Trabalhadores</h2>
+    <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
+</div>
+
+<form method="get" class="barra-busca" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        De <input type="date" name="data_ini" value="{{ data_ini }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Até <input type="date" name="data_fim" value="{{ data_fim }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Dia
+        <select name="dia_semana" style="padding:0.4rem 0.6rem">
+            <option value="" {% if not dia_semana %}selected{% endif %}>Todos</option>
+            {% for d in dias_atendimento %}
+            <option value="{{ d.dia_semana }}" {% if dia_semana == d.dia_semana|string %}selected{% endif %}>{{ d.descricao }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <button type="submit" class="btn btn-primario">Filtrar</button>
+</form>
+
+{% if trabalhadores %}
+<table>
+    <thead>
+        <tr>
+            <th>Trabalhador</th>
+            <th style="text-align:center">Presenças</th>
+            <th style="text-align:center">Faltas</th>
+            <th style="text-align:center">Total</th>
+            <th style="text-align:center">% Presença</th>
+            <th style="text-align:center">% Falta</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in trabalhadores %}
+        {% if t.total_dias > 0 %}
+        <tr>
+            <td>
+                <a href="/relatorios/presenca-trabalhador?trabalhador_id={{ t.id }}&data_ini={{ data_ini }}&data_fim={{ data_fim }}&dia_semana={{ dia_semana }}">{{ t.nome_completo }}</a>
+            </td>
+            <td style="text-align:center;color:#27ae60;font-weight:600">{{ t.presencas }}</td>
+            <td style="text-align:center">{% if t.faltas > 0 %}{{ t.faltas }}{% else %}0{% endif %}</td>
+            <td style="text-align:center">{{ t.total_dias }}</td>
+            <td style="text-align:center">{{ (100 * t.presencas / t.total_dias) | round(1) }}%</td>
+            <td style="text-align:center">{{ (100 * t.faltas / t.total_dias) | round(1) }}%</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr style="font-weight:600;border-top:2px solid var(--cor-borda)">
+            <td>Total</td>
+            <td style="text-align:center">{{ trabalhadores | sum(attribute='presencas') }}</td>
+            <td style="text-align:center">{{ trabalhadores | sum(attribute='faltas') }}</td>
+            <td style="text-align:center">{{ trabalhadores | sum(attribute='total_dias') }}</td>
+            <td style="text-align:center">
+                {% if (trabalhadores | sum(attribute='total_dias')) > 0 %}
+                {{ (100 * (trabalhadores | sum(attribute='presencas')) / (trabalhadores | sum(attribute='total_dias'))) | round(1) }}%
+                {% endif %}
+            </td>
+            <td style="text-align:center">
+                {% if (trabalhadores | sum(attribute='total_dias')) > 0 %}
+                {{ (100 * (trabalhadores | sum(attribute='faltas')) / (trabalhadores | sum(attribute='total_dias'))) | round(1) }}%
+                {% endif %}
+            </td>
+        </tr>
+    </tfoot>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
+    Nenhum trabalhador com registros no período.
+</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Relatórios{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Relatórios</h2>
+    <a href="/menu" class="btn btn-secundario">← Menu</a>
+</div>
+
+<div class="grade-menu" style="max-width:700px">
+    <a href="/relatorios/por-dia" class="card-menu">
+        <div class="icone">📅</div>
+        <span>Por Dia</span>
+    </a>
+    <a href="/relatorios/por-pessoa" class="card-menu">
+        <div class="icone">👤</div>
+        <span>Por Pessoa</span>
+    </a>
+    <a href="/relatorios/por-medium" class="card-menu">
+        <div class="icone"><img src="/static/medium.svg" class="icone-svg" alt="Médium"></div>
+        <span>Por Médium</span>
+    </a>
+    <a href="/relatorios/frequencia" class="card-menu">
+        <div class="icone">📊</div>
+        <span>Frequência</span>
+    </a>
+    <a href="/relatorios/presenca-trabalhadores" class="card-menu">
+        <div class="icone">✅</div>
+        <span>Presenças — Trabalhadores</span>
+    </a>
+    <a href="/relatorios/presenca-trabalhador" class="card-menu">
+        <div class="icone">👤</div>
+        <span>Presença — Individual</span>
+    </a>
+</div>
+{% endblock %}

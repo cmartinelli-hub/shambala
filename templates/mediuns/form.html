@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Editar' if registro else 'Novo' }} Médium{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>{{ 'Editar' if registro else 'Novo' }} Médium</h2>
+    <a href="/cadastros/mediuns" class="btn btn-secundario">← Voltar</a>
+</div>
+
+{% if erro %}
+<div class="erro">{{ erro }}</div>
+{% endif %}
+
+<div class="card-form">
+    <form method="post">
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>Nome completo *</label>
+                <input type="text" name="nome_completo" value="{{ registro.nome_completo if registro else '' }}" required autofocus>
+            </div>
+            <div class="campo">
+                <label>Vagas por noite *</label>
+                <input type="number" name="vagas_dia" min="1" max="99"
+                       value="{{ registro.vagas_dia if registro else 10 }}" required style="max-width:100px">
+            </div>
+            <div class="campo">
+                <label>Telefone</label>
+                <input type="tel" name="telefone" id="telefone"
+                       value="{{ registro.telefone if registro else '' }}"
+                       placeholder="(00) 00000-0000" maxlength="15">
+            </div>
+            <div class="campo">
+                <label>E-mail</label>
+                <input type="email" name="email" value="{{ registro.email if registro else '' }}">
+            </div>
+
+            <div class="separador campo-largo"><span>Endereço</span></div>
+
+            <div class="campo campo-cep">
+                <label>CEP</label>
+                <input type="text" name="cep" id="cep" value="{{ registro.cep if registro else '' }}" maxlength="9">
+            </div>
+            <div class="campo campo-largo">
+                <label>Logradouro</label>
+                <input type="text" name="logradouro" id="logradouro" value="{{ registro.logradouro if registro else '' }}">
+            </div>
+            <div class="campo campo-num">
+                <label>Número</label>
+                <input type="text" name="numero" value="{{ registro.numero if registro else '' }}">
+            </div>
+            <div class="campo">
+                <label>Complemento</label>
+                <input type="text" name="complemento" value="{{ registro.complemento if registro else '' }}">
+            </div>
+            <div class="campo">
+                <label>Bairro</label>
+                <input type="text" name="bairro" id="bairro" value="{{ registro.bairro if registro else '' }}">
+            </div>
+            <div class="campo">
+                <label>Cidade</label>
+                <input type="text" name="cidade" id="cidade" value="{{ registro.cidade if registro else '' }}">
+            </div>
+            <div class="campo campo-uf">
+                <label>UF</label>
+                <input type="text" name="uf" id="uf" value="{{ registro.uf if registro else '' }}" maxlength="2">
+            </div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar</button>
+            <a href="/cadastros/mediuns" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/cep.js"></script>
+<script>
+const campoTel = document.getElementById('telefone');
+if (campoTel) {
+    campoTel.addEventListener('input', function() {
+        let v = this.value.replace(/\D/g, '').slice(0, 11);
+        if (v.length > 2)  v = '(' + v.slice(0,2) + ') ' + v.slice(2);
+        if (v.length > 10) v = v.slice(0,10) + '-' + v.slice(10);
+        this.value = v;
+    });
+}
+</script>
+{% endblock %}

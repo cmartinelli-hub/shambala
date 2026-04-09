@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block titulo %}Biblioteca — Novo Livro{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>{{ 'Editar' if registro else 'Novo' }} Livro</h2>
+    <a href="/biblioteca" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div class="card-form">
+    <form method="post">
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>ISBN
+                    {% if not registro %}
+                    <button type="button" id="btn-buscar-isbn" class="btn btn-secundario" style="padding:0.2rem 0.5rem; font-size:0.75rem; margin-left:0.5rem">Buscar ISBN</button>
+                    {% endif %}
+                </label>
+                <input type="text" name="isbn" id="campo-isbn"
+                       value="{{ registro.isbn if registro else '' }}"
+                       placeholder="0000000000">
+                {% if not registro %}
+                <span id="isbn-status" class="dica" style="display:none"></span>
+                {% endif %}
+            </div>
+            <div class="campo campo-largo">
+                <label>Título *</label>
+                <input type="text" name="titulo" id="campo-titulo" value="{{ registro.titulo if registro else '' }}" required>
+            </div>
+            <div class="campo">
+                <label>Autor</label>
+                <input type="text" name="autor" id="campo-autor"
+                       value="{{ registro.autor if registro else '' }}">
+            </div>
+            <div class="campo">
+                <label>Editora</label>
+                <input type="text" name="editora" id="campo-editora"
+                       value="{{ registro.editora if registro else '' }}">
+            </div>
+            <div class="campo campo-pequeno">
+                <label>Ano</label>
+                <input type="number" name="ano" id="campo-ano"
+                       value="{{ registro.ano if registro else '' }}">
+            </div>
+            <div class="campo campo-pequeno">
+                <label>Edição</label>
+                <input type="text" name="edicao"
+                       value="{{ registro.edicao if registro else '' }}">
+            </div>
+            <div class="campo campo-pequeno">
+                <label>Quantidade</label>
+                <input type="number" name="quantidade" min="0"
+                       value="{{ registro.quantidade if registro else '1' }}">
+            </div>
+            <div class="campo campo-pequeno">
+                <label>Preço de venda (R$)</label>
+                <input type="number" name="preco_venda" step="0.01" min="0"
+                       value="{{ registro.preco_venda if registro.preco_venda else '0' }}">
+            </div>
+            <div class="campo campo-largo">
+                <label>Observação</label>
+                <input type="text" name="observacao"
+                       value="{{ registro.observacao if registro else '' }}">
+            </div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar</button>
+            <a href="/biblioteca" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if not registro %}
+<script>
+(function() {
+    const btn = document.getElementById('btn-buscar-isbn');
+    const input = document.getElementById('campo-isbn');
+    const status = document.getElementById('isbn-status');
+
+    btn.addEventListener('click', function() {
+        const isbn = input.value.replace(/\D/g, '');
+        if (!isbn) { alert('Digite um ISBN.'); return; }
+        status.style.display = 'block';
+        status.textContent = 'Buscando...';
+
+        fetch('/biblioteca/isbn/' + isbn)
+            .then(r => r.json())
+            .then(d => {
+                if (d.titulo) {
+                    document.getElementById('campo-titulo').value = d.titulo;
+                    document.getElementById('campo-autor').value = d.autor || '';
+                    document.getElementById('campo-editora').value = d.editora || '';
+                    if (d.ano) document.getElementById('campo-ano').value = d.ano;
+                    status.textContent = 'Dados encontrados!';
+                    status.style.color = '#1da851';
+                } else {
+                    status.textContent = 'ISBN não encontrado na API.';
+                    status.style.color = '#ff4444';
+                }
+            })
+            .catch(function() {
+                status.textContent = 'Erro na busca.';
+                status.style.color = '#ff4444';
+            });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

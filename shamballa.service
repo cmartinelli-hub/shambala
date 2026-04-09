@@ -1,0 +1,14 @@
+[Unit]
+Description=Sistema Shambala
+After=network.target
+
+[Service]
+Type=simple
+User=USUARIO
+WorkingDirectory=/opt/shamballa
+ExecStart=/opt/shamballa/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

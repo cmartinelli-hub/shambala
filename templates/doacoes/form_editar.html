@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block titulo %}Editar Doação{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Editar Doação</h2>
+    <a href="/doacoes" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div class="card-form">
+    <div style="padding:0.8rem; background:var(--cor-fundo); border-radius:var(--raio); margin-bottom:1rem">
+        <strong>Pessoa:</strong> {{ doacao.pessoa_nome }}
+    </div>
+    <form method="post">
+        <div class="grade-form">
+            <div class="campo">
+                <label>Data de entrega *</label>
+                <input type="date" name="data_entrega" value="{{ doacao.data_entrega }}">
+            </div>
+            <div class="campo">
+                <label>Entregue?</label>
+                <select name="entregue">
+                    <option value="1" {% if doacao.entregue %}selected{% endif %}>Sim</option>
+                    <option value="0" {% if not doacao.entregue %}selected{% endif %}>Não</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="separador campo-largo" style="margin-top:1.5rem"><span>Tipos de Doação</span></div>
+        <div style="padding:1rem; background:var(--cor-fundo); border-radius:var(--raio); margin-bottom:1rem">
+            {% if tipos %}
+                {% for tipo in tipos %}
+                <div style="display:grid; grid-template-columns:1fr 80px; gap:0.5rem; align-items:center; margin-bottom:0.8rem">
+                    <label style="display:flex; align-items:center; gap:0.5rem; margin:0">
+                        <input type="checkbox" name="tipo_{{ tipo.id }}" value="1" style="width:auto"
+                               {% if tipo.id in itens_selecionados %}checked{% endif %}>
+                        <span>{{ tipo.nome }}</span>
+                        {% if tipo.descricao %}<span style="color:var(--cor-texto-suave); font-size:0.85rem">({{ tipo.descricao }})</span>{% endif %}
+                    </label>
+                    <input type="number" name="item_{{ tipo.id }}" min="0" value="{{ itens_selecionados.get(tipo.id, 0) }}"
+                           style="padding:0.4rem; font-size:0.9rem" placeholder="Qtd">
+                </div>
+                {% endfor %}
+                <div style="text-align:right; margin-top:0.8rem; font-size:0.85rem; color:var(--cor-texto-suave)">
+                    <a href="/doacoes/tipos">Gerenciar tipos de doação →</a>
+                </div>
+            {% else %}
+                <p style="color:var(--cor-texto-suave)">Nenhum tipo de doação cadastrado. <a href="/doacoes/tipos">Criar tipos</a></p>
+            {% endif %}
+        </div>
+
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>Observação</label>
+                <input type="text" name="observacao" value="{{ doacao.observacao or '' }}">
+            </div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar</button>
+            <a href="/doacoes" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

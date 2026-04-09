@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block titulo %}Financeiro — Visão Geral{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Financeiro — Visão Geral</h2>
+    <div style="display:flex; gap:0.5rem">
+        <a href="/financeiro/nova" class="btn btn-primario">+ Nova Movimentação</a>
+        <a href="/financeiro/mensalidades" class="btn btn-secundario">Mensalidades</a>
+        <a href="/financeiro/pix" class="btn btn-secundario">Gerar PIX</a>
+        <a href="/financeiro/relatorios" class="btn btn-secundario">Relatórios</a>
+    </div>
+</div>
+
+<!-- Filtro mês -->
+<form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:center">
+    <label style="font-weight:600">Referência:</label>
+    <input type="month" name="mes" value="{{ mes_ref }}" style="padding:0.4rem; border:1px solid var(--cor-borda); border-radius:var(--raio)">
+    <button type="submit" class="btn btn-primario" style="padding:0.4rem 1rem">Filtrar</button>
+</form>
+
+<!-- Cards de resumo -->
+<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; margin-bottom:1.5rem">
+    <div class="card-form" style="text-align:center; border-left: 4px solid #1da851">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suale)">Entradas (mês)</div>
+        <div style="font-size:1.8rem; font-weight:700; color:#1da851">R$ {{ entradas|replace('.', ',') }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left: 4px solid #ff4444">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Saídas (mês)</div>
+        <div style="font-size:1.8rem; font-weight:700; color:#ff4444">R$ {{ saidas|replace('.', ',') }}</div>
+    </div>
+    <div class="card-form" style="text-align:center; border-left: 4px solid #ffa400">
+        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Pendentes</div>
+        <div style="font-size:1.8rem; font-weight:700; color:#ffa400">R$ {{ pendentes|replace('.', ',') }}</div>
+    </div>
+</div>
+
+<!-- Saldo -->
+<div class="card-form" style="margin-bottom:1.5rem; padding:1rem; background:{{ '1da85122' if entradas >= saidas else 'ff444422' }}; border: 1px solid {{ '#1da851' if entradas >= saidas else '#ff4444' }}; border-radius: var(--raio)">
+    <strong>Saldo do mês: R$ {{ (entradas - saidas)|abs|replace('.', ',') }}</strong>
+    {% if entradas >= saidas %} (positivo){% else %} (negativo){% endif %}
+</div>
+
+<!-- Movimentações recentes -->
+<div class="card-form">
+    <h3 style="margin:0 0 1rem; font-size:1rem; color:var(--cor-primaria)">Movimentações do Mês</h3>
+    {% if movs %}
+    <div style="overflow-x:auto">
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Categoria</th>
+                <th>Descrição</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Vinculado</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for m in movs %}
+            <tr>
+                <td>{{ m.data_movimentacao|data_br }}</td>
+                <td>
+                    {% if m.tipo == 'entrada' %}
+                        <span style="color:#1da851;font-weight:600">+ Entrada</span>
+                    {% else %}
+                        <span style="color:#ff4444;font-weight:600">- Saída</span>
+                    {% endif %}
+                </td>
+                <td>{{ m.categoria }}</td>
+                <td>{{ m.descricao or '' }}</td>
+                <td style="font-weight:600">R$ {{ m.valor|replace('.', ',') }}</td>
+                <td>
+                    {% if m.status == 'pago' %}
+                        <span style="color:#1da851">Pago</span>
+                    {% elif m.status == 'pendente' %}
+                        <span style="color:#ffa400">Pendente</span>
+                    {% else %}
+                        <span style="color:#ff4444">Cancelado</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if m.trabalhador_nome %}
+                        <a href="/financeiro/trabalhador/{{ m.trabalhador_id }}">{{ m.trabalhador_nome }}</a>
+                    {% elif m.pessoa_nome %}
+                        <a href="/financeiro/pessoa/{{ m.pessoa_id }}">{{ m.pessoa_nome }}</a>
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:var(--cor-texto-suave)">Nenhuma movimentação para este mês.</p>
+    {% endif %}
+</div>
+{% endblock %}

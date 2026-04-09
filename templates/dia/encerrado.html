@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block titulo %}Dia Encerrado{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Dia encerrado — {{ dia.data | data_br }}</h2>
+    <a href="/menu" class="btn btn-secundario">← Menu</a>
+</div>
+
+<div class="card-form" style="text-align:center">
+    <p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">O dia de trabalho foi encerrado.</p>
+    <div class="grade-cards">
+        <div class="card-stat">
+            <div class="stat-valor">{{ total }}</div>
+            <div class="stat-label">Total de check-ins</div>
+        </div>
+        <div class="card-stat">
+            <div class="stat-valor">{{ passes }}</div>
+            <div class="stat-label">Passes realizados</div>
+        </div>
+        <div class="card-stat">
+            <div class="stat-valor">{{ atends }}</div>
+            <div class="stat-label">Atendimentos realizados</div>
+        </div>
+    </div>
+
+    {% if msgs_backup %}
+    <div style="margin-top:1.5rem;padding:1rem;background:var(--cor-fundo);border-radius:8px;text-align:left">
+        <p style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;color:var(--cor-texto-suave)">
+            💾 Backup realizado
+        </p>
+        {% for msg in msgs_backup %}
+        <p style="font-size:0.82rem;color:{% if 'falhou' in msg %}var(--cor-perigo){% elif 'nenhum' in msg %}var(--cor-texto-suave){% else %}var(--cor-sucesso, #2a7a2a){% endif %}">
+            {{ msg }}
+        </p>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

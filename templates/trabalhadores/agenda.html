@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}Dias de trabalho — {{ trabalhador.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Dias de trabalho</h2>
+    <a href="/cadastros/trabalhadores" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div class="card-form" style="max-width:480px">
+    <h3 style="margin-bottom:1rem;font-size:1rem">{{ trabalhador.nome_completo }}</h3>
+
+    <form method="post">
+        <div style="display:grid;gap:.5rem;margin-bottom:1.2rem">
+            {% for num, nome in nomes_dia.items() %}
+            <label style="display:flex;align-items:center;gap:.5rem">
+                <input type="checkbox" name="dias_semana" value="{{ num }}"
+                       {% if num in dias_atuais %}checked{% endif %}
+                       style="width:auto;margin:0">
+                {{ nome }}
+            </label>
+            {% endfor %}
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar</button>
+            <a href="/cadastros/trabalhadores" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

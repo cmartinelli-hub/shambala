@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block titulo %}Mala Direta{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Mala Direta</h2>
+    <a href="/menu" class="btn btn-secundario">Menu</a>
+</div>
+
+<form method="get" action="/mala-direta" class="barra-busca">
+    <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar pessoa...">
+    <button type="submit" class="btn btn-secundario">Buscar</button>
+    {% if busca %}
+    <a href="/mala-direta" class="btn btn-secundario">Limpar</a>
+    {% endif %}
+</form>
+
+<form method="post" action="/mala-direta/enviar" id="form-enviar">
+    <div class="grade-duas-colunas">
+        <!-- Coluna 1: Contatos com e-mail -->
+        <div class="painel-contatos">
+            <h3>E-mail ({{ total_email }} contatos)</h3>
+            <div style="margin-bottom:0.5rem">
+                <label><input type="checkbox" id="selecionar-todos-email" onchange="toggleTodos(this, 'email')"> Selecionar todos</label>
+            </div>
+            <div class="lista-contatos" id="lista-emails">
+                {% if com_email %}
+                    {% for p in com_email %}
+                    <label class="item-contato">
+                        <input type="checkbox" name="emails_selecionados" value="{{ p.id }}" class="chk-email" onchange="atualizarTotal()">
+                        <span class="nome">{{ p.nome_completo }}</span>
+                        <span class="detalhe">{{ p.email }}</span>
+                    </label>
+                    {% endfor %}
+                {% else %}
+                    <p class="vazio">Nenhuma pessoa com e-mail cadastrado{% if busca %} para "{{ busca }}"{% endif %}.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Coluna 2: Contatos com telefone (WhatsApp) -->
+        <div class="painel-contatos">
+            <h3>WhatsApp ({{ total_telefone }} contatos)</h3>
+            <div style="margin-bottom:0.5rem">
+                <label><input type="checkbox" id="selecionar-todos-tel" onchange="toggleTodos(this, 'tel')"> Selecionar todos</label>
+            </div>
+            <div class="lista-contatos" id="lista-telefones">
+                {% if com_telefone %}
+                    {% for p in com_telefone %}
+                    <label class="item-contato">
+                        <input type="checkbox" name="telefones_selecionados" value="{{ p.id }}" class="chk-tel" onchange="atualizarTotal()">
+                        <span class="nome">{{ p.nome_completo }}</span>
+                        <span class="detalhe">{{ p.telefone }}</span>
+                    </label>
+                    {% endfor %}
+                {% else %}
+                    <p class="vazio">Nenhuma pessoa com telefone cadastrado{% if busca %} para "{{ busca }}"{% endif %}.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Composio da mensagem -->
+    <div class="card-form">
+        <h3 style="margin-bottom:1rem">Mensagem</h3>
+        <div style="margin-bottom:1rem">
+            <label for="assunto" style="display:block;margin-bottom:0.3rem;font-weight:600;font-size:0.9rem">Assunto (para e-mail):</label>
+            <input type="text" id="assunto" name="assunto" placeholder="Ex: Comunicado importante" maxlength="200">
+        </div>
+        <div style="margin-bottom:1rem">
+            <label for="mensagem" style="display:block;margin-bottom:0.3rem;font-weight:600;font-size:0.9rem">Mensagem:</label>
+            <textarea id="mensagem" name="mensagem" rows="6" placeholder="Digite a mensagem que ser enviada..." required></textarea>
+        </div>
+        <div style="text-align:center;margin-bottom:1rem;font-size:0.9rem;color:var(--cor-texto-suave)">
+            <span id="sel-emails">0</span> e-mails selecionados &nbsp;|&nbsp;
+            <span id="sel-telefones">0</span> telefones selecionados
+        </div>
+        <div class="acoes-form" style="justify-content:center">
+            <button type="submit" name="canal" value="email" class="btn btn-email" onclick="return verificarSelecao('email')">
+                Enviar por E-mail
+            </button>
+            <button type="submit" name="canal" value="whatsapp" class="btn btn-whatsapp" onclick="return verificarSelecao('whatsapp')">
+                Enviar por WhatsApp
+            </button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleTodos(master, tipo) {
+    const cls = tipo === 'email' ? 'chk-email' : 'chk-tel';
+    const checks = document.querySelectorAll('.' + cls);
+    checks.forEach(function(c) { c.checked = master.checked; });
+    atualizarTotal();
+}
+
+function atualizarTotal() {
+    const emails = document.querySelectorAll('.chk-email:checked').length;
+    const telefones = document.querySelectorAll('.chk-tel:checked').length;
+    document.getElementById('sel-emails').textContent = emails;
+    document.getElementById('sel-telefones').textContent = telefones;
+}
+
+function verificarSelecao(valor) {
+    const emails = document.querySelectorAll('.chk-email:checked').length;
+    const telefones = document.querySelectorAll('.chk-tel:checked').length;
+    if (valor === 'email' && emails === 0) {
+        alert('Selecione ao menos um e-mail para enviar.');
+        return false;
+    }
+    if (valor === 'whatsapp' && telefones === 0) {
+        alert('Selecione ao menos um telefone para enviar por WhatsApp.');
+        return false;
+    }
+    const msg = document.getElementById('mensagem').value.trim();
+    if (!msg) {
+        alert('Digite uma mensagem.');
+        return false;
+    }
+    return true;
+}
+</script>
+
+<style>
+.grade-duas-colunas {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+@media (max-width: 768px) {
+    .grade-duas-colunas { grid-template-columns: 1fr; }
+}
+.painel-contatos {
+    background: var(--cor-superficie);
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    padding: 1rem;
+    max-height: 400px;
+    box-shadow: var(--sombra);
+    display: flex;
+    flex-direction: column;
+}
+.painel-contatos h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    color: var(--cor-primaria);
+}
+.lista-contatos {
+    overflow-y: auto;
+    flex: 1;
+}
+.item-contato {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.item-contato:hover { background: var(--cor-fundo); }
+.item-contato .nome { font-weight: 600; }
+.item-contato .detalhe { color: var(--cor-texto-suave); font-size: 0.85rem; margin-left: auto; }
+
+.btn-email {
+    background: var(--cor-primaria);
+    color: #fff;
+    padding: 0.75rem 2rem;
+    border: none;
+    border-radius: var(--raio);
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.btn-email:hover { background: var(--cor-primaria-escura); }
+.btn-whatsapp {
+    background: #25d366;
+    color: #fff;
+    padding: 0.75rem 2rem;
+    border: none;
+    border-radius: var(--raio);
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.btn-whatsapp:hover { background: #1da851; }
+</style>
+{% endblock %}

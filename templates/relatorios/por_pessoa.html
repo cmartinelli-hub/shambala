@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block titulo %}Relatório por Pessoa{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Relatório por Pessoa</h2>
+    <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
+</div>
+
+<!-- Busca de pessoa -->
+{% if not pessoa %}
+<form method="get" class="barra-busca" style="margin-bottom:1.5rem">
+    <input type="hidden" name="data_ini" value="{{ data_ini }}">
+    <input type="hidden" name="data_fim" value="{{ data_fim }}">
+    <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar pessoa pelo nome…" autofocus>
+    <button type="submit" class="btn btn-primario">Buscar</button>
+    {% if busca %}
+    <a href="/relatorios/por-pessoa" class="btn btn-secundario">Limpar</a>
+    {% endif %}
+</form>
+
+{% if busca and not pessoas_encontradas %}
+<p style="color:var(--cor-texto-suave);text-align:center">
+    Nenhuma pessoa encontrada para "{{ busca }}".
+</p>
+{% endif %}
+
+{% if pessoas_encontradas %}
+<table>
+    <thead>
+        <tr><th>Nome</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for p in pessoas_encontradas %}
+        <tr>
+            <td>{{ p.nome_completo }}</td>
+            <td class="acoes">
+                <a href="/relatorios/por-pessoa?pessoa_id={{ p.id }}&data_ini={{ data_ini }}&data_fim={{ data_fim }}"
+                   class="btn btn-primario btn-sm">Ver histórico</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% else %}
+<!-- Filtro de período para a pessoa selecionada -->
+<form method="get" class="barra-busca" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
+    <input type="hidden" name="pessoa_id" value="{{ pessoa_id }}">
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        De <input type="date" name="data_ini" value="{{ data_ini }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Até <input type="date" name="data_fim" value="{{ data_fim }}" style="padding:0.4rem 0.6rem">
+    </label>
+    <button type="submit" class="btn btn-primario">Filtrar</button>
+    <a href="/relatorios/por-pessoa" class="btn btn-secundario">Outra pessoa</a>
+</form>
+
+<h3 style="margin-bottom:1rem">{{ pessoa.nome_completo }}</h3>
+
+{% if historico %}
+<table>
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Hora</th>
+            <th style="text-align:center">Passe</th>
+            <th style="text-align:center">Acolhimento</th>
+            <th style="text-align:center">Atendimento</th>
+            <th>Médium</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in historico %}
+        <tr>
+            <td>{{ r.data | data_br }}</td>
+            <td>{{ r.hora_checkin }}</td>
+            <td style="text-align:center">
+                {% if r.codigo_passe %}
+                    {{ r.codigo_passe }}
+                    {% if r.passe_realizado %}✔{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td style="text-align:center">
+                {% if r.codigo_acolhimento %}
+                    {{ r.codigo_acolhimento }}
+                    {% if r.acolhimento_realizado %}✔{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td style="text-align:center">
+                {% if r.codigo_atendimento %}
+                    {{ r.codigo_atendimento }}
+                    {% if r.atendimento_realizado %}✔{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
+                {% else %}—{% endif %}
+            </td>
+            <td>{{ r.medium_nome or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p style="margin-top:1rem;color:var(--cor-texto-suave);font-size:0.9rem">
+    {{ historico | length }} visita{{ 's' if historico | length != 1 }} no período.
+</p>
+{% else %}
+<p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
+    Nenhuma visita encontrada para este período.
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

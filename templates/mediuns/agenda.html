@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block titulo %}Agenda — {{ plano.nomes_pessoas }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Agenda do plano</h2>
+    <a href="/cadastros/mediuns/{{ medium.id }}/planos" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div style="margin-bottom:1.5rem;padding:1rem;background:var(--cor-fundo-card);border-radius:6px">
+    <strong>Médium:</strong> {{ medium.nome_completo }} &nbsp;|&nbsp;
+    <strong>Pessoa(s):</strong> {{ plano.nomes_pessoas or '—' }} &nbsp;|&nbsp;
+    <strong>Frequência:</strong>
+        {% if plano.frequencia == 'semanal' %}Semanal
+        {% elif plano.frequencia == 'quinzenal' %}Quinzenal
+        {% elif plano.frequencia == 'mensal' %}Mensal
+        {% else %}Avulso{% endif %} &nbsp;|&nbsp;
+    <strong>Sessões:</strong> {{ plano.sessoes_realizadas }}/{{ plano.sessoes_total }} &nbsp;|&nbsp;
+    <strong>Status:</strong>
+        {% if plano.status == 'ativo' %}<span style="color:var(--cor-sucesso)">Ativo</span>
+        {% elif plano.status == 'alta' %}<span style="color:var(--cor-info)">Alta</span>
+        {% else %}<span style="color:var(--cor-perigo)">Cancelado</span>{% endif %}
+</div>
+
+{% set futuros   = agendamentos | selectattr("status", "equalto", "agendado") | list %}
+{% set passados  = agendamentos | rejectattr("status", "equalto", "agendado") | list %}
+
+<!-- Agendamentos futuros -->
+{% if futuros %}
+<table style="margin-bottom:2rem">
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Passe?</th>
+            <th>Encaixe?</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ag in futuros %}
+        <tr {% if ag.data == hoje %}style="background:rgba(55,180,100,.08)"{% endif %}>
+            <td>
+                {{ ag.data | data_br }}
+                {% if ag.data == hoje %}<strong> ← hoje</strong>{% endif %}
+            </td>
+            <td>{{ 'Sim' if ag.requer_passe else 'Não' }}</td>
+            <td>{{ 'Sim' if ag.encaixe else 'Não' }}</td>
+            <td class="acoes" style="display:flex;gap:.4rem;flex-wrap:wrap">
+                <!-- Reagendar -->
+                <form method="post"
+                      action="/cadastros/mediuns/{{ medium.id }}/planos/{{ plano.id }}/agenda/{{ ag.id }}/reagendar"
+                      style="display:flex;gap:.3rem;align-items:center">
+                    <input type="date" name="nova_data" required style="padding:.2rem .4rem;font-size:.85rem">
+                    <button type="submit" class="btn btn-secundario btn-sm">Reagendar</button>
+                </form>
+                <!-- Registrar Falta -->
+                {% if ag.data <= hoje %}
+                <form method="post"
+                      action="/cadastros/mediuns/{{ medium.id }}/planos/{{ plano.id }}/agenda/{{ ag.id }}/falta"
+                      onsubmit="return confirm('Registrar falta nesta sessão?')">
+                    <button type="submit" class="btn btn-secundario btn-sm"
+                            style="background:var(--cor-alerta-fundo);color:var(--cor-alerta);border-color:var(--cor-alerta)">
+                        ✗ Faltou
+                    </button>
+                </form>
+                {% endif %}
+                <!-- Cancelar -->
+                <form method="post"
+                      action="/cadastros/mediuns/{{ medium.id }}/planos/{{ plano.id }}/agenda/{{ ag.id }}/cancelar"
+                      onsubmit="return confirm('Cancelar este agendamento?')">
+                    <button type="submit" class="btn btn-perigo btn-sm">Cancelar</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">Nenhum agendamento futuro.</p>
+{% endif %}
+
+<!-- Adicionar avulso -->
+{% if plano.status == 'ativo' %}
+<div class="card-form" style="margin-bottom:2rem">
+    <h3 style="margin-bottom:.8rem;font-size:.95rem">Adicionar sessão avulsa / encaixe</h3>
+    <form method="post"
+          action="/cadastros/mediuns/{{ medium.id }}/planos/{{ plano.id }}/agenda/novo"
+          style="display:flex;gap:.8rem;align-items:flex-end;flex-wrap:wrap">
+        <div class="campo">
+            <label>Data</label>
+            <input type="date" name="data" required>
+        </div>
+        <div class="campo">
+            <label>Requer passe?</label>
+            <select name="requer_passe">
+                <option value="0">Não</option>
+                <option value="1">Sim</option>
+            </select>
+        </div>
+        <div class="campo">
+            <label>Encaixe?</label>
+            <select name="encaixe">
+                <option value="0">Não</option>
+                <option value="1">Sim</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primario">Adicionar</button>
+    </form>
+</div>
+{% endif %}
+
+<!-- Histórico -->
+{% if passados %}
+<details>
+    <summary style="cursor:pointer;color:var(--cor-texto-suave);font-size:.9rem">
+        Histórico ({{ passados|length }})
+    </summary>
+    <table style="margin-top:.5rem;opacity:.7">
+        <thead>
+            <tr><th>Data</th><th>Status</th><th>Passe</th><th>Encaixe</th></tr>
+        </thead>
+        <tbody>
+            {% for ag in passados | sort(attribute='data', reverse=True) %}
+            <tr>
+                <td>{{ ag.data | data_br }}</td>
+                <td>
+                    {% if ag.status == 'realizado' %}<span style="color:var(--cor-sucesso)">Realizado</span>
+                    {% elif ag.status == 'faltou' %}<span style="color:var(--cor-alerta)">Faltou</span>
+                    {% else %}<span style="color:var(--cor-texto-suave)">Cancelado</span>{% endif %}
+                </td>
+                <td>{{ 'Sim' if ag.requer_passe else 'Não' }}</td>
+                <td>{{ 'Sim' if ag.encaixe else 'Não' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</details>
+{% endif %}
+{% endblock %}

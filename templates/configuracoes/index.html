@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block titulo %}Configurações{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Configurações</h2>
+    <a href="/menu" class="btn btn-secundario">← Menu</a>
+</div>
+
+<div class="card-form" style="max-width:480px">
+    <h3 style="margin-bottom:1rem;font-size:1rem">Dias de atendimento</h3>
+    <p style="color:var(--cor-texto-suave);font-size:.88rem;margin-bottom:1rem">
+        Defina quais dias da semana o Centro realiza atendimentos.
+        Os agendamentos automáticos sempre recairão nesses dias.
+        Pessoas atendidas numa segunda, por exemplo, sempre terão sessões na segunda.
+    </p>
+
+    <table style="margin-bottom:1.2rem">
+        <thead>
+            <tr><th>Dia da semana</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for dia in dias %}
+            <tr>
+                <td>{{ dia.descricao }}</td>
+                <td>
+                    <form method="post" action="/configuracoes/dias/{{ dia.dia_semana }}/remover"
+                          onsubmit="return confirm('Remover este dia de atendimento?')">
+                        <button type="submit" class="btn btn-perigo btn-sm">Remover</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2" style="color:var(--cor-texto-suave)">Nenhum dia configurado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <form method="post" action="/configuracoes/dias/adicionar"
+          style="display:flex;gap:.6rem;align-items:flex-end">
+        <div class="campo">
+            <label>Adicionar dia</label>
+            <select name="dia_semana">
+                {% for num, nome in nomes_dia.items() %}
+                {% if num not in dias_atuais %}
+                <option value="{{ num }}">{{ nome }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primario">Adicionar</button>
+    </form>
+</div>
+
+<div class="card-form" style="max-width:480px">
+    <h3 style="margin-bottom:1rem;font-size:1rem">Servidor SMTP</h3>
+    <p style="color:var(--cor-texto-suave);font-size:.88rem;margin-bottom:1rem">
+        Configurado para envio de e-mails (mala direta, relatórios, etc).
+    </p>
+
+    <form method="post" action="/configuracoes/smtp" style="display:flex;flex-direction:column;gap:.6rem">
+        <div class="campo">
+            <label for="smtp_servidor">Servidor SMTP</label>
+            <input type="text" id="smtp_servidor" name="smtp_servidor"
+                   value="{{ smtp_config.get('smtp_servidor', '') }}">
+        </div>
+        <div class="form-linha-sm">
+            <div class="campo">
+                <label for="smtp_porta">Porta</label>
+                <input type="text" id="smtp_porta" name="smtp_porta"
+                       value="{{ smtp_config.get('smtp_porta', '587') }}">
+            </div>
+        </div>
+        <div class="campo">
+            <label for="smtp_usuario">Usuário / E-mail</label>
+            <input type="text" id="smtp_usuario" name="smtp_usuario"
+                   value="{{ smtp_config.get('smtp_usuario', '') }}">
+        </div>
+        <div class="campo">
+            <label for="smtp_senha">Senha de aplicativo</label>
+            <input type="password" id="smtp_senha" name="smtp_senha"
+                   value="{{ smtp_config.get('smtp_senha', '') }}">
+        </div>
+        <div class="campo">
+            <label for="smtp_email_de">E-mail de envio</label>
+            <input type="email" id="smtp_email_de" name="smtp_email_de"
+                   value="{{ smtp_config.get('smtp_email_de', '') }}">
+        </div>
+        <button type="submit" class="btn btn-primario">Salvar SMTP</button>
+    </form>
+</div>
+{% endblock %}

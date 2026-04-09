@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block titulo %}Empréstimos — {{ pessoa.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Empréstimos — {{ pessoa.nome_completo }}</h2>
+    <a href="/biblioteca" class="btn btn-secundario">← Voltar</a>
+</div>
+
+{% if emprestimos %}
+<div class="card-form">
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>Livro</th>
+                <th>Autor</th>
+                <th>Data Empréstimo</th>
+                <th>Data Devolução</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for e in emprestimos %}
+            <tr>
+                <td>{{ e.titulo }}</td>
+                <td>{{ e.autor or '' }}</td>
+                <td>{{ e.data_emprestimo|data_br }}</td>
+                <td>{{ e.data_devolucao|data_br if e.data_devolucao else '-' }}</td>
+                <td>
+                    {% if e.data_devolucao %}
+                        <span style="color:#1da851">Devolvido</span>
+                    {% else %}
+                        <span style="color:#ffa400;font-weight:600">Em aberto</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card-form">
+    <p style="color:var(--cor-texto-suave)">Nenhum empréstimo registrado para esta pessoa.</p>
+</div>
+{% endif %}
+{% endblock %}

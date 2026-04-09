@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block titulo %}Doações — {{ pessoa.nome_completo }}{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Doações — {{ pessoa.nome_completo }}</h2>
+    <a href="/doacoes" class="btn btn-secundario">← Voltar</a>
+    <a href="/doacoes/nova?pessoa_id={{ pessoa.id }}" class="btn btn-primario">+ Nova Doação</a>
+</div>
+
+{% if doacoes %}
+<div class="card-form">
+    <!-- Timeline de doações -->
+    <div style="position:relative; padding-left:2rem">
+        <div style="position:absolute; left:0.5rem; top:0; bottom:0; width:2px; background:var(--cor-borda)"></div>
+        {% for d in doacoes %}
+        <div style="position:relative; margin-bottom:1.5rem; padding:0.8rem; background:var(--cor-fundo); border-radius:var(--raio); border-left:3px solid {{ '#1da851' if d.entregue else '#ffa400' }}">
+            <div style="position:absolute; left:-1.65rem; top:0.6rem; width:0.6rem; height:0.6rem; border-radius:50%; background:{{ '#1da851' if d.entregue else '#ffa400' }}; border:2px solid var(--cor-fundo)"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem">
+                <strong>{{ d.data_entrega|data_br }}</strong>
+                <span style="font-size:0.85rem; color:{{ '#1da851' if d.entregue else '#ffa400' }}; font-weight:600">
+                    {% if d.entregue %}✅ Entregue{% else %}⏳ Pendente{% endif %}
+                </span>
+            </div>
+            {% if d.itens_list %}
+            <div style="font-size:0.9rem; color:var(--cor-texto-suave)">
+                {% for item in d.itens_list %}
+                <div>{{ item.nome }} ({{ item.quantidade }})</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if d.observacao %}
+            <div style="font-size:0.85rem; color:var(--cor-texto-suave); margin-top:0.3rem; font-style:italic">{{ d.observacao }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card-form">
+    <p style="color:var(--cor-texto-suave)">Nenhuma doação registrada para esta pessoa.</p>
+</div>
+{% endif %}
+{% endblock %}
