@@ -486,20 +486,20 @@ async def historico_pessoa(request: Request, pessoa_id: int):
             (pessoa_id,),
         ).fetchall()
 
-    # Carrega itens para cada doação
-    doacoes_dict = []
-    for d in doacoes:
-        d_dict = dict(d)
-        itens_doacao = conn.execute(
-            """SELECT t.nome, di.quantidade
-               FROM doacao_itens di
-               JOIN tipos_doacao t ON t.id = di.tipo_doacao_id
-               WHERE di.doacao_id = %s
-               ORDER BY t.nome""",
-            (d["id"],)
-        ).fetchall()
-        d_dict["itens_list"] = [dict(i) for i in itens_doacao]
-        doacoes_dict.append(d_dict)
+        # Carrega itens para cada doação
+        doacoes_dict = []
+        for d in doacoes:
+            d_dict = dict(d)
+            itens_doacao = conn.execute(
+                """SELECT t.nome, di.quantidade
+                   FROM doacao_itens di
+                   JOIN tipos_doacao t ON t.id = di.tipo_doacao_id
+                   WHERE di.doacao_id = %s
+                   ORDER BY t.nome""",
+                (d["id"],)
+            ).fetchall()
+            d_dict["itens_list"] = [dict(i) for i in itens_doacao]
+            doacoes_dict.append(d_dict)
 
     return templates.TemplateResponse("doacoes/pessoa.html", {
         "request": request,
