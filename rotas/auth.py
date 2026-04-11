@@ -89,12 +89,30 @@ async def pagina_menu(request: Request):
     atendente = obter_atendente_logado(request)
     if not atendente:
         return RedirectResponse(url="/login", status_code=303)
-    return templates.TemplateResponse("menu.html", {"request": request, "atendente": atendente})
+    return templates.TemplateResponse("menu.html", {"request": request, "atendente": atendente, "e_admin": e_admin(request)})
 
 
 @router.get("/", response_class=HTMLResponse)
 async def raiz(request: Request):
     return RedirectResponse(url="/menu", status_code=303)
+
+
+def obter_usuario_logado(request: Request):
+    """Alias para obter_atendente_logado para compatibilidade."""
+    return obter_atendente_logado(request)
+
+
+def e_admin(request: Request) -> bool:
+    """Verifica se o usuário logado pertence ao grupo Admin (id=1)."""
+    usuario = obter_atendente_logado(request)
+    if not usuario:
+        return False
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM usuarios_grupos WHERE usuario_id = %s AND grupo_id = 1",
+            (usuario["id"],)
+        ).fetchone()
+    return row is not None
 
 
 def criar_atendente_inicial():

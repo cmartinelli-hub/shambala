@@ -1,6 +1,9 @@
 # Projeto Shambala — Contexto Completo
 *Atualizado em 2026-04-09*
+## Git
 
+repositório git: git@leal:/home/git/projetos/shambala/
+ 
 ---
 
 ## O que é

@@ -477,6 +477,14 @@ def criar_tabelas():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_agendamentos_status ON agendamentos(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_planos_medium ON planos_tratamento(medium_id)")
 
+        # ── Índices adicionais para performance ──
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_usuarios_grupos_usuario ON usuarios_grupos(usuario_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_usuarios_grupos_grupo ON usuarios_grupos(grupo_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_doacoes_cestas_pessoa ON doacoes_cestas(pessoa_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_doacao_itens_doacao ON doacao_itens(doacao_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_doacao_itens_tipo ON doacao_itens(tipo_doacao_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tipos_doacao_ativo ON tipos_doacao(ativo)")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trabalhador_dias (
                 id              SERIAL PRIMARY KEY,

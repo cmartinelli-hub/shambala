@@ -26,7 +26,7 @@ ROTULOS_ROTA = {
     "dia.fraterno": "Atendimento Fraterno",
     "cadastros.pessoas": "Cadastros → Pessoas",
     "cadastros.mediuns": "Cadastros → Médiuns",
-    "cadastros.atendentes": "Cadastros → Atendentes",
+    "cadastros.usuarios": "Cadastros → Usuários",
     "cadastros.trabalhadores": "Cadastros → Trabalhadores",
     "cadastros.permissoes": "Cadastros → Permissões",
     "agenda": "Agenda",
@@ -97,6 +97,36 @@ def obter_atendente_com_grupo(request: Request):
             atendente["nome_grupo"] = row["nome_grupo"]
 
     return atendente
+
+
+def obter_grupos_usuario(usuario_id: int):
+    """Retorna lista de grupos a que um usuário pertence."""
+    with conectar() as conn:
+        rows = conn.execute(
+            """SELECT g.id, g.nome, g.descricao
+               FROM grupos g
+               INNER JOIN usuarios_grupos ug ON ug.grupo_id = g.id
+               WHERE ug.usuario_id = %s
+               ORDER BY g.nome""",
+            (usuario_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def salvar_grupos_usuario(usuario_id: int, grupo_ids: list[int]):
+    """Salva os grupos a que um usuário pertence (N:N relationship)."""
+    with conectar() as conn:
+        # Remove grupos antigos
+        conn.execute(
+            "DELETE FROM usuarios_grupos WHERE usuario_id = %s",
+            (usuario_id,)
+        )
+        # Insere novos grupos
+        for grupo_id in grupo_ids:
+            conn.execute(
+                "INSERT INTO usuarios_grupos (usuario_id, grupo_id) VALUES (%s, %s)",
+                (usuario_id, grupo_id)
+            )
 
 
 def seed_permissoes():

@@ -8,7 +8,7 @@ from rotas.auth import obter_atendente_logado, e_admin
 from rotas.permissoes import obter_grupos_usuario, salvar_grupos_usuario
 from templates_config import templates
 
-router = APIRouter(prefix="/cadastros/atendentes")
+router = APIRouter(prefix="/cadastros/usuarios")
 
 
 def _guard(request: Request):
@@ -35,7 +35,7 @@ async def listar_usuarios(request: Request):
     with conectar() as conn:
         rows = conn.execute("""
             SELECT a.id, a.nome_usuario, a.nome_completo, a.telefone, a.email, a.ativo,
-                   GROUP_CONCAT(g.nome, ', ') as grupos_nome
+                   string_agg(g.nome, ', ' ORDER BY g.nome) as grupos_nome
             FROM atendentes a
             LEFT JOIN usuarios_grupos ug ON ug.usuario_id = a.id
             LEFT JOIN grupos g ON g.id = ug.grupo_id
@@ -44,7 +44,7 @@ async def listar_usuarios(request: Request):
         """).fetchall()
     return templates.TemplateResponse("usuarios/lista.html", {
         "request": request,
-        "usuario": usuario,
+        "atendente": usuario,
         "usuarios": [dict(r) for r in rows],
     })
 
@@ -60,7 +60,7 @@ async def form_novo_usuario(request: Request):
         grupos = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
     return templates.TemplateResponse("usuarios/form.html", {
         "request": request,
-        "usuario": usuario,
+        "atendente": usuario,
         "registro": None,
         "grupos": [dict(g) for g in grupos],
         "grupos_selecionados": [],
@@ -87,7 +87,7 @@ async def salvar_novo_usuario(
             grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
         return templates.TemplateResponse("usuarios/form.html", {
             "request": request,
-            "usuario": usuario,
+            "atendente": usuario,
             "registro": None,
             "grupos": [dict(g) for g in grupos_lista],
             "grupos_selecionados": grupos,
@@ -113,7 +113,7 @@ async def salvar_novo_usuario(
             grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
         return templates.TemplateResponse("usuarios/form.html", {
             "request": request,
-            "usuario": usuario,
+            "atendente": usuario,
             "registro": None,
             "grupos": [dict(g) for g in grupos_lista],
             "grupos_selecionados": grupos,
@@ -136,7 +136,7 @@ async def form_editar_usuario(request: Request, id: int):
         grupos_do_usuario = obter_grupos_usuario(id)
     return templates.TemplateResponse("usuarios/form.html", {
         "request": request,
-        "usuario": usuario,
+        "atendente": usuario,
         "registro": dict(registro),
         "grupos": [dict(g) for g in grupos],
         "grupos_selecionados": [g["id"] for g in grupos_do_usuario],
@@ -184,7 +184,7 @@ async def salvar_edicao_usuario(
             grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
         return templates.TemplateResponse("usuarios/form.html", {
             "request": request,
-            "usuario": usuario,
+            "atendente": usuario,
             "registro": dict(registro) if registro else None,
             "grupos": [dict(g) for g in grupos_lista],
             "grupos_selecionados": grupos,

@@ -310,12 +310,46 @@ async def salvar_nova_doacao(request: Request):
         })
 
     with conectar() as conn:
-        pessoa = conn.execute(
-            "SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)
-        ).fetchone()
+        try:
+            pessoa = conn.execute(
+                "SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)
+            ).fetchone()
 
-        # Validação: deve ter endereço completo
-        if pessoa and not _tem_endereco_completo(dict(pessoa)):
+            # Validação: deve ter endereço completo
+            if pessoa and not _tem_endereco_completo(dict(pessoa)):
+                pessoas = conn.execute(
+                    "SELECT * FROM pessoas ORDER BY nome_completo LIMIT 500"
+                ).fetchall()
+                tipos = _obter_tipos(conn)
+                return templates.TemplateResponse("doacoes/form.html", {
+                    "request": request,
+                    "atendente": atendente,
+                    "pessoas": [dict(p) for p in pessoas],
+                    "pessoa_selecionada": dict(pessoa),
+                    "tipos": [dict(t) for t in tipos],
+                    "itens_selecionados": itens_dict,
+                    "erro": f"⚠️ {pessoa['nome_completo']} não tem endereço completo cadastrado. "
+                            "Preencha logradouro, número, bairro, cidade e UF antes de registrar a doação.",
+                })
+
+            data_ref = data_entrega or date.today().isoformat()
+            cur = conn.execute(
+                """INSERT INTO doacoes_cestas
+                   (pessoa_id, data_entrega, observacao, entregue)
+                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                (
+                    int(pessoa_id),
+                    data_ref,
+                    observacao or None,
+                    1 if entregue == "1" else 0,
+                ),
+            )
+            doacao_id = cur.fetchone()["id"]
+
+            # Salva os itens (com transação automática - rollback se falhar)
+            _salvar_itens_doacao(conn, doacao_id, itens_dict)
+        except Exception as e:
+            # Erro na transação? Rollback automático ao sair do with
             pessoas = conn.execute(
                 "SELECT * FROM pessoas ORDER BY nome_completo LIMIT 500"
             ).fetchall()
@@ -324,29 +358,11 @@ async def salvar_nova_doacao(request: Request):
                 "request": request,
                 "atendente": atendente,
                 "pessoas": [dict(p) for p in pessoas],
-                "pessoa_selecionada": dict(pessoa),
+                "pessoa_selecionada": None,
                 "tipos": [dict(t) for t in tipos],
                 "itens_selecionados": itens_dict,
-                "erro": f"⚠️ {pessoa['nome_completo']} não tem endereço completo cadastrado. "
-                        "Preencha logradouro, número, bairro, cidade e UF antes de registrar a doação.",
+                "erro": f"❌ Erro ao salvar doação: {str(e)}",
             })
-
-        data_ref = data_entrega or date.today().isoformat()
-        cur = conn.execute(
-            """INSERT INTO doacoes_cestas
-               (pessoa_id, data_entrega, observacao, entregue)
-               VALUES (%s, %s, %s, %s) RETURNING id""",
-            (
-                int(pessoa_id),
-                data_ref,
-                observacao or None,
-                1 if entregue == "1" else 0,
-            ),
-        )
-        doacao_id = cur.fetchone()["id"]
-
-        # Salva os itens
-        _salvar_itens_doacao(conn, doacao_id, itens_dict)
 
     return RedirectResponse(url="/doacoes", status_code=303)
 

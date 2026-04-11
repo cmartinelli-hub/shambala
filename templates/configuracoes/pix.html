@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block titulo %}Configurações — Chaves PIX{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Chaves PIX</h2>
+    <a href="/configuracoes" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin-bottom:1rem">+ Nova Chave PIX</h3>
+    <form method="post" action="/configuracoes/pix/novo">
+        <div class="grade-form">
+            <div class="campo">
+                <label>Nome da chave *</label>
+                <input type="text" name="nome" placeholder="Ex: Caixa principal" required>
+            </div>
+            <div class="campo">
+                <label>Tipo *</label>
+                <select name="tipo" required>
+                    {% for valor, rotulo in tipos_pix %}
+                    <option value="{{ valor }}">{{ rotulo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="campo">
+                <label>Chave PIX *</label>
+                <input type="text" name="chave" placeholder="CPF, e-mail, telefone ou chave aleatória" required>
+            </div>
+            <div class="campo">
+                <label>Cidade</label>
+                <input type="text" name="cidade" placeholder="Cidade da instituição">
+            </div>
+        </div>
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar Chave</button>
+        </div>
+    </form>
+</div>
+
+{% if chaves %}
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Nome</th>
+            <th>Chave</th>
+            <th>Tipo</th>
+            <th>Cidade</th>
+            <th>Status</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in chaves %}
+        <tr>
+            <td><strong>{{ c.nome }}</strong></td>
+            <td style="font-family:monospace; font-size:.85rem">{{ c.chave }}</td>
+            <td>{{ c.tipo }}</td>
+            <td>{{ c.cidade or '—' }}</td>
+            <td>
+                <form method="post" action="/configuracoes/pix/{{ c.id }}/toggle" style="display:inline">
+                    <button type="submit" class="btn btn-sm {% if c.ativa %}btn-primario{% else %}btn-secundario{% endif %}"
+                            style="padding:.15rem .4rem;font-size:.75rem">
+                        {% if c.ativa %}✓ Ativa{% else %}✗ Inativa{% endif %}
+                    </button>
+                </form>
+            </td>
+            <td>
+                <form method="post" action="/configuracoes/pix/{{ c.id }}/remover" style="display:inline"
+                      onsubmit="return confirm('Remover chave PIX {{ c.nome }}?')">
+                    <button type="submit" class="btn btn-perigo btn-sm" style="padding:.15rem .4rem;font-size:.75rem">🗑️</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="dica">Nenhuma chave PIX cadastrada.</p>
+{% endif %}
+{% endblock %}
