@@ -56,12 +56,12 @@ async def por_dia(
             SELECT
                 dt.data,
                 COUNT(c.id)                                                  AS total,
-                SUM(CASE WHEN c.codigo_passe IS NOT NULL THEN 1 ELSE 0 END)  AS passes_agend,
-                SUM(c.passe_realizado)                                        AS passes_real,
-                SUM(CASE WHEN c.codigo_acolhimento IS NOT NULL THEN 1 ELSE 0 END) AS acolh_agend,
-                SUM(c.acolhimento_realizado)                                  AS acolh_real,
-                SUM(CASE WHEN c.codigo_atendimento IS NOT NULL THEN 1 ELSE 0 END) AS atend_agend,
-                SUM(c.atendimento_realizado)                                  AS atend_real
+                COALESCE(SUM(CASE WHEN c.codigo_passe IS NOT NULL THEN 1 ELSE 0 END), 0)  AS passes_agend,
+                COALESCE(SUM(c.passe_realizado), 0)                         AS passes_real,
+                COALESCE(SUM(CASE WHEN c.codigo_acolhimento IS NOT NULL THEN 1 ELSE 0 END), 0) AS acolh_agend,
+                COALESCE(SUM(c.acolhimento_realizado), 0)                   AS acolh_real,
+                COALESCE(SUM(CASE WHEN c.codigo_atendimento IS NOT NULL THEN 1 ELSE 0 END), 0) AS atend_agend,
+                COALESCE(SUM(c.atendimento_realizado), 0)                   AS atend_real
             FROM dias_trabalho dt
             LEFT JOIN checkins c ON c.dia_trabalho_id = dt.id
             WHERE dt.data BETWEEN %s AND %s
