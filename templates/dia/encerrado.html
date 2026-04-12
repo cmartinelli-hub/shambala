@@ -36,5 +36,12 @@
         {% endfor %}
     </div>
     {% endif %}
+
+    <div style="margin-top:1.5rem;display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap">
+        <form method="post" action="/dia/reabrir" style="display:inline">
+            <button type="submit" class="btn btn-primario">🔓 Reabrir dia</button>
+        </form>
+        <a href="/menu" class="btn btn-secundario">← Menu</a>
+    </div>
 </div>
 {% endblock %}

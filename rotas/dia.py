@@ -146,6 +146,7 @@ def _painel(request, atendente, conn, dia):
             "id": m["id"],
             "nome_completo": m["nome_completo"],
             "aguardando": aguardando,
+            "atendidos": realizados,
             "vagas_restantes": vagas_restantes,
             "fim": fim,
         })
@@ -290,6 +291,17 @@ async def encerrar_dia(request: Request):
     import urllib.parse
     backup_info = urllib.parse.quote(" | ".join(msgs_backup))
     return RedirectResponse(url=f"/dia?backup={backup_info}", status_code=303)
+
+
+@router.post("/reabrir")
+async def reabrir_dia(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    hoje = _hoje()
+    with conectar() as conn:
+        conn.execute("UPDATE dias_trabalho SET aberto = 1 WHERE data = %s", (hoje,))
+    return RedirectResponse(url="/dia", status_code=303)
 
 
 # ── Fila de passe ─────────────────────────────────────────────────────────────

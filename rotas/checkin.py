@@ -386,7 +386,7 @@ async def salvar_checkin(
                    (dia_trabalho_id, pessoa_id, hora_checkin,
                     codigo_passe, codigo_acolhimento, codigo_atendimento, codigo_reiki,
                     medium_id, agendamento_id, plano_id)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    RETURNING id""",
                 (dia["id"], pessoa_id, hora,
                  codigo_passe, codigo_acolhimento, codigo_atendimento, codigo_reiki,

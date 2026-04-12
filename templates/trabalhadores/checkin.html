@@ -3,74 +3,117 @@
 
 {% block conteudo %}
 <div class="cabecalho-secao">
-    <h2>Check-in de Trabalhadores</h2>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <div>
+        <h1>Check-in de Trabalhadores</h1>
+        {% if dia %}
+        <p class="subtitulo">📅 {{ dia.data | data_br }}</p>
+        {% endif %}
+    </div>
+    <div class="acoes-cabecalho">
         <a href="/cadastros/trabalhadores" class="btn btn-secundario">← Voltar</a>
-        <a href="/cadastros/trabalhadores" class="btn btn-secundario">Trabalhadores</a>
     </div>
 </div>
 
 {% if erro %}
-<div class="erro">{{ erro }}</div>
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
 {% endif %}
 
-{% if dia %}
-<p style="color:var(--cor-texto-suave);margin-bottom:1rem">
-    Dia: {{ dia.data | data_br }}
-</p>
-
-{% if not trabalhadores_agenda %}
-<p style="color:var(--cor-texto-suave)">Nenhum trabalhador com agenda para hoje.</p>
+{% if not dia %}
+<div class="vazio">
+    <div class="vazio-icone">📅</div>
+    <h3>Nenhum dia de trabalho aberto hoje</h3>
+    <p>Abra o dia primeiro em <a href="/dia" class="btn btn-primario">Dia de Trabalho</a></p>
+</div>
+{% elif not trabalhadores_agenda %}
+<div class="vazio">
+    <div class="vazio-icone">🤝</div>
+    <h3>Nenhum trabalhador com agenda para hoje</h3>
+    <p>Configure os dias de funcionamento na agenda de cada trabalhador.</p>
+</div>
 {% else %}
 
-<table>
-    <thead>
-        <tr>
-            <th>Trabalhador</th>
-            <th>Situação</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% set presenca_map = {} %}
-        {% for p in presencas %}
-        {{ presenca_map.__setitem__(p.trabalhador_id, p.presente) }}
-        {% endfor %}
+{% set presenca_map = {} %}
+{% for p in presencas %}
+{{ presenca_map.__setitem__(p.trabalhador_id, p.presente) }}
+{% endfor %}
 
-        {% for t in trabalhadores_agenda %}
-        <tr>
-            <td>{{ t.nome_completo }}</td>
-            <td>
+<!-- Barra de busca -->
+<div class="trab-checkin-busca">
+    <span class="trab-checkin-busca-icon">🔍</span>
+    <input type="text" id="trab-checkin-input" placeholder="Buscar trabalhador…"
+           class="trab-checkin-busca-input" autocomplete="off">
+    <span class="trab-checkin-contador" id="trab-checkin-contador">
+        {{ trabalhadores_agenda|length }} trabalhador{{ 'es' if trabalhadores_agenda|length != 1 }}
+    </span>
+</div>
+
+<div class="trab-checkin-grid" id="trab-checkin-grid">
+    {% for t in trabalhadores_agenda %}
+    <div class="trab-checkin-card">
+        <div class="trab-checkin-header">
+            <div class="trab-checkin-avatar">
+                {% if t.foto_trabalhador %}
+                <img src="/static/fotos/{{ t.foto_trabalhador }}" alt="{{ t.nome_completo }}" class="trab-checkin-avatar-img">
+                {% else %}
+                <img src="/cadastros/trabalhadores/foto-placeholder/{{ t.nome_completo[:1] }}" alt="{{ t.nome_completo }}" class="trab-checkin-avatar-img">
+                {% endif %}
+            </div>
+            <div class="trab-checkin-info">
+                <h3 class="trab-checkin-nome">{{ t.nome_completo }}</h3>
                 {% if t.id in presenca_map %}
                     {% if presenca_map[t.id] %}
-                    <span class="badge badge-ativo">Presente</span>
+                    <span class="trab-checkin-status status-presente">✔ Presente</span>
                     {% else %}
-                    <span class="badge badge-inativo">Ausente</span>
+                    <span class="trab-checkin-status status-ausente">✕ Ausente</span>
                     {% endif %}
                 {% else %}
-                <span class="badge" style="background:#666;color:#fff">Aguardando</span>
+                <span class="trab-checkin-status status-aguardando">⏳ Aguardando</span>
                 {% endif %}
-            </td>
-            <td class="acoes">
-                {% if t.id not in presenca_map %}
-                <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/presente" style="display:inline">
-                    <button type="submit" class="btn btn-sm" style="background:#1a8a4a">Presente</button>
-                </form>
-                <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/ausente" style="display:inline">
-                    <button type="submit" class="btn btn-sm btn-perigo">Ausente</button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-{% endif %}
-
-{% else %}
-<div class="erro" style="margin-top:1rem">
-    Nenhum dia de trabalho aberto hoje. Abra o dia primeiro em <a href="/dia">Dia de Trabalho</a>.
+            </div>
+        </div>
+        {% if t.id not in presenca_map %}
+        <div class="trab-checkin-acoes">
+            <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/presente" style="display:inline">
+                <button type="submit" class="btn btn-trab-presente">✔ Presente</button>
+            </form>
+            <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/ausente" style="display:inline">
+                <button type="submit" class="btn btn-trab-ausente">✕ Ausente</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
 </div>
+
+<script>
+(function() {
+    const input = document.getElementById('trab-checkin-input');
+    const grid = document.getElementById('trab-checkin-grid');
+    const contador = document.getElementById('trab-checkin-contador');
+    const cards = grid ? Array.from(grid.querySelectorAll('.trab-checkin-card')) : [];
+    if (!input || !grid) return;
+
+    input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        let visiveis = 0;
+        cards.forEach(card => {
+            const nome = card.querySelector('.trab-checkin-nome');
+            if (!nome) return;
+            const match = nome.textContent.toLowerCase().includes(q);
+            card.style.display = match ? '' : 'none';
+            if (match) visiveis++;
+        });
+        const total = cards.length;
+        if (q) {
+            contador.textContent = `${visiveis} de ${total} encontrado${visiveis !== 1 ? 's' : ''}`;
+        } else {
+            contador.textContent = `${total} trabalhador${total !== 1 ? 'es' : ''}`;
+        }
+    });
+})();
+</script>
 {% endif %}
 {% endblock %}

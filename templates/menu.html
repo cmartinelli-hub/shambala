@@ -1,87 +1,77 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shambala — Menu</title>
-    <link rel="stylesheet" href="/static/css/base.css">
-    <style>
-        .secao-menu { margin-top: 2em; }
-        .secao-menu h2 { font-size: 1.2em; color: #555; margin-bottom: 0.5em; border-bottom: 2px solid #ddd; padding-bottom: 0.5em; }
-    </style>
-</head>
-<body>
-    <div class="topo">
-        <a href="/menu" class="topo-marca">
-            <img src="/static/logo-branca.svg" alt="Logo" class="logo-topo">
-            <span>Shambala</span>
+{% extends "base.html" %}
+{% block titulo %}Menu — Shambala{% endblock %}
+
+{% block conteudo %}
+<!-- Header -->
+<div class="cabecalho-secao">
+    <div>
+        <h1>Menu Principal</h1>
+        <p class="subtitulo">Bem-vindo(a), {{ atendente.nome_usuario }}</p>
+    </div>
+</div>
+
+<!-- Módulos principais -->
+<div class="menu-grid">
+    <a href="/dia" class="menu-card">
+        <span class="menu-card-icon">📋</span>
+        <span class="menu-card-label">Dia de Trabalho</span>
+    </a>
+    <a href="/cadastros/pessoas" class="menu-card">
+        <span class="menu-card-icon">👥</span>
+        <span class="menu-card-label">Pessoas</span>
+    </a>
+    <a href="/cadastros/mediuns" class="menu-card">
+        <span class="menu-card-icon menu-card-icon-img"><img src="/static/medium.svg" alt="Médiuns"></span>
+        <span class="menu-card-label">Médiuns</span>
+    </a>
+    <a href="/agenda" class="menu-card">
+        <span class="menu-card-icon">📅</span>
+        <span class="menu-card-label">Agenda</span>
+    </a>
+    <a href="/relatorios" class="menu-card">
+        <span class="menu-card-icon">📊</span>
+        <span class="menu-card-label">Relatórios</span>
+    </a>
+    <a href="/cadastros/trabalhadores" class="menu-card">
+        <span class="menu-card-icon menu-card-icon-img"><img src="/static/medium.svg" alt="Trabalhadores"></span>
+        <span class="menu-card-label">Trabalhadores</span>
+    </a>
+    <a href="/financeiro" class="menu-card">
+        <span class="menu-card-icon">💰</span>
+        <span class="menu-card-label">Financeiro</span>
+    </a>
+    <a href="/doacoes" class="menu-card">
+        <span class="menu-card-icon">📦</span>
+        <span class="menu-card-label">Doações</span>
+    </a>
+    <a href="/biblioteca" class="menu-card">
+        <span class="menu-card-icon">📚</span>
+        <span class="menu-card-label">Biblioteca</span>
+    </a>
+    <a href="/mala-direta" class="menu-card">
+        <span class="menu-card-icon">✉️</span>
+        <span class="menu-card-label">Mala Direta</span>
+    </a>
+</div>
+
+{% if e_admin %}
+<!-- Administração -->
+<div class="menu-secao-admin">
+    <h2 class="menu-secao-titulo">🔐 Administração</h2>
+    <div class="menu-grid">
+        <a href="/cadastros/usuarios" class="menu-card menu-card-admin">
+            <span class="menu-card-icon">🔑</span>
+            <span class="menu-card-label">Usuários</span>
         </a>
-        <span>{{ atendente.nome_completo }} &nbsp;|&nbsp; <a href="/logout">Sair</a></span>
+        <a href="/cadastros/permissoes" class="menu-card menu-card-admin">
+            <span class="menu-card-icon">🔒</span>
+            <span class="menu-card-label">Permissões</span>
+        </a>
+        <a href="/configuracoes" class="menu-card menu-card-admin">
+            <span class="menu-card-icon">⚙️</span>
+            <span class="menu-card-label">Configurações</span>
+        </a>
     </div>
-
-    <div class="conteudo">
-        <div class="grade-menu">
-            <a href="/dia" class="card-menu">
-                <div class="icone">📋</div>
-                <span>Dia de Trabalho</span>
-            </a>
-            <a href="/cadastros/pessoas" class="card-menu">
-                <div class="icone">👥</div>
-                <span>Pessoas</span>
-            </a>
-            <a href="/cadastros/mediuns" class="card-menu">
-                <div class="icone"><img src="/static/medium.svg" class="icone-svg" alt="Médiuns"></div>
-                <span>Médiuns</span>
-            </a>
-            <a href="/agenda" class="card-menu">
-                <div class="icone">📅</div>
-                <span>Agenda</span>
-            </a>
-            <a href="/relatorios" class="card-menu">
-                <div class="icone">📊</div>
-                <span>Relatórios</span>
-            </a>
-            <a href="/cadastros/trabalhadores" class="card-menu">
-                <div class="icone"><img src="/static/medium.svg" class="icone-svg" alt="Trabalhadores"></div>
-                <span>Trabalhadores</span>
-            </a>
-            <a href="/financeiro" class="card-menu">
-                <div class="icone">💰</div>
-                <span>Financeiro</span>
-            </a>
-            <a href="/doacoes" class="card-menu">
-                <div class="icone">📦</div>
-                <span>Doações</span>
-            </a>
-            <a href="/biblioteca" class="card-menu">
-                <div class="icone">📚</div>
-                <span>Biblioteca</span>
-            </a>
-            <a href="/mala-direta" class="card-menu">
-                <div class="icone">✉️</div>
-                <span>Mala Direta</span>
-            </a>
-        </div>
-
-        {% if e_admin %}
-        <div class="secao-menu">
-            <h2>🔐 Administração</h2>
-            <div class="grade-menu">
-                <a href="/cadastros/usuarios" class="card-menu">
-                    <div class="icone">🔑</div>
-                    <span>Usuários</span>
-                </a>
-                <a href="/cadastros/permissoes" class="card-menu">
-                    <div class="icone">🔒</div>
-                    <span>Permissões</span>
-                </a>
-                <a href="/configuracoes" class="card-menu">
-                    <div class="icone">⚙️</div>
-                    <span>Configurações</span>
-                </a>
-            </div>
-        </div>
-        {% endif %}
-    </div>
-</body>
-</html>
+</div>
+{% endif %}
+{% endblock %}

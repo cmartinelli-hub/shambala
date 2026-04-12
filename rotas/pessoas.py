@@ -1,11 +1,65 @@
-from fastapi import APIRouter, Request, Form, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import APIRouter, Request, Form, Query, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
+import os
+import uuid
 from banco import conectar, _normalizar
 from rotas.auth import obter_atendente_logado
 from templates_config import templates
 
 router = APIRouter(prefix="/cadastros/pessoas")
+
+# Configuração de upload de fotos
+FOTOS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "fotos")
+os.makedirs(FOTOS_DIR, exist_ok=True)
+EXTENSOES_PERMITIDAS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+TAMANHO_MAXIMO = 5 * 1024 * 1024  # 5MB
+
+
+def _salvar_foto(file: UploadFile, pessoa_id: int, foto_existente: str = None) -> str:
+    """Salva foto da pessoa e retorna o caminho relativo. Remove foto antiga se existir."""
+    # Remover foto antiga
+    if foto_existente and os.path.exists(os.path.join(FOTOS_DIR, foto_existente)):
+        try:
+            os.remove(os.path.join(FOTOS_DIR, foto_existente))
+        except OSError:
+            pass
+
+    # Gerar nome único
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in EXTENSOES_PERMITIDAS:
+        ext = ".jpg"
+    nome_arquivo = f"pessoa_{pessoa_id}_{uuid.uuid4().hex[:8]}{ext}"
+    caminho = os.path.join(FOTOS_DIR, nome_arquivo)
+
+    # Salvar arquivo
+    with open(caminho, "wb") as f:
+        conteudo = file.file.read()
+        if len(conteudo) > TAMANHO_MAXIMO:
+            raise ValueError("Arquivo muito grande (máx. 5MB)")
+        f.write(conteudo)
+
+    return nome_arquivo
+
+
+# Rota para placeholder SVG (fallback quando não há foto)
+@router.get("/foto-placeholder/{inicial}")
+async def foto_placeholder(inicial: str):
+    """Gera placeholder SVG com a inicial da pessoa."""
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+        <defs>
+            <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#1a5fa8"/>
+                <stop offset="100%" style="stop-color:#2d7dd2"/>
+            </linearGradient>
+        </defs>
+        <circle cx="100" cy="100" r="100" fill="url(#g)"/>
+        <text x="100" y="115" text-anchor="middle" fill="white"
+              font-family="system-ui,sans-serif" font-size="90"
+              font-weight="bold">{inicial.upper()}</text>
+    </svg>'''
+    return Response(content=svg, media_type="image/svg+xml")
 
 _PARTICULAS = {"a", "o", "e", "da", "do", "de", "das", "dos", "d"}
 
@@ -139,6 +193,7 @@ async def salvar_novo(
     uf: str = Form(""),
     next: str = Form(""),
     acao: str = Form(""),
+    foto: UploadFile = File(None),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -157,6 +212,8 @@ async def salvar_novo(
 
     nome = _capitalizar_nome(nome_completo.strip())
     dn = _parse_data(data_nascimento)
+    foto_pessoa = None
+
     with conectar() as conn:
         cur = conn.execute(
             """INSERT INTO pessoas (nome_apresentacao, nome_completo, data_nascimento,
@@ -170,6 +227,18 @@ async def salvar_novo(
              bairro.strip(), cidade.strip(), uf.strip()),
         )
         novo_id = cur.fetchone()["id"]
+
+        # Salvar foto se enviada
+        if foto and getattr(foto, "filename", None):
+            try:
+                foto_pessoa = _salvar_foto(foto, novo_id)
+                conn.execute(
+                    "UPDATE pessoas SET foto_pessoa = %s WHERE id = %s",
+                    (foto_pessoa, novo_id)
+                )
+            except ValueError as e:
+                pass  # Silenciosamente ignora erro de tamanho
+
     if acao == "checkin":
         return RedirectResponse(url=f"/dia/checkin/{novo_id}", status_code=303)
     destino = next.strip() or "/cadastros/pessoas"
@@ -214,6 +283,8 @@ async def salvar_editar(
     cidade: str = Form(""),
     uf: str = Form(""),
     next: str = Form(""),
+    remover_foto: str = Form(""),
+    foto: UploadFile = File(None),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -234,18 +305,43 @@ async def salvar_editar(
 
     nome_completo = _capitalizar_nome(nome_completo.strip())
     dn = _parse_data(data_nascimento)
+
     with conectar() as conn:
+        # Buscar foto existente
+        existente = conn.execute(
+            "SELECT foto_pessoa FROM pessoas WHERE id = %s", (id,)
+        ).fetchone()
+        foto_existente = existente["foto_pessoa"] if existente else None
+
+        # Remover foto se solicitado
+        if remover_foto == "1" and foto_existente:
+            if os.path.exists(os.path.join(FOTOS_DIR, foto_existente)):
+                try:
+                    os.remove(os.path.join(FOTOS_DIR, foto_existente))
+                except OSError:
+                    pass
+            foto_existente = None
+
+        # Salvar nova foto se enviada
+        if foto and getattr(foto, "filename", None):
+            try:
+                foto_existente = _salvar_foto(foto, id, foto_existente)
+            except ValueError:
+                pass
+
         conn.execute(
             """UPDATE pessoas SET nome_completo=%s, nome_apresentacao=%s,
                data_nascimento=%s, deficiencia=%s, prioridade=%s,
                telefone=%s, email=%s,
-               cep=%s, logradouro=%s, numero=%s, complemento=%s, bairro=%s, cidade=%s, uf=%s
+               cep=%s, logradouro=%s, numero=%s, complemento=%s, bairro=%s, cidade=%s, uf=%s,
+               foto_pessoa=%s
                WHERE id=%s""",
             (nome_completo.strip(), nome_completo.strip(),
              dn, deficiencia, prioridade,
              telefone.strip(), email.strip().lower(),
              cep.strip(), logradouro.strip(), numero.strip(), complemento.strip(),
-             bairro.strip(), cidade.strip(), uf.strip(), id),
+             bairro.strip(), cidade.strip(), uf.strip(),
+             foto_existente, id),
         )
     destino = next.strip() or "/cadastros/pessoas"
     return RedirectResponse(url=destino, status_code=303)

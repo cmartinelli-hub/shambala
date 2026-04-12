@@ -2,153 +2,174 @@
 {% block titulo %}Ficha — {{ pessoa.nome_completo }}{% endblock %}
 
 {% block conteudo %}
-<div class="cabecalho-secao">
-    <h2>{{ pessoa.nome_completo }}</h2>
-    <div style="display:flex;gap:.5rem">
-        <a href="/cadastros/pessoas/{{ pessoa.id }}/editar" class="btn btn-primario">Editar</a>
-        <a href="/cadastros/pessoas/{{ pessoa.id }}/lacos" class="btn btn-secundario">Laços</a>
-        <a href="/cadastros/pessoas" class="btn btn-secundario">← Voltar</a>
+<!-- Header da ficha -->
+<div class="ficha-header">
+    <div class="ficha-header-top">
+        <a href="/cadastros/pessoas" class="btn-voltar">← Voltar</a>
+        <div class="ficha-acoes">
+            <a href="/cadastros/pessoas/{{ pessoa.id }}/editar" class="btn btn-primario">✏️ Editar</a>
+            <a href="/cadastros/pessoas/{{ pessoa.id }}/lacos" class="btn btn-secundario">🔗 Laços</a>
+        </div>
+    </div>
+    <div class="ficha-pessoa-info">
+        <div class="ficha-avatar">
+            {% if pessoa.foto_pessoa %}
+            <img src="/static/fotos/{{ pessoa.foto_pessoa }}" alt="{{ pessoa.nome_completo }}" class="ficha-avatar-img">
+            {% else %}
+            {{ pessoa.nome_completo[:1]|upper }}
+            {% endif %}
+        </div>
+        <div class="ficha-dados">
+            <h1 class="ficha-nome">{{ pessoa.nome_completo }}</h1>
+            <div class="ficha-tags">
+                {% if pessoa.prioridade %}
+                <span class="tag tag-prioridade">⚑ Prioritário</span>
+                {% endif %}
+                {% if pessoa.deficiencia %}
+                <span class="tag tag-deficiencia">♿ Deficiência</span>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
-{# ── Dados pessoais ── #}
-<div class="card-form" style="margin-bottom:1.5rem">
-    <div class="grade-form">
+<!-- Dados pessoais -->
+<div class="ficha-secao">
+    <h2 class="ficha-secao-titulo">📋 Dados Pessoais</h2>
+    <div class="ficha-grid-dados">
         {% if pessoa.data_nascimento %}
-        <div class="campo">
-            <label>Data de nascimento</label>
-            <div>{{ pessoa.data_nascimento | data_br }}</div>
+        <div class="ficha-dado">
+            <span class="ficha-dado-label">Nascimento</span>
+            <span class="ficha-dado-valor">{{ pessoa.data_nascimento | data_br }}</span>
         </div>
         {% endif %}
         {% if pessoa.telefone %}
-        <div class="campo">
-            <label>Telefone</label>
-            <div>{{ pessoa.telefone }}</div>
+        <div class="ficha-dado">
+            <span class="ficha-dado-label">Telefone</span>
+            <span class="ficha-dado-valor">{{ pessoa.telefone }}</span>
         </div>
         {% endif %}
         {% if pessoa.email %}
-        <div class="campo">
-            <label>E-mail</label>
-            <div>{{ pessoa.email }}</div>
-        </div>
-        {% endif %}
-        {% if pessoa.deficiencia %}
-        <div class="campo">
-            <div>♿ Possui deficiência</div>
-        </div>
-        {% endif %}
-        {% if pessoa.prioridade %}
-        <div class="campo">
-            <div>⚑ Atendimento prioritário</div>
+        <div class="ficha-dado">
+            <span class="ficha-dado-label">E-mail</span>
+            <span class="ficha-dado-valor">{{ pessoa.email }}</span>
         </div>
         {% endif %}
         {% if pessoa.logradouro %}
-        <div class="campo campo-largo">
-            <label>Endereço</label>
-            <div>{{ pessoa.logradouro }}{% if pessoa.numero %}, {{ pessoa.numero }}{% endif %}
-            {% if pessoa.complemento %} — {{ pessoa.complemento }}{% endif %}<br>
-            {% if pessoa.bairro %}{{ pessoa.bairro }} · {% endif %}
-            {{ pessoa.cidade or '' }}{% if pessoa.uf %}/{{ pessoa.uf }}{% endif %}
-            {% if pessoa.cep %} · CEP {{ pessoa.cep }}{% endif %}
-            </div>
+        <div class="ficha-dado ficha-dado-largo">
+            <span class="ficha-dado-label">Endereço</span>
+            <span class="ficha-dado-valor">
+                {{ pessoa.logradouro }}{% if pessoa.numero %}, {{ pessoa.numero }}{% endif %}
+                {% if pessoa.complemento %} — {{ pessoa.complemento }}{% endif %}
+                {% if pessoa.bairro %}<br>{{ pessoa.bairro }} · {% endif %}
+                {{ pessoa.cidade or '' }}{% if pessoa.uf %}/{{ pessoa.uf }}{% endif %}
+                {% if pessoa.cep %} · CEP {{ pessoa.cep }}{% endif %}
+            </span>
         </div>
         {% endif %}
     </div>
 </div>
 
-{# ── Laços ── #}
+<!-- Laços familiares -->
 {% if lacos %}
-<h3 class="subtitulo-secao">Laços familiares</h3>
-<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem">
-    {% for l in lacos %}
-    <span style="background:var(--cor-superficie);border:1px solid var(--cor-borda);border-radius:var(--raio);padding:.3rem .7rem;font-size:.85rem">
-        {{ l.tipo_laco }}: <a href="/cadastros/pessoas/{{ l.relacionada_id }}">{{ l.nome_completo }}</a>
-    </span>
-    {% endfor %}
+<div class="ficha-secao">
+    <h2 class="ficha-secao-titulo">🔗 Laços Familiares</h2>
+    <div class="ficha-lacos-grid">
+        {% for l in lacos %}
+        <a href="/cadastros/pessoas/{{ l.relacionada_id }}" class="ficha-laco-card">
+            <div class="ficha-laco-avatar">{{ l.nome_completo[:1]|upper }}</div>
+            <div class="ficha-laco-info">
+                <span class="ficha-laco-nome">{{ l.nome_completo }}</span>
+                <span class="ficha-laco-tipo">{{ l.tipo_laco }}</span>
+            </div>
+            <span class="ficha-laco-seta">›</span>
+        </a>
+        {% endfor %}
+    </div>
 </div>
 {% endif %}
 
-{# ── Planos de tratamento ── #}
+<!-- Planos de tratamento -->
 {% if planos %}
-<h3 class="subtitulo-secao">Planos de tratamento</h3>
-<table style="margin-bottom:1.5rem">
-    <thead>
-        <tr>
-            <th>Médium</th>
-            <th>Início</th>
-            <th>Sessões</th>
-            <th>Frequência</th>
-            <th>Status</th>
-        </tr>
-    </thead>
-    <tbody>
+<div class="ficha-secao">
+    <h2 class="ficha-secao-titulo">🩺 Planos de Tratamento</h2>
+    <div class="ficha-planos-grid">
         {% for p in planos %}
-        <tr>
-            <td>{{ p.medium_nome }}</td>
-            <td>{{ p.data_inicio | data_br }}</td>
-            <td>{{ p.sessoes_realizadas }}/{{ p.sessoes_total }}</td>
-            <td>{{ p.frequencia }}</td>
-            <td>
-                {% if p.status == 'ativo' %}<span style="color:var(--cor-sucesso)">ativo</span>
-                {% elif p.status == 'alta' %}<span style="color:var(--cor-texto-suave)">alta</span>
-                {% else %}<span style="color:var(--cor-erro)">{{ p.status }}</span>{% endif %}
-            </td>
-        </tr>
+        <div class="ficha-plano-card {% if p.status == 'ativo' %}plano-ativo{% elif p.status == 'alta' %}plano-alta{% else %}plano-cancelado{% endif %}">
+            <div class="ficha-plano-header">
+                <span class="ficha-plano-medium">{{ p.medium_nome }}</span>
+                <span class="ficha-plano-status status-{{ p.status }}">{{ p.status }}</span>
+            </div>
+            <div class="ficha-plano-dados">
+                <div class="ficha-plano-dado">
+                    <span class="ficha-plano-label">Início</span>
+                    <span>{{ p.data_inicio | data_br }}</span>
+                </div>
+                <div class="ficha-plano-dado">
+                    <span class="ficha-plano-label">Sessões</span>
+                    <span>{{ p.sessoes_realizadas }}/{{ p.sessoes_total }}</span>
+                </div>
+                <div class="ficha-plano-dado">
+                    <span class="ficha-plano-label">Frequência</span>
+                    <span>{{ p.frequencia }}</span>
+                </div>
+            </div>
+            {% if p.sessoes_total > 0 %}
+            <div class="ficha-plano-barra">
+                <div class="ficha-plano-progresso" style="width: {{ (p.sessoes_realizadas / p.sessoes_total * 100)|int }}%"></div>
+            </div>
+            {% endif %}
+        </div>
         {% endfor %}
-    </tbody>
-</table>
+    </div>
+</div>
 {% endif %}
 
-{# ── Histórico de check-ins ── #}
-<h3 class="subtitulo-secao">Histórico de atendimentos</h3>
-{% if historico %}
-<table>
-    <thead>
-        <tr>
-            <th>Data</th>
-            <th>Hora</th>
-            <th>Passe</th>
-            <th>Reiki</th>
-            <th>Fraterno</th>
-            <th>Atendimento</th>
-            <th>Médium</th>
-        </tr>
-    </thead>
-    <tbody>
+<!-- Histórico de atendimentos -->
+<div class="ficha-secao">
+    <h2 class="ficha-secao-titulo">📅 Histórico de Atendimentos</h2>
+    {% if historico %}
+    <div class="ficha-historico-timeline">
         {% for h in historico %}
-        <tr>
-            <td>{{ h.data | data_br }}</td>
-            <td>{{ h.hora_checkin }}</td>
-            <td>
+        <div class="ficha-historico-item">
+            <div class="ficha-historico-data">
+                <span class="ficha-historico-dia">{{ h.data | data_br }}</span>
+                <span class="ficha-historico-hora">{{ h.hora_checkin }}</span>
+            </div>
+            <div class="ficha-historico-servicos">
                 {% if h.codigo_passe %}
-                    {{ h.codigo_passe }}
-                    {% if h.passe_realizado %}✓{% else %}⏳{% endif %}
-                {% else %}—{% endif %}
-            </td>
-            <td>
+                <span class="servico-badge {% if h.passe_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
+                    Passe {{ h.codigo_passe }} {% if h.passe_realizado %}✓{% else %}⏳{% endif %}
+                </span>
+                {% endif %}
                 {% if h.codigo_reiki %}
-                    {{ h.codigo_reiki }}
-                    {% if h.reiki_realizado %}✓{% else %}⏳{% endif %}
-                {% else %}—{% endif %}
-            </td>
-            <td>
+                <span class="servico-badge {% if h.reiki_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
+                    Reiki {{ h.codigo_reiki }} {% if h.reiki_realizado %}✓{% else %}⏳{% endif %}
+                </span>
+                {% endif %}
                 {% if h.codigo_acolhimento %}
-                    {{ h.codigo_acolhimento }}
-                    {% if h.acolhimento_realizado %}✓{% else %}⏳{% endif %}
-                {% else %}—{% endif %}
-            </td>
-            <td>
+                <span class="servico-badge {% if h.acolhimento_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
+                    Fraterno {{ h.codigo_acolhimento }} {% if h.acolhimento_realizado %}✓{% else %}⏳{% endif %}
+                </span>
+                {% endif %}
                 {% if h.codigo_atendimento %}
-                    {{ h.codigo_atendimento }}
-                    {% if h.atendimento_realizado %}✓{% else %}⏳{% endif %}
-                {% else %}—{% endif %}
-            </td>
-            <td>{{ h.medium_nome or '—' }}</td>
-        </tr>
+                <span class="servico-badge {% if h.atendimento_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
+                    Atendimento {{ h.codigo_atendimento }} {% if h.atendimento_realizado %}✓{% else %}⏳{% endif %}
+                </span>
+                {% if h.medium_nome %}
+                <span class="servico-medium">→ {{ h.medium_nome }}</span>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
         {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<div class="vazio">Nenhum atendimento registrado.</div>
-{% endif %}
+    </div>
+    {% else %}
+    <div class="vazio">
+        <div class="vazio-icone">📋</div>
+        <h3>Nenhum atendimento registrado</h3>
+        <p>O histórico aparecerá aqui quando a pessoa for atendida.</p>
+    </div>
+    {% endif %}
+</div>
 {% endblock %}

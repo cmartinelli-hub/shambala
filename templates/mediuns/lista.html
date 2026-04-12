@@ -3,43 +3,61 @@
 
 {% block conteudo %}
 <div class="cabecalho-secao">
-    <h2>Médiuns</h2>
-    <a href="/cadastros/mediuns/novo" class="btn btn-primario">+ Novo médium</a>
+    <div>
+        <h1>Médiuns</h1>
+        <p class="subtitulo">{{ mediuns|length }} médium{{ 's' if mediuns|length != 1 }} cadastrado{{ 's' if mediuns|length != 1 }}</p>
+    </div>
+    <a href="/cadastros/mediuns/novo" class="btn btn-primario">➕ Novo médium</a>
 </div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Nome completo</th>
-            <th>Telefone</th>
-            <th>E-mail</th>
-            <th>Situação</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for m in mediuns %}
-        <tr class="{% if not m.ativo %}inativo{% endif %}">
-            <td>{{ m.nome_completo }}</td>
-            <td>{{ m.telefone or '—' }}</td>
-            <td>{{ m.email or '—' }}</td>
-            <td>
-                <span class="badge {% if m.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
-                    {{ 'Ativo' if m.ativo else 'Inativo' }}
-                </span>
-            </td>
-            <td class="acoes">
-<a href="/cadastros/mediuns/{{ m.id }}/editar" class="btn btn-secundario btn-sm">Editar</a>
-                <form method="post" action="/cadastros/mediuns/{{ m.id }}/toggle-ativo" style="display:inline">
-                    <button type="submit" class="btn btn-sm {% if m.ativo %}btn-perigo{% else %}btn-secundario{% endif %}">
-                        {{ 'Desativar' if m.ativo else 'Ativar' }}
-                    </button>
-                </form>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5" style="text-align:center;color:var(--cor-texto-suave)">Nenhum médium cadastrado.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% if mediuns %}
+<div class="mediuns-grid">
+    {% for m in mediuns %}
+    <div class="medium-card {% if not m.ativo %}medium-inativo{% endif %}">
+        <div class="medium-header">
+            <div class="medium-avatar">
+                {% if m.foto_medium %}
+                <img src="/static/fotos/{{ m.foto_medium }}" alt="{{ m.nome_completo }}" class="medium-avatar-img">
+                {% else %}
+                <img src="/cadastros/mediuns/foto-placeholder/{{ m.nome_completo[:1] }}" alt="{{ m.nome_completo }}" class="medium-avatar-img">
+                {% endif %}
+            </div>
+            <div class="medium-info">
+                <h3 class="medium-nome">{{ m.nome_completo }}</h3>
+                <span class="medium-vagas">🎫 {{ m.vagas_dia }} vagas/noite</span>
+            </div>
+            <span class="medium-badge {% if m.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
+                {{ 'Ativo' if m.ativo else 'Inativo' }}
+            </span>
+        </div>
+        <div class="medium-contato">
+            {% if m.telefone %}
+            <span class="medium-telefone">📞 {{ m.telefone }}</span>
+            {% endif %}
+            {% if m.email %}
+            <span class="medium-email">✉️ {{ m.email }}</span>
+            {% endif %}
+            {% if not m.telefone and not m.email %}
+            <span class="medium-sem-contato">Sem contato</span>
+            {% endif %}
+        </div>
+        <div class="medium-acoes">
+            <a href="/cadastros/mediuns/{{ m.id }}/editar" class="btn btn-sm btn-editar">✏️ Editar</a>
+            <a href="/cadastros/mediuns/{{ m.id }}/planos" class="btn btn-sm btn-planos">🩺 Planos</a>
+            <form method="post" action="/cadastros/mediuns/{{ m.id }}/toggle-ativo" class="medium-form-toggle">
+                <button type="submit" class="btn-toggle {% if m.ativo %}btn-desativar{% else %}btn-ativar{% endif %}">
+                    {{ 'Desativar' if m.ativo else 'Ativar' }}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="vazio">
+    <div class="vazio-icone">🧘</div>
+    <h3>Nenhum médium cadastrado</h3>
+    <p>Clique em "+ Novo médium" para começar.</p>
+</div>
+{% endif %}
 {% endblock %}

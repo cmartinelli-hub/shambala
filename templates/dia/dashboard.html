@@ -57,28 +57,50 @@
     display: flex;
     gap: .6rem;
     align-items: flex-start;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    padding-bottom: 0;
+}
+
+/* Scrollbar fixa no rodapé da página */
+.dash-scroll-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: #e0e0e0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
     overflow-x: auto;
     overflow-y: hidden;
-    padding-bottom: 1rem;
-    scroll-behavior: smooth;
-    /* Scrollbar visível e grossa */
     scrollbar-width: thin;
-    scrollbar-color: var(--cor-primaria) var(--cor-borda);
+    scrollbar-color: var(--cor-primaria) #c8c8c8;
 }
-.dash-colunas::-webkit-scrollbar {
-    height: 14px;
+
+.dash-scroll-footer::-webkit-scrollbar {
+    height: 56px;
 }
-.dash-colunas::-webkit-scrollbar-track {
-    background: var(--cor-borda);
-    border-radius: 7px;
+
+.dash-scroll-footer::-webkit-scrollbar-track {
+    background: #c8c8c8;
 }
-.dash-colunas::-webkit-scrollbar-thumb {
+
+.dash-scroll-footer::-webkit-scrollbar-thumb {
     background: var(--cor-primaria);
-    border-radius: 7px;
-    border: 2px solid var(--cor-borda);
+    min-width: 60px;
+    border-radius: 8px;
 }
-.dash-colunas::-webkit-scrollbar-thumb:hover {
+
+.dash-scroll-footer::-webkit-scrollbar-thumb:hover {
     background: #1a5a96;
+}
+
+/* Espaço para não cobrir conteúdo */
+.dash-spacer-bottom {
+    height: 60px;
+    flex-shrink: 0;
 }
 
 .dash-col {
@@ -120,6 +142,10 @@
     padding: .4rem .55rem 2rem;
     position: relative;
     min-height: 70px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 .col-item:last-child { border-bottom: none; }
 .col-item.prio { background: #fff5f4; }
@@ -129,6 +155,7 @@
     font-weight: 800;
     color: var(--cor-primaria);
     line-height: 1;
+    text-align: center;
 }
 .col-item.prio .item-codigo { color: #c0392b; }
 
@@ -139,6 +166,8 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-align: center;
+    width: 100%;
 }
 
 /* Botão Chamar — canto inferior esquerdo */
@@ -342,11 +371,11 @@
         {% endif %}
     </div>
 
-    {# ── Acolhimento Fraterno ── #}
+    {# ── Fraterno ── #}
     <div class="dash-col">
         <div class="col-cabecalho acolhimento">
-            <a href="/dia/acolhimento" title="Abrir fila de acolhimento">
-                Acolhimento&nbsp;({{ fila_acolhimento|length }})
+            <a href="/dia/acolhimento" title="Abrir fila de Fraterno">
+                Fraterno&nbsp;({{ fila_acolhimento|length }})
             </a>
         </div>
         {% if fila_acolhimento %}
@@ -354,7 +383,7 @@
             {% set idoso = c.data_nascimento and (hoje[:4]|int - c.data_nascimento[:4]|int) >= 70 %}
             {% set prio = c.prioridade or c.deficiencia or idoso %}
             <div class="col-item {% if prio %}prio{% endif %}">
-                {# #6 — sem botão "realizado" no acolhimento; só via form fraterno #}
+                {# #6 — sem botão "realizado" no fraterno; só via form fraterno #}
                 <form method="post" action="/dia/dashboard/acolhimento/{{ c.id }}/cancelar"
                       class="btn-cancelar" style="margin:0">
                     <button class="btn btn-alerta btn-xs" title="Cancelar da fila"
@@ -429,6 +458,10 @@
     </div>
     <button class="scroll-btn scroll-btn-right" id="scroll-right" title="Rolar para direita">&#9654;</button>
 </div>
+
+<!-- Barra de rolagem fixa no rodapé -->
+<div class="dash-scroll-footer" id="dash-scroll-footer"></div>
+<div class="dash-spacer-bottom"></div>
 {% endblock %}
 
 {% block scripts %}
@@ -484,14 +517,48 @@ document.querySelectorAll('.btn-chamar button, .btn-realizado button, .btn-cance
     conectar();
 })();
 
-// Navegação horizontal com botões + scroll nativo
+// Navegação horizontal com botões + scroll nativo + barra fixa no rodapé
 (function() {
     const colunas = document.getElementById('dash-colunas');
     const btnLeft = document.getElementById('scroll-left');
     const btnRight = document.getElementById('scroll-right');
+    const scrollFooter = document.getElementById('dash-scroll-footer');
     if (!colunas) return;
 
     const SCROLL_STEP = 180; // ~1 coluna
+
+    // Criar conteúdo "fictício" na barra fixa para simular a largura total
+    function atualizarScrollbarFixa() {
+        if (!scrollFooter) return;
+        // Limpar e recriar proxies das colunas
+        scrollFooter.innerHTML = '';
+        const cols = colunas.querySelectorAll('.dash-col');
+        cols.forEach(() => {
+            const proxy = document.createElement('div');
+            proxy.style.cssText = 'flex:0 0 160px;height:1px;margin:0 .3px;';
+            scrollFooter.appendChild(proxy);
+        });
+        // Adicionar spacer final
+        const spacer = document.createElement('div');
+        spacer.style.cssText = 'flex:0 0 40px;height:1px;';
+        scrollFooter.appendChild(spacer);
+    }
+
+    // Sincronizar scroll da barra fixa com as colunas
+    if (scrollFooter) {
+        scrollFooter.addEventListener('scroll', () => {
+            colunas.scrollLeft = scrollFooter.scrollLeft;
+        });
+    }
+
+    // Permitir scroll com wheel/trackpad na área das colunas
+    colunas.addEventListener('wheel', (e) => {
+        const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+        if (scrollFooter) {
+            scrollFooter.scrollLeft += delta;
+        }
+        e.preventDefault();
+    }, { passive: false });
 
     function atualizarBotoes() {
         if (btnLeft) btnLeft.disabled = colunas.scrollLeft <= 2;
@@ -500,16 +567,13 @@ document.querySelectorAll('.btn-chamar button, .btn-realizado button, .btn-cance
     colunas.addEventListener('scroll', atualizarBotoes);
     atualizarBotoes();
 
-    if (btnLeft)  btnLeft.addEventListener('click',  () => colunas.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' }));
-    if (btnRight) btnRight.addEventListener('click', () => colunas.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' }));
+    if (btnLeft)  btnLeft.addEventListener('click',  () => scrollFooter && scrollFooter.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' }));
+    if (btnRight) btnRight.addEventListener('click', () => scrollFooter && scrollFooter.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' }));
 
-    // Touchpad: scroll horizontal com trackpad (converter vertical para horizontal)
-    colunas.addEventListener('wheel', (e) => {
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-            e.preventDefault();
-            colunas.scrollLeft += e.deltaY;
-        }
-    }, { passive: false });
+    // Inicializar
+    atualizarScrollbarFixa();
+    // Recalcular após carreg completo
+    window.addEventListener('load', atualizarScrollbarFixa);
 })();
 
 // Busca de pessoa no dashboard

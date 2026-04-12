@@ -165,6 +165,12 @@ def _migrar(conn):
         ("checkins", "acolhimento_chamado", "INTEGER NOT NULL DEFAULT 0"),
         ("atendentes", "grupo_id", "INTEGER REFERENCES grupos(id)"),
         ("trabalhadores", "cpf", "TEXT UNIQUE"),
+        ("grupos_permissoes", "ler", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("grupos_permissoes", "escrever", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("grupos_permissoes", "apagar", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("pessoas", "foto_pessoa", "TEXT"),
+        ("mediuns", "foto_medium", "TEXT"),
+        ("trabalhadores", "foto_trabalhador", "TEXT"),
         ("trabalhadores", "rg", "TEXT"),
         ("trabalhadores", "data_nascimento", "TEXT"),
         ("trabalhadores", "cep", "TEXT"),
@@ -204,6 +210,13 @@ def _migrar(conn):
              AND nome_apresentacao IS NOT NULL AND nome_apresentacao != ''"""
     )
 
+    # Migra permissões existentes para modelo Unix (ler=TRUE, escrever=TRUE, apagar=TRUE)
+    conn.execute(
+        """UPDATE grupos_permissoes
+           SET ler = TRUE, escrever = TRUE, apagar = TRUE
+           WHERE ler = FALSE AND escrever = FALSE AND apagar = FALSE"""
+    )
+
 
 # ── Criação de tabelas ───────────────────────────────────────────────────────
 
@@ -234,7 +247,8 @@ def criar_tabelas():
                 complemento         TEXT,
                 bairro              TEXT,
                 cidade              TEXT,
-                uf                  TEXT
+                uf                  TEXT,
+                foto_pessoa         TEXT
             )
         """)
 
@@ -261,7 +275,8 @@ def criar_tabelas():
                 cidade          TEXT,
                 uf              TEXT,
                 ativo           INTEGER NOT NULL DEFAULT 1,
-                vagas_dia       INTEGER NOT NULL DEFAULT 10
+                vagas_dia       INTEGER NOT NULL DEFAULT 10,
+                foto_medium     TEXT
             )
         """)
 
@@ -279,6 +294,9 @@ def criar_tabelas():
                 id          SERIAL PRIMARY KEY,
                 grupo_id    INTEGER NOT NULL REFERENCES grupos(id) ON DELETE CASCADE,
                 modulo      TEXT NOT NULL,
+                ler         BOOLEAN NOT NULL DEFAULT FALSE,
+                escrever    BOOLEAN NOT NULL DEFAULT FALSE,
+                apagar      BOOLEAN NOT NULL DEFAULT FALSE,
                 UNIQUE(grupo_id, modulo)
             )
         """)
@@ -312,6 +330,7 @@ def criar_tabelas():
                 valor_mensalidade   NUMERIC(10,2) DEFAULT 0,
                 dia_vencimento      INTEGER DEFAULT 10,
                 ativo               INTEGER NOT NULL DEFAULT 1,
+                foto_trabalhador    TEXT,
                 created_at          TEXT NOT NULL DEFAULT (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')::date::text
             )
         """)

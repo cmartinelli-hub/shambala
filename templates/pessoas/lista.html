@@ -3,44 +3,58 @@
 
 {% block conteudo %}
 <div class="cabecalho-secao">
-    <h2>Pessoas</h2>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <a href="/cadastros/pessoas/novo" class="btn btn-primario">+ Nova pessoa</a>
-        <a href="/dia/dashboard" class="btn btn-secundario">Dashboard</a>
+    <div>
+        <h1>Pessoas</h1>
+        <p class="subtitulo">{{ pessoas|length }} pessoa{{ 's' if pessoas|length != 1 }} cadastrada{{ 's' if pessoas|length != 1 }}</p>
+    </div>
+    <div class="acoes-cabecalho">
+        <a href="/cadastros/pessoas/novo" class="btn btn-primario">➕ Nova pessoa</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">📊 Dashboard</a>
     </div>
 </div>
 
-<form method="get" class="barra-busca">
-    <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar por nome…" autofocus>
-    <button type="submit" class="btn btn-secundario">Buscar</button>
-    {% if busca %}
-    <a href="/cadastros/pessoas" class="btn btn-secundario">Limpar</a>
-    {% endif %}
+<form method="get" class="barra-busca-form">
+    <div class="busca-wrapper">
+        <span class="busca-icone">🔍</span>
+        <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar por nome…" autofocus class="busca-input">
+        {% if busca %}
+        <a href="/cadastros/pessoas" class="btn btn-limpar">✕</a>
+        {% endif %}
+    </div>
+    <button type="submit" class="btn btn-primario">Buscar</button>
 </form>
 
-<table>
-    <thead>
-        <tr>
-            <th>Nome completo</th>
-            <th>Telefone</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for p in pessoas %}
-        <tr>
-            <td><a href="/cadastros/pessoas/{{ p.id }}">{{ p.nome_completo }}</a></td>
-            <td>{{ p.telefone or '—' }}</td>
-            <td class="acoes">
-                <a href="/cadastros/pessoas/{{ p.id }}" class="btn btn-secundario btn-sm">Ficha</a>
-                <a href="/cadastros/pessoas/{{ p.id }}/lacos" class="btn btn-secundario btn-sm">Laços</a>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="3" style="text-align:center;color:var(--cor-texto-suave)">
-            {% if busca %}Nenhuma pessoa encontrada para "{{ busca }}".{% else %}Nenhuma pessoa cadastrada.{% endif %}
-        </td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% if pessoas %}
+<div class="pessoas-grid">
+    {% for p in pessoas %}
+    <a href="/cadastros/pessoas/{{ p.id }}" class="pessoa-card">
+        <div class="pessoa-avatar">
+            {% if p.foto_pessoa %}
+            <img src="/static/fotos/{{ p.foto_pessoa }}" alt="{{ p.nome_completo }}" class="pessoa-avatar-img">
+            {% else %}
+            <img src="/cadastros/pessoas/foto-placeholder/{{ p.nome_completo[:1] }}" alt="{{ p.nome_completo }}" class="pessoa-avatar-img">
+            {% endif %}
+        </div>
+        <div class="pessoa-info">
+            <div class="pessoa-nome">{{ p.nome_completo }}</div>
+            <div class="pessoa-contato">
+                {% if p.telefone %}
+                <span class="pessoa-telefone">📞 {{ p.telefone }}</span>
+                {% else %}
+                <span class="pessoa-sem-contato">Sem telefone</span>
+                {% endif %}
+            </div>
+        </div>
+        <span class="pessoa-seta">›</span>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="vazio">
+    <div class="vazio-icone">👥</div>
+    <h3>{% if busca %}Nenhum resultado para "{{ busca }}"{% else %}Nenhuma pessoa cadastrada{% endif %}</h3>
+    <p>{% if busca %}Tente buscar com outro termo.{% else %}Clique em "+ Nova pessoa" para começar.{% endif %}</p>
+</div>
+{% endif %}
 {% endblock %}
+

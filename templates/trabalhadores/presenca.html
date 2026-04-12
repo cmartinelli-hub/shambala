@@ -2,51 +2,69 @@
 {% block titulo %}Presença — {{ trabalhador.nome_completo }}{% endblock %}
 
 {% block conteudo %}
-<div class="cabecalho-secao">
-    <h2>Presença</h2>
-    <a href="/cadastros/trabalhadores" class="btn btn-secundario">← Voltar</a>
+<!-- Header -->
+<div class="presenca-header">
+    <div>
+        <a href="/cadastros/trabalhadores" class="btn-voltar">← Voltar</a>
+        <h1 class="presenca-titulo">Presença</h1>
+    </div>
+    <div class="presenca-trabalhador">
+        <div class="presenca-avatar">
+            {% if trabalhador.foto_trabalhador %}
+            <img src="/static/fotos/{{ trabalhador.foto_trabalhador }}" alt="{{ trabalhador.nome_completo }}" class="presenca-avatar-img">
+            {% else %}
+            <img src="/cadastros/trabalhadores/foto-placeholder/{{ trabalhador.nome_completo[:1] }}" alt="{{ trabalhador.nome_completo }}" class="presenca-avatar-img">
+            {% endif %}
+        </div>
+        <div class="presenca-nome">{{ trabalhador.nome_completo }}</div>
+    </div>
 </div>
 
-<h3 style="margin:1rem 0">{{ trabalhador.nome_completo }}</h3>
-
-<form method="get" style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:1rem">
-    <div class="campo">
-        <label>Mês/Ano</label>
+<!-- Filtro -->
+<div class="presenca-filtro">
+    <form method="get" class="presenca-filtro-form">
+        <label for="mes">Mês/Ano</label>
         <input type="text" name="mes" id="mes"
                value="{{ mes_atual }}" placeholder="AAAA-MM" maxlength="7"
-               pattern="\d{4}-\d{2}" style="width:120px">
-    </div>
-    <button type="submit" class="btn btn-secundario">Filtrar</button>
-</form>
+               pattern="\d{4}-\d{2}" class="form-input" style="width:140px">
+        <button type="submit" class="btn btn-primario">🔍 Filtrar</button>
+        <a href="/cadastros/trabalhadores/{{ trabalhador.id }}/presenca" class="btn btn-secundario">Limpar</a>
+    </form>
+</div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Data</th>
-            <th>Presença</th>
-            <th>Chegada</th>
-            <th>Saída</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for r in registros %}
-        <tr>
-            <td>{{ r.data | data_br }}</td>
-            <td>
-                <span class="badge {% if r.presente %}badge-ativo{% else %}badge-inativo{% endif %}">
-                    {{ 'Presente' if r.presente else 'Ausente' }}
-                </span>
-            </td>
-            <td>{{ r.hora_chegada or '—' }}</td>
-            <td>{{ r.hora_saida or '—' }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" style="text-align:center;color:var(--cor-texto-suave)">
-            Nenhum registro para este período.
-        </td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<!-- Registros -->
+{% if registros %}
+<div class="presenca-grid">
+    {% for r in registros %}
+    <div class="presenca-card {% if not r.presente %}presenca-ausente{% endif %}">
+        <div class="presenca-card-header">
+            <span class="presenca-data">📅 {{ r.data | data_br }}</span>
+            <span class="presenca-status {% if r.presente %}status-presente{% else %}status-ausente{% endif %}">
+                {% if r.presente %}✔ Presente{% else %}✕ Ausente{% endif %}
+            </span>
+        </div>
+        {% if r.presente %}
+        <div class="presenca-card-dados">
+            <div class="presenca-hora">
+                <span class="presenca-hora-label">Chegada</span>
+                <span class="presenca-hora-valor">{{ r.hora_chegada or '—' }}</span>
+            </div>
+            <div class="presenca-hora">
+                <span class="presenca-hora-label">Saída</span>
+                <span class="presenca-hora-valor">{{ r.hora_saida or '—' }}</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="vazio">
+    <div class="vazio-icone">📋</div>
+    <h3>Nenhum registro para este período</h3>
+    <p>Ajuste o filtro ou aguarde novos registros de presença.</p>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

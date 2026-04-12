@@ -2,57 +2,58 @@
 {% block titulo %}Abrir Dia{% endblock %}
 
 {% block conteudo %}
-<div class="cabecalho-secao">
-    <h2>Abrir dia de trabalho — {{ hoje }}</h2>
+<!-- Header -->
+<div class="form-header">
+    <div>
+        <a href="/menu" class="btn-voltar">← Menu</a>
+        <h1 class="form-titulo">📅 Abrir Dia de Trabalho</h1>
+        <p class="subtitulo">{{ hoje | data_br }}</p>
+    </div>
 </div>
 
-<div class="card-form">
-    <p style="margin-bottom:1rem;color:var(--cor-texto-suave)">Selecione os médiuns presentes hoje:</p>
+<div class="form-secao">
+    <h2 class="form-secao-titulo">🧘 Médiuns Presentes</h2>
+    <p class="texto-ajuda">Selecione os médiuns que estarão atendendo hoje:</p>
 
     {% if mediuns %}
-    <form method="post" action="/dia/abrir">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;
-                       padding:0 .75rem;font-size:.78rem;font-weight:700;color:var(--cor-texto-suave);
-                       text-transform:uppercase;letter-spacing:.04em">
-            <span>Médium</span>
-            <span style="width:120px">Limite atendimentos (vazio = sem limite)</span>
-        </div>
-        <div class="lista-checkboxes">
+    <form method="post" action="/dia/abrir" class="form-mediuns-presentes">
+        <div class="mediuns-checkbox-grid">
             {% for m in mediuns %}
-            <div style="display:flex;align-items:center;gap:.6rem;padding:.2rem 0">
-                <label class="item-checkbox" style="flex:1;margin:0">
-                    <input type="checkbox" name="mediuns_ids" value="{{ m.id }}"
-                           id="mchk-{{ m.id }}">
-                    {{ m.nome_completo }}
-                </label>
-                <input type="number" name="vagas_{{ m.id }}" min="1" placeholder="Sem limite"
-                       id="mvag-{{ m.id }}"
-                       style="width:120px;padding:.35rem .5rem;border:1px solid var(--cor-borda);
-                              border-radius:var(--raio);font-size:.9rem" disabled>
-            </div>
+            <label class="medium-check-card">
+                <input type="checkbox" name="mediuns_ids" value="{{ m.id }}"
+                       id="mchk-{{ m.id }}" class="medium-check-input">
+                <div class="medium-check-info">
+                    <span class="medium-check-nome">{{ m.nome_completo }}</span>
+                    <span class="medium-check-vagas-label">Limite atendimentos:</span>
+                    <input type="number" name="vagas_{{ m.id }}" min="1" placeholder="Sem limite"
+                           id="mvag-{{ m.id }}" class="medium-vagas-input" disabled>
+                </div>
+            </label>
             {% endfor %}
         </div>
-        <div class="acoes-form" style="margin-top:1.5rem">
-            <button type="submit" class="btn btn-primario">Abrir dia</button>
+        <div class="form-acoes">
+            <button type="submit" class="btn btn-primario btn-grande">✅ Abrir dia</button>
             <a href="/menu" class="btn btn-secundario">Cancelar</a>
         </div>
     </form>
     {% else %}
-    <div class="alerta">Nenhum médium ativo cadastrado. <a href="/cadastros/mediuns/novo">Cadastrar médium</a>.</div>
+    <div class="vazio">
+        <div class="vazio-icone">🧘</div>
+        <h3>Nenhum médium ativo cadastrado</h3>
+        <p><a href="/cadastros/mediuns/novo" class="btn btn-primario">Cadastrar médium</a></p>
+    </div>
     {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Habilita o campo de vagas quando o médium é selecionado
 document.querySelectorAll('input[name="mediuns_ids"]').forEach(chk => {
     const vagId = 'mvag-' + chk.value;
     chk.addEventListener('change', () => {
         const inp = document.getElementById(vagId);
         if (inp) inp.disabled = !chk.checked;
     });
-    // Estado inicial
     const inp = document.getElementById(vagId);
     if (inp) inp.disabled = !chk.checked;
 });

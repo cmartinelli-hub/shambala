@@ -2,57 +2,130 @@
 {% block titulo %}Check-in{% endblock %}
 
 {% block conteudo %}
+<!-- Header -->
 <div class="cabecalho-secao">
-    <h2>Check-in</h2>
-    <div style="display:flex;gap:0.5rem">
-        <a href="/cadastros/pessoas/novo" class="btn btn-primario">+ Nova Pessoa</a>
-        <a href="/dia/dashboard" class="btn btn-secundario">← Dashboard</a>
+    <div>
+        <h1>Check-in</h1>
+        <p class="subtitulo">Registre a entrada da pessoa no dia de trabalho</p>
+    </div>
+    <div class="acoes-cabecalho">
+        <a href="/cadastros/pessoas/novo" class="btn btn-primario">➕ Nova Pessoa</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">📊 Dashboard</a>
     </div>
 </div>
 
 {% if ok %}
-<div style="background:rgba(34,139,34,.15);border:1px solid var(--cor-sucesso);border-radius:6px;
-            padding:.9rem 1.2rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;gap:1rem">
-    <span>✔ Check-in de <strong>{{ ok }}</strong> registrado com sucesso.</span>
-    <a href="/dia/dashboard" class="btn btn-secundario btn-sm">← Voltar ao dashboard</a>
+<div class="checkin-sucesso">
+    <span class="checkin-sucesso-icon">✔</span>
+    <div>
+        <strong>Check-in realizado</strong>
+        <span>{{ ok }} registrada com sucesso.</span>
+    </div>
+    <a href="/dia/checkin" class="btn btn-primario btn-sm">Novo check-in</a>
 </div>
 {% endif %}
 
-<form method="get" class="barra-busca" style="margin-bottom:1.5rem">
-    <input type="text" name="nome" value="{{ nome }}" placeholder="Buscar pessoa pelo nome…" autofocus>
-    <button type="submit" class="btn btn-primario">Buscar</button>
-    {% if nome %}
-    <a href="/dia/checkin" class="btn btn-secundario">Limpar</a>
+<!-- Busca com autocomplete -->
+<div class="checkin-busca-card">
+    <div class="checkin-busca-form">
+        <span class="checkin-busca-icon">🔍</span>
+        <div style="position:relative;flex:1">
+            <input type="text" id="checkin-busca-input"
+                   placeholder="Buscar pessoa pelo nome…" autofocus
+                   class="checkin-busca-input" autocomplete="off">
+            <div id="checkin-sugestoes" class="checkin-sugestoes"></div>
+        </div>
+        <a href="/dia/checkin" class="btn btn-secundario">Limpar</a>
+    </div>
+</div>
+
+<div id="checkin-resultados" class="checkin-resultados">
+    {% if pessoas %}
+    {% for p in pessoas %}
+    <a href="/dia/checkin/{{ p.id }}" class="checkin-pessoa-card">
+        <div class="checkin-pessoa-avatar">{{ p.nome_completo[:1]|upper }}</div>
+        <div class="checkin-pessoa-info">
+            <span class="checkin-pessoa-nome">{{ p.nome_completo }}</span>
+            {% if p.telefone %}
+            <span class="checkin-pessoa-telefone">📞 {{ p.telefone }}</span>
+            {% endif %}
+        </div>
+        <span class="checkin-pessoa-btn">Check-in →</span>
+    </a>
+    {% endfor %}
+    {% elif nome %}
+    <div class="vazio">
+        <div class="vazio-icone">👤</div>
+        <h3>Nenhuma pessoa encontrada para "{{ nome }}"</h3>
+        <p><a href="/cadastros/pessoas/novo" class="btn btn-primario">Cadastrar nova pessoa</a></p>
+    </div>
     {% endif %}
-</form>
-
-{% if nome and not pessoas %}
-<div class="alerta">
-    Nenhuma pessoa encontrada para "{{ nome }}".
-    <a href="/cadastros/pessoas/novo">Cadastrar nova pessoa</a>.
 </div>
-{% endif %}
+{% endblock %}
 
-{% if pessoas %}
-<table>
-    <thead>
-        <tr>
-            <th>Nome completo</th>
-            <th>Telefone</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for p in pessoas %}
-        <tr>
-            <td>{{ p.nome_completo }}</td>
-            <td>{{ p.telefone or '—' }}</td>
-            <td class="acoes">
-                <a href="/dia/checkin/{{ p.id }}" class="btn btn-primario btn-sm">Check-in</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endif %}
+{% block scripts %}
+<script>
+const inputBusca = document.getElementById('checkin-busca-input');
+const divSugestoes = document.getElementById('checkin-sugestoes');
+const divResultados = document.getElementById('checkin-resultados');
+let timer = null;
+
+inputBusca.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = inputBusca.value.trim();
+    if (q.length < 2) { divSugestoes.style.display = 'none'; return; }
+    timer = setTimeout(() => buscar(q), 250);
+});
+
+inputBusca.addEventListener('blur', () => {
+    setTimeout(() => { divSugestoes.style.display = 'none'; }, 200);
+});
+
+async function buscar(q) {
+    const res = await fetch(`/cadastros/pessoas/buscar?nome=${encodeURIComponent(q)}&excluir=0`);
+    const lista = await res.json();
+
+    if (!lista.length) {
+        divSugestoes.style.display = 'none';
+        // Mostrar vazio nos resultados
+        divResultados.innerHTML = `
+            <div class="vazio">
+                <div class="vazio-icone">👤</div>
+                <h3>Nenhuma pessoa encontrada para "${q}"</h3>
+                <p><a href="/cadastros/pessoas/novo?next=/dia/checkin" class="btn btn-primario">Cadastrar nova pessoa</a></p>
+            </div>`;
+        return;
+    }
+
+    divSugestoes.innerHTML = lista.map(p =>
+        `<div data-id="${p.id}" data-nome="${p.nome}"
+              style="padding:.55rem .75rem;cursor:pointer;font-size:.9rem;border-bottom:1px solid #f0f0f0"
+              onmousedown="selecionar('${p.nome}', ${p.id})">
+           ${p.nome}
+         </div>`
+    ).join('');
+    divSugestoes.querySelectorAll('div').forEach(el => {
+        el.addEventListener('mouseenter', () => el.style.background = '#f0f4f8');
+        el.addEventListener('mouseleave', () => el.style.background = '');
+    });
+    divSugestoes.style.display = 'block';
+
+    // Atualizar resultados também
+    divResultados.innerHTML = lista.map(p =>
+        `<a href="/dia/checkin/${p.id}" class="checkin-pessoa-card">
+            <div class="checkin-pessoa-avatar">${p.nome.charAt(0).toUpperCase()}</div>
+            <div class="checkin-pessoa-info">
+                <span class="checkin-pessoa-nome">${p.nome}</span>
+            </div>
+            <span class="checkin-pessoa-btn">Check-in →</span>
+        </a>`
+    ).join('');
+}
+
+function selecionar(nome, id) {
+    inputBusca.value = nome;
+    divSugestoes.style.display = 'none';
+    window.location.href = `/dia/checkin/${id}`;
+}
+</script>
 {% endblock %}

@@ -16,18 +16,49 @@
     </div>
 
     <div class="form-grupo">
-        <h2>Módulos acessíveis</h2>
-        <div class="modulos-grid">
-            {% for modulo, rotulo in todos_modulos.items() %}
-            <label class="modulo-item">
-                <input type="checkbox"
-                       name="modulos"
-                       value="{{ modulo }}"
-                       {% if modulo in permissoes_set %}checked{% endif %}>
-                {{ rotulo }}
-            </label>
-            {% endfor %}
-        </div>
+        <h2>Permissões por Módulo</h2>
+        <table class="tabela permissoes-tabela">
+            <thead>
+                <tr>
+                    <th class="col-modulo">Módulo</th>
+                    <th class="col-perm">☐ Ler</th>
+                    <th class="col-perm">☐ Escrever</th>
+                    <th class="col-perm">☐ Apagar</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for modulo, rotulo in todos_modulos.items() %}
+                {% set perms = permissoes_map.get(modulo, {}) %}
+                <tr>
+                    <td class="col-modulo">{{ rotulo }}</td>
+                    <td class="col-perm">
+                        <label>
+                            <input type="checkbox"
+                                   name="{{ modulo }}_ler"
+                                   value="1"
+                                   {% if perms.ler %}checked{% endif %}>
+                        </label>
+                    </td>
+                    <td class="col-perm">
+                        <label>
+                            <input type="checkbox"
+                                   name="{{ modulo }}_escrever"
+                                   value="1"
+                                   {% if perms.escrever %}checked{% endif %}>
+                        </label>
+                    </td>
+                    <td class="col-perm">
+                        <label>
+                            <input type="checkbox"
+                                   name="{{ modulo }}_apagar"
+                                   value="1"
+                                   {% if perms.apagar %}checked{% endif %}>
+                        </label>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 
     <button type="submit" class="btn btn-primario">Salvar</button>

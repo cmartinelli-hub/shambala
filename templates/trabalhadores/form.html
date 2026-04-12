@@ -2,155 +2,269 @@
 {% block titulo %}{{ 'Editar' if registro else 'Novo' }} Trabalhador{% endblock %}
 
 {% block conteudo %}
-<div class="cabecalho-secao">
-    <h2>{{ 'Editar' if registro else 'Novo' }} Trabalhador</h2>
-    <a href="/cadastros/trabalhadores" class="btn btn-secundario">← Voltar</a>
+<!-- Header do formulário -->
+<div class="form-header">
+    <div>
+        <a href="/cadastros/trabalhadores" class="btn-voltar">← Voltar</a>
+        <h1 class="form-titulo">{% if registro %}Editar{% else %}Novo{% endif %} Trabalhador</h1>
+    </div>
+    {% if registro %}
+    <div class="form-header-avatar">
+        <div class="form-avatar-grande trabalhador-avatar-color">{{ registro.nome_completo[:1]|upper }}</div>
+    </div>
+    {% endif %}
 </div>
 
 {% if erro %}
-<div class="erro">{{ erro }}</div>
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
 {% endif %}
 
-<div class="card-form">
-    <form method="post">
-        <h3 style="margin:0 0 .8rem;font-size:.95rem;color:var(--cor-texto-suave)">Dados pessoais</h3>
-        <div class="grade-form">
-            <div class="campo campo-largo">
-                <label>Nome completo *</label>
-                <input type="text" name="nome_completo"
+<form method="post" class="form-moderno">
+    <!-- Dados pessoais -->
+    <div class="form-secao">
+        <h2 class="form-secao-titulo">👤 Dados Pessoais</h2>
+
+        <!-- Foto compacta -->
+        <div class="foto-compacta">
+            <label class="foto-compacta-btn" for="foto-input">
+                {% if registro and registro.foto_trabalhador %}
+                <img src="/static/fotos/{{ registro.foto_trabalhador }}" alt="Foto" class="foto-compacta-thumb" id="foto-thumb">
+                {% elif registro %}
+                <img src="/cadastros/trabalhadores/foto-placeholder/{{ registro.nome_completo[:1] }}" alt="Foto" class="foto-compacta-thumb" id="foto-thumb">
+                {% else %}
+                <span class="foto-compacta-placeholder" id="foto-thumb-placeholder">📷</span>
+                {% endif %}
+                <span class="foto-compacta-texto">{% if registro %}Trocar foto{% else %}Adicionar foto{% endif %}</span>
+            </label>
+            {% if registro and registro.foto_trabalhador %}
+            <input type="checkbox" name="remover_foto" value="1" id="remover-foto-check" style="display:none">
+            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto">🗑️</button>
+            {% endif %}
+            <input type="file" id="foto-input" name="foto" accept="image/*"
+                   capture="environment"
+                   class="foto-input" style="display:none">
+        </div>
+
+        <div class="form-grid">
+            <div class="form-campo form-campo-largo">
+                <label for="nome_completo">Nome completo *</label>
+                <input type="text" id="nome_completo" name="nome_completo"
                        value="{{ registro.nome_completo if registro else '' }}"
-                       required autofocus>
+                       placeholder="Ex: João da Silva"
+                       required autofocus class="form-input">
             </div>
-            <div class="campo">
-                <label>CPF</label>
+
+            <div class="form-campo">
+                <label for="cpf">CPF</label>
                 <input type="text" name="cpf" id="cpf"
                        value="{{ registro.cpf if registro.cpf else '' }}"
-                       placeholder="000.000.000-00" maxlength="14">
+                       placeholder="000.000.000-00" maxlength="14"
+                       class="form-input">
             </div>
-            <div class="campo">
-                <label>RG</label>
-                <input type="text" name="rg"
-                       value="{{ registro.rg if registro.rg else '' }}">
+
+            <div class="form-campo">
+                <label for="rg">RG</label>
+                <input type="text" name="rg" id="rg"
+                       value="{{ registro.rg if registro.rg else '' }}"
+                       class="form-input">
             </div>
-            <div class="campo">
-                <label>Data de nascimento</label>
+
+            <div class="form-campo">
+                <label for="data-nasc">Data de nascimento</label>
                 <input type="text" name="data_nascimento" id="data-nasc"
                        value="{{ registro.data_nascimento|data_br if registro.data_nascimento else '' }}"
-                       placeholder="DD/MM/AAAA" maxlength="10">
+                       placeholder="DD/MM/AAAA" maxlength="10"
+                       class="form-input">
             </div>
-            <div class="campo">
-                <label>Telefone</label>
+
+            <div class="form-campo">
+                <label for="telefone">Telefone</label>
                 <input type="tel" name="telefone" id="telefone"
                        value="{{ registro.telefone if registro else '' }}"
-                       placeholder="(00) 00000-0000" maxlength="15">
+                       placeholder="(00) 00000-0000" maxlength="15"
+                       class="form-input">
             </div>
-            <div class="campo">
-                <label>E-mail</label>
-                <input type="email" name="email"
-                       value="{{ registro.email if registro.email else '' }}">
+
+            <div class="form-campo">
+                <label for="email">E-mail</label>
+                <input type="email" name="email" id="email"
+                       value="{{ registro.email if registro.email else '' }}"
+                       placeholder="email@exemplo.com"
+                       class="form-input">
             </div>
         </div>
+    </div>
 
-        <h3 style="margin:1.5rem 0 .8rem;font-size:.95rem;color:var(--cor-texto-suave)">Endereço</h3>
-        <div class="grade-form">
-            <div class="campo campo-pequeno">
-                <label>CEP</label>
+    <!-- Endereço -->
+    <div class="form-secao">
+        <h2 class="form-secao-titulo">📍 Endereço</h2>
+        <div class="form-grid">
+            <div class="form-campo form-campo-pequeno">
+                <label for="cep">CEP</label>
                 <input type="text" name="cep" id="cep"
                        value="{{ registro.cep if registro.cep else '' }}"
-                       placeholder="00000-000" maxlength="9">
+                       maxlength="9" placeholder="00000-000"
+                       class="form-input">
             </div>
-            <div class="campo campo-largo">
-                <label>Logradouro</label>
-                <input type="text" name="logradouro"
-                       value="{{ registro.logradouro if registro.logradouro else '' }}">
+            <div class="form-campo form-campo-grande">
+                <label for="logradouro">Logradouro</label>
+                <input type="text" name="logradouro" id="logradouro"
+                       value="{{ registro.logradouro if registro.logradouro else '' }}"
+                       placeholder="Rua, Avenida..."
+                       class="form-input">
             </div>
-            <div class="campo campo-pequeno">
-                <label>Número</label>
-                <input type="text" name="numero"
-                       value="{{ registro.numero if registro.numero else '' }}">
+            <div class="form-campo form-campo-pequeno">
+                <label for="numero">Número</label>
+                <input type="text" name="numero" id="numero"
+                       value="{{ registro.numero if registro.numero else '' }}"
+                       placeholder="123"
+                       class="form-input">
             </div>
-            <div class="campo">
-                <label>Complemento</label>
-                <input type="text" name="complemento"
-                       value="{{ registro.complemento if registro.complemento else '' }}">
+            <div class="form-campo">
+                <label for="complemento">Complemento</label>
+                <input type="text" name="complemento" id="complemento"
+                       value="{{ registro.complemento if registro.complemento else '' }}"
+                       placeholder="Apto, Bloco..."
+                       class="form-input">
             </div>
-            <div class="campo">
-                <label>Bairro</label>
-                <input type="text" name="bairro"
-                       value="{{ registro.bairro if registro.bairro else '' }}">
+            <div class="form-campo">
+                <label for="bairro">Bairro</label>
+                <input type="text" name="bairro" id="bairro"
+                       value="{{ registro.bairro if registro.bairro else '' }}"
+                       class="form-input">
             </div>
-            <div class="campo">
-                <label>Cidade</label>
-                <input type="text" name="cidade"
-                       value="{{ registro.cidade if registro.cidade else '' }}">
+            <div class="form-campo">
+                <label for="cidade">Cidade</label>
+                <input type="text" name="cidade" id="cidade"
+                       value="{{ registro.cidade if registro.cidade else '' }}"
+                       class="form-input">
             </div>
-            <div class="campo campo-pequeno">
-                <label>UF</label>
-                <input type="text" name="uf"
+            <div class="form-campo form-campo-pequeno">
+                <label for="uf">UF</label>
+                <input type="text" name="uf" id="uf"
                        value="{{ registro.uf if registro.uf else '' }}"
-                       maxlength="2">
+                       maxlength="2" placeholder="RJ"
+                       class="form-input">
             </div>
         </div>
+    </div>
 
-        <h3 style="margin:1.5rem 0 .8rem;font-size:.95rem;color:var(--cor-texto-suave)">Financeiro</h3>
-        <div class="grade-form">
-            <div class="campo campo-pequeno">
-                <label>Valor mensalidade (R$)</label>
-                <input type="number" name="valor_mensalidade" step="0.01" min="0"
-                       value="{{ registro.valor_mensalidade if registro.valor_mensalidade else '0' }}">
+    <!-- Financeiro -->
+    <div class="form-secao">
+        <h2 class="form-secao-titulo">💰 Financeiro</h2>
+        <div class="form-grid">
+            <div class="form-campo">
+                <label for="valor_mensalidade">Valor mensalidade (R$)</label>
+                <input type="number" id="valor_mensalidade" name="valor_mensalidade" step="0.01" min="0"
+                       value="{{ registro.valor_mensalidade if registro.valor_mensalidade else '0' }}"
+                       class="form-input">
             </div>
-            <div class="campo campo-pequeno">
-                <label>Dia de vencimento</label>
-                <input type="number" name="dia_vencimento" min="1" max="31"
-                       value="{{ registro.dia_vencimento if registro.dia_vencimento else '10' }}">
+            <div class="form-campo">
+                <label for="dia_vencimento">Dia de vencimento</label>
+                <input type="number" id="dia_vencimento" name="dia_vencimento" min="1" max="31"
+                       value="{{ registro.dia_vencimento if registro.dia_vencimento else '10' }}"
+                       class="form-input">
             </div>
         </div>
+    </div>
 
-        <div class="acoes-form">
-            <button type="submit" class="btn btn-primario">Salvar</button>
-            <a href="/cadastros/trabalhadores" class="btn btn-secundario">Cancelar</a>
-        </div>
-    </form>
-</div>
+    <!-- Botões de ação -->
+    <div class="form-acoes">
+        <button type="submit" class="btn btn-primario btn-grande">💾 Salvar</button>
+        <a href="/cadastros/trabalhadores" class="btn btn-secundario">Cancelar</a>
+    </div>
+</form>
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/js/cep.js"></script>
 <script>
 // Máscara telefone
-(function() {
-    const tel = document.getElementById('telefone');
-    if (tel) {
-        tel.addEventListener('input', function() {
-            let v = this.value.replace(/\D/g, '').slice(0, 11);
-            if (v.length > 2)  v = '(' + v.slice(0,2) + ') ' + v.slice(2);
-            if (v.length > 10) v = v.slice(0,10) + '-' + v.slice(10);
-            this.value = v;
-        });
-    }
+const tel = document.getElementById('telefone');
+if (tel) {
+    tel.addEventListener('input', function() {
+        let v = this.value.replace(/\D/g, '').slice(0, 11);
+        if (v.length > 2)  v = '(' + v.slice(0,2) + ') ' + v.slice(2);
+        if (v.length > 10) v = v.slice(0,10) + '-' + v.slice(10);
+        this.value = v;
+    });
+}
 
-    // Máscara CPF
-    const cpf = document.getElementById('cpf');
-    if (cpf) {
-        cpf.addEventListener('input', function() {
-            let v = this.value.replace(/\D/g, '').slice(0, 11);
-            if (v.length > 3)  v = v.slice(0,3) + '.' + v.slice(3);
-            if (v.length > 7)  v = v.slice(0,7) + '.' + v.slice(7);
-            if (v.length > 11) v = v.slice(0,11) + '-' + v.slice(11);
-            this.value = v;
-        });
-    }
+// Máscara CPF
+const cpf = document.getElementById('cpf');
+if (cpf) {
+    cpf.addEventListener('input', function() {
+        let v = this.value.replace(/\D/g, '').slice(0, 11);
+        if (v.length > 3)  v = v.slice(0,3) + '.' + v.slice(3);
+        if (v.length > 7)  v = v.slice(0,7) + '.' + v.slice(7);
+        if (v.length > 11) v = v.slice(0,11) + '-' + v.slice(11);
+        this.value = v;
+    });
+}
 
-    // Máscara data nascimento
-    const nasc = document.getElementById('data-nasc');
-    if (nasc) {
-        nasc.addEventListener('input', function() {
-            let v = this.value.replace(/\D/g, '').slice(0, 8);
-            if (v.length > 2) v = v.slice(0,2) + '/' + v.slice(2);
-            if (v.length > 5) v = v.slice(0,5) + '/' + v.slice(5);
-            this.value = v;
-        });
-    }
-})();
+// Máscara data nascimento
+const nasc = document.getElementById('data-nasc');
+if (nasc) {
+    nasc.addEventListener('input', function() {
+        let v = this.value.replace(/\D/g, '').slice(0, 8);
+        if (v.length > 2) v = v.slice(0,2) + '/' + v.slice(2);
+        if (v.length > 5) v = v.slice(0,5) + '/' + v.slice(5);
+        this.value = v;
+    });
+}
+
+// Preview da foto ao selecionar
+const fotoInput = document.getElementById('foto-input');
+if (fotoInput) {
+    fotoInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            alert('Arquivo muito grande! Máximo 5MB.');
+            this.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            let thumb = document.getElementById('foto-thumb');
+            if (!thumb) {
+                const ph = document.getElementById('foto-thumb-placeholder');
+                if (ph) {
+                    thumb = document.createElement('img');
+                    thumb.id = 'foto-thumb';
+                    thumb.className = 'foto-compacta-thumb';
+                    ph.replaceWith(thumb);
+                }
+            }
+            if (thumb) {
+                thumb.src = ev.target.result;
+                thumb.className = 'foto-compacta-thumb';
+            }
+            const ph = document.getElementById('foto-thumb-placeholder');
+            if (ph) ph.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+// Botão remover foto
+const btnRemover = document.getElementById('btn-remover-foto');
+const checkRemover = document.getElementById('remover-foto-check');
+if (btnRemover && checkRemover) {
+    btnRemover.addEventListener('click', function() {
+        checkRemover.checked = !checkRemover.checked;
+        const thumb = document.getElementById('foto-thumb');
+        if (checkRemover.checked) {
+            this.classList.add('remover-ativo');
+            if (thumb) thumb.style.opacity = '0.3';
+        } else {
+            this.classList.remove('remover-ativo');
+            if (thumb) thumb.style.opacity = '1';
+        }
+    });
+}
 </script>
 {% endblock %}

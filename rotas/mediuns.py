@@ -1,12 +1,59 @@
 from datetime import date
-from fastapi import APIRouter, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request, Form, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+import os
+import uuid
 from banco import conectar, gerar_agendamentos_plano
 from rotas.auth import obter_atendente_logado
 
 from templates_config import templates
 router = APIRouter(prefix="/cadastros/mediuns")
+
+# Configuração de upload de fotos de médiuns
+FOTOS_MEDIUM_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "fotos")
+os.makedirs(FOTOS_MEDIUM_DIR, exist_ok=True)
+EXTENSOES_MEDIUM = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+TAMANHO_MAXIMO_MEDIUM = 5 * 1024 * 1024  # 5MB
+
+
+def _salvar_foto_medium(file: UploadFile, medium_id: int, foto_existente: str = None) -> str:
+    """Salva foto do médium e retorna o caminho relativo."""
+    if foto_existente and os.path.exists(os.path.join(FOTOS_MEDIUM_DIR, foto_existente)):
+        try:
+            os.remove(os.path.join(FOTOS_MEDIUM_DIR, foto_existente))
+        except OSError:
+            pass
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in EXTENSOES_MEDIUM:
+        ext = ".jpg"
+    nome_arquivo = f"medium_{medium_id}_{uuid.uuid4().hex[:8]}{ext}"
+    caminho = os.path.join(FOTOS_MEDIUM_DIR, nome_arquivo)
+    with open(caminho, "wb") as f:
+        conteudo = file.file.read()
+        if len(conteudo) > TAMANHO_MAXIMO_MEDIUM:
+            raise ValueError("Arquivo muito grande (máx. 5MB)")
+        f.write(conteudo)
+    return nome_arquivo
+
+
+# Placeholder SVG para médiuns
+@router.get("/foto-placeholder/{inicial}")
+async def foto_placeholder_medium(inicial: str):
+    """Gera placeholder SVG com a inicial do médium (roxo)."""
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+        <defs>
+            <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#8b5cf6"/>
+                <stop offset="100%" style="stop-color:#a78bfa"/>
+            </linearGradient>
+        </defs>
+        <circle cx="100" cy="100" r="100" fill="url(#g)"/>
+        <text x="100" y="115" text-anchor="middle" fill="white"
+              font-family="system-ui,sans-serif" font-size="90"
+              font-weight="bold">{inicial.upper()}</text>
+    </svg>'''
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 def _guard(request: Request):
@@ -63,20 +110,34 @@ async def salvar_novo(
     bairro: str = Form(""),
     cidade: str = Form(""),
     uf: str = Form(""),
+    foto: UploadFile = None,
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
     with conectar() as conn:
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO mediuns
                (nome_completo, vagas_dia, telefone, email, cep, logradouro, numero, complemento, bairro, cidade, uf)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (nome_completo.strip(), vagas_dia,
              telefone.strip(), email.strip().lower(),
              cep.strip(), logradouro.strip(), numero.strip(), complemento.strip(),
              bairro.strip(), cidade.strip(), uf.strip()),
         )
+        medium_id = cur.fetchone()["id"]
+
+        # Salvar foto se enviada
+        if foto and getattr(foto, "filename", None):
+            try:
+                foto_medium = _salvar_foto_medium(foto, medium_id)
+                conn.execute(
+                    "UPDATE mediuns SET foto_medium = %s WHERE id = %s",
+                    (foto_medium, medium_id)
+                )
+            except ValueError:
+                pass
     return RedirectResponse(url="/cadastros/mediuns", status_code=303)
 
 
@@ -114,19 +175,45 @@ async def salvar_editar(
     bairro: str = Form(""),
     cidade: str = Form(""),
     uf: str = Form(""),
+    remover_foto: str = Form(""),
+    foto: UploadFile = None,
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
     with conectar() as conn:
+        # Buscar foto existente
+        existente = conn.execute(
+            "SELECT foto_medium FROM mediuns WHERE id = %s", (id,)
+        ).fetchone()
+        foto_existente = existente["foto_medium"] if existente else None
+
+        # Remover foto se solicitado
+        if remover_foto == "1" and foto_existente:
+            if os.path.exists(os.path.join(FOTOS_MEDIUM_DIR, foto_existente)):
+                try:
+                    os.remove(os.path.join(FOTOS_MEDIUM_DIR, foto_existente))
+                except OSError:
+                    pass
+            foto_existente = None
+
+        # Salvar nova foto se enviada
+        if foto and getattr(foto, "filename", None):
+            try:
+                foto_existente = _salvar_foto_medium(foto, id, foto_existente)
+            except ValueError:
+                pass
+
         conn.execute(
             """UPDATE mediuns SET nome_completo=%s, vagas_dia=%s, telefone=%s, email=%s,
-               cep=%s, logradouro=%s, numero=%s, complemento=%s, bairro=%s, cidade=%s, uf=%s
+               cep=%s, logradouro=%s, numero=%s, complemento=%s, bairro=%s, cidade=%s, uf=%s,
+               foto_medium=%s
                WHERE id=%s""",
             (nome_completo.strip(), vagas_dia,
              telefone.strip(), email.strip().lower(),
              cep.strip(), logradouro.strip(), numero.strip(), complemento.strip(),
-             bairro.strip(), cidade.strip(), uf.strip(), id),
+             bairro.strip(), cidade.strip(), uf.strip(),
+             foto_existente, id),
         )
     return RedirectResponse(url="/cadastros/mediuns", status_code=303)
 

@@ -4,43 +4,92 @@
 <h1>Grupos de Acesso</h1>
 
 <p class="texto-ajuda">
-    Grupos definem quais módulos cada atendente pode acessar.<br>
+    Grupos definem quais módulos cada atendente pode acessar, com permissões granulares de
+    <strong>Ler</strong>, <strong>Escrever</strong> e <strong>Apagar</strong>.<br>
     O grupo <strong>Admin</strong> tem acesso total e não pode ser removido.
 </p>
 
-<form method="post" action="/cadastros/permissoes/novo" class="form-grupo">
-    <h2>Novo Grupo</h2>
-    <div class="form-linha">
-        <input type="text" id="nome" name="nome" placeholder="Nome do grupo" required>
-        <input type="text" id="descricao" name="descricao" placeholder="Descrição (opcional)">
-        <button type="submit">Criar</button>
-    </div>
-</form>
+<!-- Card de novo grupo -->
+<div class="card-novo-grupo">
+    <details>
+        <summary>➕ Novo Grupo</summary>
+        <form method="post" action="/cadastros/permissoes/novo" class="form-novo">
+            <div class="form-campos">
+                <div class="form-campo">
+                    <label for="nome">Nome</label>
+                    <input type="text" id="nome" name="nome" placeholder="Ex: Recepção, Financeiro" required>
+                </div>
+                <div class="form-campo">
+                    <label for="descricao">Descrição</label>
+                    <input type="text" id="descricao" name="descricao" placeholder="Descrição do grupo (opcional)">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primario">Criar Grupo</button>
+        </form>
+    </details>
+</div>
 
-<table class="tabela">
-    <thead>
-        <tr>
-            <th>Grupo</th>
-            <th>Descrição</th>
-            <th>Ações</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for g in grupos %}
-        <tr>
-            <td>{{ g.nome }}</td>
-            <td>{{ g.descricao }}</td>
-            <td>
-                <a href="/cadastros/permissoes/{{ g.id }}/editar" class="btn btn-sm">Editar</a>
-                {% if g.nome != "Admin" %}
-                <form method="post" action="/cadastros/permissoes/{{ g.id }}/remover" style="display:inline"
-                      onsubmit="return confirm('Remover grupo {{ g.nome }}? Atendentes ficarão sem grupo.')">
-                    <button type="submit" class="btn btn-sm btn-perigo">Remover</button>
+<!-- Lista de grupos como cards -->
+{% if grupos %}
+<div class="grupos-grid">
+    {% for g in grupos %}
+    {% set perms = perms_por_grupo.get(g.id, {}) %}
+    <div class="grupo-card{% if g.nome == 'Admin' %} grupo-admin{% endif %}">
+        <div class="grupo-card-header">
+            <div class="grupo-info">
+                <h3 class="grupo-nome">
+                    {% if g.nome == 'Admin' %}🛡️{% endif %}
+                    {{ g.nome }}
+                </h3>
+                {% if g.descricao %}
+                <span class="grupo-desc">{{ g.descricao }}</span>
+                {% endif %}
+            </div>
+            <div class="grupo-acoes">
+                <a href="/cadastros/permissoes/{{ g.id }}/editar" class="btn btn-sm btn-editar" title="Editar permissões">
+                    ✏️ Editar
+                </a>
+                {% if g.nome != 'Admin' %}
+                <form method="post" action="/cadastros/permissoes/{{ g.id }}/remover" class="form-remover"
+                      onsubmit="return confirm('Remover grupo «{{ g.nome }}»? Atendentes ficarão sem grupo.')">
+                    <button type="submit" class="btn btn-sm btn-remover" title="Remover grupo">🗑️</button>
                 </form>
                 {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+            </div>
+        </div>
+
+        <!-- Resumo visual de permissões -->
+        {% if perms %}
+        <div class="grupo-perms-resumo">
+            <div class="perm-badge perm-ler">
+                <span class="perm-icone">👁️</span>
+                <span class="perm-cont">{{ perms.ler }}/{{ perms.total }}</span>
+                <span class="perm-label">Ler</span>
+            </div>
+            <div class="perm-badge perm-escrever">
+                <span class="perm-icone">✏️</span>
+                <span class="perm-cont">{{ perms.escrever }}/{{ perms.total }}</span>
+                <span class="perm-label">Escrever</span>
+            </div>
+            <div class="perm-badge perm-apagar">
+                <span class="perm-icone">🗑️</span>
+                <span class="perm-cont">{{ perms.apagar }}/{{ perms.total }}</span>
+                <span class="perm-label">Apagar</span>
+            </div>
+            <div class="perm-total">
+                {{ perms.total }} módulo{{ 's' if perms.total != 1 }}
+            </div>
+        </div>
+        {% else %}
+        <div class="grupo-sem-perms">Nenhuma permissão configurada</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="vazio">
+    <p>Nenhum grupo criado ainda.</p>
+    <p>Use o formulário acima para criar o primeiro grupo.</p>
+</div>
+{% endif %}
 {% endblock %}

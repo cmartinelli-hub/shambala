@@ -4,163 +4,203 @@
 {% block conteudo %}
 
 {% if erro_externo %}
-<div class="erro">{{ erro_externo }}</div>
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro_externo }}</span>
+</div>
 {% endif %}
 
 <div class="cabecalho-secao">
-    <h2>Agenda de Sessões</h2>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <a href="/cadastros/pessoas/novo?next=/agenda" class="btn btn-primario">+ Pessoa</a>
-        <a href="/dia/dashboard" class="btn btn-secundario">Dashboard</a>
-        <a href="/menu" class="btn btn-secundario">← Menu</a>
+    <div>
+        <h1>Agenda de Sessões</h1>
+        <p class="subtitulo">{{ total_sessoes }} sessão(ões) no período</p>
+    </div>
+    <div class="acoes-cabecalho">
+        <a href="/cadastros/pessoas/novo?next=/agenda" class="btn btn-primario">➕ Pessoa</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">📊 Dashboard</a>
     </div>
 </div>
 
 <!-- Filtros -->
-<form method="get" style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1.5rem">
-    <div class="campo">
-        <label>De</label>
-        <input type="date" name="de" value="{{ data_de }}">
+<form method="get" class="agenda-filtros">
+    <div class="filtro-grupo">
+        <div class="filtro-campo">
+            <label for="f-de">De</label>
+            <input type="date" id="f-de" name="de" value="{{ data_de }}">
+        </div>
+        <div class="filtro-campo">
+            <label for="f-ate">Até</label>
+            <input type="date" id="f-ate" name="ate" value="{{ data_ate }}">
+        </div>
+        <div class="filtro-campo">
+            <label for="f-medium">Médium</label>
+            <select id="f-medium" name="medium_id">
+                <option value="0">Todos</option>
+                {% for m in mediuns %}
+                <option value="{{ m.id }}" {% if medium_id == m.id %}selected{% endif %}>
+                    {{ m.nome_completo }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filtro-campo">
+            <label for="f-dia-semana">Dia da semana</label>
+            <select id="f-dia-semana" name="dia_semana">
+                <option value="-1">Todos</option>
+                {% for num, nome in dias_semana %}
+                {% if num in dias_atendimento %}
+                <option value="{{ num }}" {% if dia_semana == num %}selected{% endif %}>
+                    {{ nome }}{% if num in dias_com_agenda %} ({{ por_data|selectattr('data', 'defined')|list|length }}){% endif %}
+                </option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filtro-campo filtro-campo-grande">
+            <label for="f-pessoa">Pessoa</label>
+            <input type="text" id="f-pessoa" name="pessoa_nome" value="{{ pessoa_nome }}"
+                   placeholder="Buscar por nome…" autocomplete="off">
+        </div>
     </div>
-    <div class="campo">
-        <label>Até</label>
-        <input type="date" name="ate" value="{{ data_ate }}">
+    <div class="filtro-acoes">
+        <button type="submit" class="btn btn-primario">🔍 Filtrar</button>
+        <a href="/agenda" class="btn btn-secundario">Limpar</a>
     </div>
-    <div class="campo">
-        <label>Médium</label>
-        <select name="medium_id">
-            <option value="0">Todos</option>
-            {% for m in mediuns %}
-            <option value="{{ m.id }}" {% if medium_id == m.id %}selected{% endif %}>
-                {{ m.nome_completo }}
-            </option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-primario">Filtrar</button>
-    <a href="/agenda" class="btn btn-secundario">Limpar</a>
 </form>
 
-<div class="card-form" style="margin-bottom:1.5rem">
-    <h3 style="margin-bottom:.8rem;font-size:.95rem">+ Novo agendamento avulso</h3>
-    {% if medium_id %}
-    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-        <form method="get" action="/agenda/imprimir" target="_blank" style="display:flex;gap:.5rem;align-items:flex-end">
-            <input type="hidden" name="medium_id" value="{{ medium_id }}">
-            <div style="display:flex;flex-direction:column">
-                <label style="font-size:.8rem;margin-bottom:.15rem">Data</label>
-                <input type="date" name="dia" value="{{ data_de }}" style="padding:.3rem .5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
-            </div>
-            <button type="submit" class="btn btn-secundario btn-sm">Imprimir agenda</button>
-        </form>
-    </div>
-    <form method="post" action="/agenda/novo" id="form-avulso"
-          style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-end">
+<!-- Ações rápidas (fora do novo agendamento) -->
+{% if medium_id %}
+<div class="agenda-acoes-rapidas">
+    <form method="get" action="/agenda/imprimir" target="_blank" class="form-imprimir">
         <input type="hidden" name="medium_id" value="{{ medium_id }}">
-        <input type="hidden" name="data_de"   value="{{ data_de }}">
-        <input type="hidden" name="data_ate"  value="{{ data_ate }}">
-        <input type="hidden" name="pessoa_id" id="pessoa-id-hidden" value="">
-
-        <div class="campo" style="min-width:240px">
-            <label>Pessoa *</label>
-            <div style="position:relative">
-                <input type="text" id="avulso-busca" placeholder="Buscar pelo nome…"
-                       autocomplete="off" style="width:100%">
-                <div id="avulso-sugestoes"
-                     style="display:none;position:absolute;z-index:200;width:100%;
-                            background:var(--cor-superficie);border:1px solid var(--cor-borda);
-                            border-radius:var(--raio);box-shadow:var(--sombra);
-                            max-height:200px;overflow-y:auto"></div>
-            </div>
-            <div id="avulso-selecionada" style="font-size:.82rem;color:var(--cor-sucesso);margin-top:.2rem"></div>
-        </div>
-
-        <div class="campo">
-            <label>Data *</label>
-            <input type="date" name="data" required>
-        </div>
-        <div class="campo">
-            <label>Requer passe?</label>
-            <select name="requer_passe">
-                <option value="0">Não</option>
-                <option value="1">Sim</option>
-            </select>
-        </div>
-        <div class="campo">
-            <label>Encaixe?</label>
-            <select name="encaixe">
-                <option value="0">Não</option>
-                <option value="1">Sim</option>
-            </select>
-        </div>
-        <button type="submit" class="btn btn-primario" id="btn-agendar" disabled>Agendar</button>
+        <label for="imprimir-dia">📄 Imprimir agenda:</label>
+        <input type="date" id="imprimir-dia" name="dia" value="{{ data_de }}">
+        <button type="submit" class="btn btn-secundario btn-sm">Imprimir</button>
     </form>
-    {% else %}
-    <p style="color:var(--cor-texto-suave);margin:0;font-size:.9rem">
-        Selecione um médium no filtro acima para adicionar um agendamento avulso.
-    </p>
-    {% endif %}
 </div>
+{% endif %}
 
+<!-- Novo agendamento avulso -->
+{% if medium_id %}
+<div class="agenda-novo-avulso">
+    <details>
+        <summary>➕ Novo agendamento avulso</summary>
+        <form method="post" action="/agenda/novo" id="form-avulso" class="form-avulso">
+            <input type="hidden" name="medium_id" value="{{ medium_id }}">
+            <input type="hidden" name="data_de"   value="{{ data_de }}">
+            <input type="hidden" name="data_ate"  value="{{ data_ate }}">
+            <input type="hidden" name="dia_semana" value="{{ dia_semana }}">
+            <input type="hidden" name="pessoa_nome" value="{{ pessoa_nome }}">
+            <input type="hidden" name="pessoa_id" id="pessoa-id-hidden" value="">
+
+            <div class="avulso-campos">
+                <div class="avulso-campo">
+                    <label>Pessoa *</label>
+                    <div style="position:relative">
+                        <input type="text" id="avulso-busca" placeholder="Buscar pelo nome…"
+                               autocomplete="off" class="form-input">
+                        <div id="avulso-sugestoes" class="avulso-sugestoes"></div>
+                    </div>
+                    <div id="avulso-selecionada" class="avulso-selecionada"></div>
+                </div>
+                <div class="avulso-campo">
+                    <label for="avulso-data">Data inicial *</label>
+                    <input type="date" id="avulso-data" name="data" required class="form-input">
+                </div>
+                <div class="avulso-campo avulso-campo-pequeno">
+                    <label for="avulso-qtd">Qtd. sessões</label>
+                    <input type="number" id="avulso-qtd" name="qtd_sessoes"
+                           value="1" min="1" max="52" class="form-input">
+                </div>
+                <div class="avulso-campo">
+                    <label for="avulso-freq">Frequência</label>
+                    <select id="avulso-freq" name="frequencia" class="form-input">
+                        <option value="semanal">Semanal (7 dias)</option>
+                        <option value="quinzenal">Quinzenal (14 dias)</option>
+                        <option value="mensal">Mensal (28 dias)</option>
+                    </select>
+                </div>
+                <div class="avulso-campo">
+                    <label for="avulso-passe">Requer passe?</label>
+                    <select id="avulso-passe" name="requer_passe" class="form-input">
+                        <option value="0">Não</option>
+                        <option value="1">Sim</option>
+                    </select>
+                </div>
+                <div class="avulso-campo">
+                    <label for="avulso-encaixe">Encaixe?</label>
+                    <select id="avulso-encaixe" name="encaixe" class="form-input">
+                        <option value="0">Não</option>
+                        <option value="1">Sim</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Preview das datas calculadas -->
+            <div id="avulso-preview" class="avulso-preview" style="display:none">
+                <strong>📅 Datas que serão agendadas:</strong>
+                <ul id="avulso-datas-lista"></ul>
+            </div>
+
+            <button type="submit" class="btn btn-primario" id="btn-agendar" disabled>Agendar</button>
+        </form>
+    </details>
+</div>
+{% else %}
+<div class="agenda-info">
+    <p>Selecione um médium no filtro acima para adicionar um agendamento avulso.</p>
+</div>
+{% endif %}
+
+<!-- Resultados -->
 {% if not por_data %}
-<p style="color:var(--cor-texto-suave)">Nenhuma sessão agendada no período.</p>
+<div class="vazio">
+    <div class="vazio-icone">📅</div>
+    <h3>Nenhuma sessão agendada</h3>
+    <p>Ajuste os filtros ou crie um novo agendamento avulso.</p>
+</div>
 {% else %}
 
 {% for data, sessoes in por_data.items() %}
-<div style="margin-bottom:1.8rem">
-    <h3 style="font-size:1rem;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:1px solid var(--cor-borda);
-               {% if data == hoje %}color:var(--cor-primaria){% endif %}">
-        {{ data | data_br }}
-        {% if data == hoje %}<span style="font-size:.8rem;font-weight:normal"> — hoje</span>{% endif %}
-        {% set dia_semana = data[8:] + data[4:8] + data[:4] %}
-        &nbsp;—&nbsp;
-        {% set wd = sessoes[0].data %}
-        {# Mostrar dia da semana #}
-        {% set dias = ['seg','ter','qua','qui','sex','sáb','dom'] %}
-        {# cálculo via filtro não disponível — deixamos a data falar por si #}
+<div class="agenda-dia-bloco">
+    <h3 class="agenda-dia-titulo">
+        📅 {{ data | data_br }}
+        {% if data == hoje %}<span class="agenda-hoje"> — hoje</span>{% endif %}
+        <span class="agenda-dia-count">{{ sessoes|length }} sessão(ões)</span>
     </h3>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Pessoa(s)</th>
-                <th>Médium</th>
-                <th>Sessão</th>
-                <th>Passe</th>
-                <th>Encaixe</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for ag in sessoes %}
-            <tr>
-                <td>{{ ag.pessoas or '—' }}</td>
-                <td>{{ ag.medium_nome }}</td>
-                <td>{{ ag.sessoes_realizadas }}/{{ ag.sessoes_total }}
-                    <span style="color:var(--cor-texto-suave);font-size:.8rem">
-                        ({{ ag.frequencia }})
-                    </span>
-                </td>
-                <td>{{ 'Sim' if ag.requer_passe else 'Não' }}</td>
-                <td>{{ 'Sim' if ag.encaixe else 'Não' }}</td>
-                <td class="acoes" style="display:flex;gap:.3rem;flex-wrap:wrap">
-                    <a href="/cadastros/mediuns/{{ ag.medium_id }}/planos/{{ ag.plano_id }}/agenda"
-                       class="btn btn-secundario btn-sm">Ver plano</a>
-                    {% if ag.data == hoje %}
-                    <a href="/dia/checkin/{{ ag.pessoa_id_principal }}"
-                       class="btn btn-primario btn-sm">Check-in</a>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="agenda-sessoes-grid">
+        {% for ag in sessoes %}
+        <div class="agenda-sessao-card {% if ag.encaixe %}sessao-encaixe{% endif %}">
+            <div class="sessao-header">
+                <span class="sessao-pessoas">{{ ag.pessoas or '—' }}</span>
+                {% if ag.encaixe %}
+                <span class="sessao-badge badge-encaixe">Encaixe</span>
+                {% endif %}
+                {% if ag.requer_passe %}
+                <span class="sessao-badge badge-passe">Passe</span>
+                {% endif %}
+            </div>
+            <div class="sessao-dados">
+                <span class="sessao-medium">🧘 {{ ag.medium_nome }}</span>
+                <span class="sessao-progresso">
+                    Sessão {{ ag.sessoes_realizadas + 1 }}/{{ ag.sessoes_total }}
+                    <span class="sessao-freq">({{ ag.frequencia }})</span>
+                </span>
+            </div>
+            <div class="sessao-acoes">
+                <a href="/cadastros/mediuns/{{ ag.medium_id }}/planos/{{ ag.plano_id }}/agenda"
+                   class="btn btn-sm btn-planos">Ver plano</a>
+                {% if data == hoje %}
+                <a href="/dia/checkin/{{ ag.pessoa_id_principal }}"
+                   class="btn btn-sm btn-checkin">Check-in</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endfor %}
-
-<p style="color:var(--cor-texto-suave);font-size:.85rem">
-    Total: {{ total_sessoes }} sessão(ões) no período.
-</p>
 {% endif %}
 {% endblock %}
 
@@ -220,6 +260,52 @@ document.getElementById('form-avulso').addEventListener('submit', function(e) {
         alert('Selecione uma pessoa na lista de sugestões.');
     }
 });
+
+// Preview das datas calculadas
+const inputData = document.getElementById('avulso-data');
+const inputQtd = document.getElementById('avulso-qtd');
+const inputFreq = document.getElementById('avulso-freq');
+const previewDiv = document.getElementById('avulso-preview');
+const datasLista = document.getElementById('avulso-datas-lista');
+
+const FREQ_DIAS = { semanal: 7, quinzenal: 14, mensal: 28 };
+const DIAS_NOME = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MESES_NOME = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+function formatarData(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    return `${DIAS_NOME[d.getDay()]}, ${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}`;
+}
+
+function atualizarPreview() {
+    const dataVal = inputData.value;
+    const qtd = parseInt(inputQtd.value) || 1;
+    const freq = inputFreq.value;
+    const delta = FREQ_DIAS[freq] || 7;
+
+    if (!dataVal || qtd < 1 || qtd > 52) {
+        previewDiv.style.display = 'none';
+        return;
+    }
+
+    previewDiv.style.display = 'block';
+    datasLista.innerHTML = '';
+
+    // Calcular datas
+    const baseDate = new Date(dataVal + 'T12:00:00');
+    for (let i = 0; i < qtd; i++) {
+        const d = new Date(baseDate);
+        d.setDate(d.getDate() + i * delta);
+        const iso = d.toISOString().split('T')[0];
+        const li = document.createElement('li');
+        li.textContent = formatarData(iso);
+        datasLista.appendChild(li);
+    }
+}
+
+inputData.addEventListener('change', atualizarPreview);
+inputQtd.addEventListener('input', atualizarPreview);
+inputFreq.addEventListener('change', atualizarPreview);
 </script>
 {% endif %}
 {% endblock %}

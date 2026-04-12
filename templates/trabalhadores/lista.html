@@ -3,48 +3,64 @@
 
 {% block conteudo %}
 <div class="cabecalho-secao">
-    <h2>Trabalhadores</h2>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <a href="/cadastros/trabalhadores/novo" class="btn btn-primario">+ Novo trabalhador</a>
-        <a href="/cadastros/trabalhadores/dia/trabalhador-checkin" class="btn btn-secundario">Check-in do dia</a>
+    <div>
+        <h1>Trabalhadores</h1>
+        <p class="subtitulo">{{ trabalhadores|length }} trabalhador{{ 'es' if trabalhadores|length != 1 }} cadastrado{{ 's' if trabalhadores|length != 1 }}</p>
+    </div>
+    <div class="acoes-cabecalho">
+        <a href="/cadastros/trabalhadores/novo" class="btn btn-primario">➕ Novo trabalhador</a>
+        <a href="/cadastros/trabalhadores/dia/trabalhador-checkin" class="btn btn-secundario">✅ Check-in do dia</a>
     </div>
 </div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Nome completo</th>
-            <th>Telefone</th>
-            <th>E-mail</th>
-            <th>Situação</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for t in trabalhadores %}
-        <tr class="{% if not t.ativo %}inativo{% endif %}">
-            <td>{{ t.nome_completo }}</td>
-            <td>{{ t.telefone or '—' }}</td>
-            <td>{{ t.email or '—' }}</td>
-            <td>
-                <span class="badge {% if t.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
+{% if trabalhadores %}
+<div class="trabalhadores-grid">
+    {% for t in trabalhadores %}
+    <div class="trabalhador-card {% if not t.ativo %}trabalhador-inativo{% endif %}">
+        <div class="trabalhador-header">
+            <div class="trabalhador-avatar">
+                {% if t.foto_trabalhador %}
+                <img src="/static/fotos/{{ t.foto_trabalhador }}" alt="{{ t.nome_completo }}" class="trabalhador-avatar-img">
+                {% else %}
+                <img src="/cadastros/trabalhadores/foto-placeholder/{{ t.nome_completo[:1] }}" alt="{{ t.nome_completo }}" class="trabalhador-avatar-img">
+                {% endif %}
+            </div>
+            <div class="trabalhador-info">
+                <h3 class="trabalhador-nome">{{ t.nome_completo }}</h3>
+                <span class="trabalhador-badge {% if t.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
                     {{ 'Ativo' if t.ativo else 'Inativo' }}
                 </span>
-            </td>
-            <td class="acoes">
-                <a href="/cadastros/trabalhadores/{{ t.id }}/editar" class="btn btn-secundario btn-sm">Editar</a>
-                <a href="/cadastros/trabalhadores/{{ t.id }}/agenda" class="btn btn-secundario btn-sm">Dias</a>
-                <a href="/cadastros/trabalhadores/{{ t.id }}/presenca" class="btn btn-secundario btn-sm">Presença</a>
-                <form method="post" action="/cadastros/trabalhadores/{{ t.id }}/toggle-ativo" style="display:inline">
-                    <button type="submit" class="btn btn-sm {% if t.ativo %}btn-perigo{% else %}btn-secundario{% endif %}">
-                        {{ 'Desativar' if t.ativo else 'Ativar' }}
-                    </button>
-                </form>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5" style="text-align:center;color:var(--cor-texto-suave)">Nenhum trabalhador cadastrado.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+            </div>
+        </div>
+        <div class="trabalhador-contato">
+            {% if t.telefone %}
+            <span class="trabalhador-telefone">📞 {{ t.telefone }}</span>
+            {% endif %}
+            {% if t.email %}
+            <span class="trabalhador-email">✉️ {{ t.email }}</span>
+            {% endif %}
+            {% if not t.telefone and not t.email %}
+            <span class="trabalhador-sem-contato">Sem contato</span>
+            {% endif %}
+        </div>
+        <div class="trabalhador-acoes">
+            <a href="/cadastros/trabalhadores/{{ t.id }}/editar" class="btn btn-sm btn-editar">✏️ Editar</a>
+            <a href="/cadastros/trabalhadores/{{ t.id }}/agenda" class="btn btn-sm btn-dias">📅 Dias</a>
+            <a href="/cadastros/trabalhadores/{{ t.id }}/presenca" class="btn btn-sm btn-presenca">📋 Presença</a>
+            <form method="post" action="/cadastros/trabalhadores/{{ t.id }}/toggle-ativo" class="trabalhador-form-toggle">
+                <button type="submit" class="btn-toggle {% if t.ativo %}btn-desativar{% else %}btn-ativar{% endif %}">
+                    {{ 'Desativar' if t.ativo else 'Ativar' }}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="vazio">
+    <div class="vazio-icone">🤝</div>
+    <h3>Nenhum trabalhador cadastrado</h3>
+    <p>Clique em "+ Novo trabalhador" para começar.</p>
+</div>
+{% endif %}
 {% endblock %}

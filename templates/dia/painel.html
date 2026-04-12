@@ -1,135 +1,157 @@
 {% extends "base.html" %}
-{% block titulo %}Dia de Trabalho{% endblock %}
+{% block titulo %}Dia de Trabalho — {{ dia.data | data_br }}{% endblock %}
 
 {% block conteudo %}
+<!-- Header -->
 <div class="cabecalho-secao">
-    <h2>Dia de trabalho — {{ dia.data | data_br }}</h2>
-    <a href="/cadastros/pessoas/novo" class="btn btn-primario">+ Nova Pessoa</a>
+    <div>
+        <h1>Dia de Trabalho</h1>
+        <p class="subtitulo">📅 {{ dia.data | data_br }} — {{ mediuns_dia|length }} médium{{ 's' if mediuns_dia|length != 1 }} presente{{ 's' if mediuns_dia|length != 1 }}</p>
+    </div>
+    <div class="acoes-cabecalho">
+        <a href="/dia/checkin" class="btn btn-primario">✅ Check-in</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">🗂️ Dashboard</a>
+        <a href="/cadastros/pessoas/novo" class="btn btn-secundario">➕ Pessoa</a>
+    </div>
 </div>
 
-<!-- Resumo (clique para ver a lista) -->
-<div class="grade-cards">
-    <a href="/dia/lista?tipo=checkins" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ total_checkins }}</div>
-        <div class="stat-label">Check-ins</div>
-    </a>
-    <a href="/dia/lista?tipo=passe-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ passe_aguardando }}</div>
-        <div class="stat-label">Passes aguardando</div>
-    </a>
-    <a href="/dia/lista?tipo=passe-realizado" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ passe_realizado }}</div>
-        <div class="stat-label">Passes realizados</div>
-    </a>
-    <a href="/dia/lista?tipo=acolhimento-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ acolh_aguardando }}</div>
-        <div class="stat-label">Acolhimentos aguardando</div>
-    </a>
-    <a href="/dia/lista?tipo=acolhimento-realizado" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ acolh_realizado }}</div>
-        <div class="stat-label">Acolhimentos realizados</div>
-    </a>
-    <a href="/dia/lista?tipo=reiki-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ reiki_aguardando }}</div>
-        <div class="stat-label">Reiki aguardando</div>
-    </a>
-    <a href="/dia/lista?tipo=reiki-realizado" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ reiki_realizado }}</div>
-        <div class="stat-label">Reiki realizado</div>
-    </a>
-    <a href="/dia/lista?tipo=atendimento-aguardando" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ atend_aguardando }}</div>
-        <div class="stat-label">Atendimentos aguardando</div>
-    </a>
-    <a href="/dia/lista?tipo=atendimento-realizado" class="card-stat" style="text-decoration:none;color:inherit">
-        <div class="stat-valor">{{ atend_realizado }}</div>
-        <div class="stat-label">Atendimentos realizados</div>
-    </a>
+<!-- Todas as filas unificadas -->
+<div class="dia-filas-secao">
+    <h2 class="dia-secao-titulo">📋 Filas do Dia</h2>
+    <div class="dia-filas-grid">
+        <!-- Filas gerais -->
+        <a href="/dia/passe" class="fila-card">
+            <span class="fila-icon">🧘</span>
+            <span class="fila-nome">Passe</span>
+            {% if passe_aguardando > 0 %}
+            <span class="fila-badge fila-aguardando">{{ passe_aguardando }}</span>
+            {% elif passe_realizado > 0 %}
+            <span class="fila-badge fila-realizado">{{ passe_realizado }} ✓</span>
+            {% endif %}
+        </a>
+        <a href="/dia/reiki" class="fila-card">
+            <span class="fila-icon">🙌</span>
+            <span class="fila-nome">Reiki</span>
+            {% if reiki_aguardando > 0 %}
+            <span class="fila-badge fila-aguardando">{{ reiki_aguardando }}</span>
+            {% elif reiki_realizado > 0 %}
+            <span class="fila-badge fila-realizado">{{ reiki_realizado }} ✓</span>
+            {% endif %}
+        </a>
+        <a href="/dia/acolhimento" class="fila-card">
+            <span class="fila-icon">🤝</span>
+            <span class="fila-nome">Fraterno</span>
+            {% if acolh_aguardando > 0 %}
+            <span class="fila-badge fila-aguardando">{{ acolh_aguardando }}</span>
+            {% elif acolh_realizado > 0 %}
+            <span class="fila-badge fila-realizado">{{ acolh_realizado }} ✓</span>
+            {% endif %}
+        </a>
+
+        <!-- Filas por médium -->
+        {% for m in filas_mediuns %}
+        <a href="/dia/mediuns/{{ m.id }}" class="fila-card fila-medium {% if m.fim %}fila-fim{% endif %}">
+            <span class="fila-icon">🧑‍⚕️</span>
+            <span class="fila-nome">
+                {{ m.nome_completo }}
+                {% if m.vagas_restantes is not none %}
+                <span class="fila-vagas">({{ m.vagas_restantes }}/{{ m.vagas_restantes + m.aguardando }})</span>
+                {% endif %}
+            </span>
+            {% if m.aguardando > 0 %}
+            <span class="fila-badge fila-aguardando">{{ m.aguardando }}</span>
+            {% elif m.atendidos > 0 %}
+            <span class="fila-badge fila-realizado">{{ m.atendidos }} ✓</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
 </div>
 
-<!-- Ações rápidas -->
-<div class="grade-acoes">
-    <a href="/dia/checkin" class="card-acao destaque">
-        <div class="icone">✅</div>
-        <span>Check-in</span>
-    </a>
-    <a href="/dia/dashboard" class="card-acao">
-        <div class="icone">🗂️</div>
-        <span>Dashboard</span>
-    </a>
-    <a href="/dia/passe" class="card-acao">
-        <img src="/static/passe.svg" class="icone-svg" alt="Passe">
-        <span>Fila de Passe</span>
-        {% if passe_aguardando > 0 %}
-        <span class="badge-numero">{{ passe_aguardando }}</span>
-        {% endif %}
-    </a>
-    <a href="/dia/acolhimento" class="card-acao">
-        <div class="icone">🤝</div>
-        <span>Fila de Acolhimento</span>
-        {% if acolh_aguardando > 0 %}
-        <span class="badge-numero">{{ acolh_aguardando }}</span>
-        {% endif %}
-    </a>
-    <a href="/dia/reiki" class="card-acao">
-        <div class="icone">🙌</div>
-        <span>Fila de Reiki</span>
-        {% if reiki_aguardando > 0 %}
-        <span class="badge-numero">{{ reiki_aguardando }}</span>
-        {% endif %}
-    </a>
+<!-- Adicionar médium -->
+<div class="dia-add-medium">
+    <details>
+        <summary>➕ Adicionar médium presente</summary>
+        <form method="post" action="/dia/adicionar-medium" class="form-add-medium">
+            <div class="add-medium-campos">
+                <div class="add-medium-campo">
+                    <label for="medium_select">Médium</label>
+                    <select id="medium_select" name="medium_id" required class="form-input">
+                        <option value="">Selecione…</option>
+                        {% set ids_presentes = mediuns_dia | map(attribute='id') | list %}
+                        {% for m in (todos_mediuns or []) %}
+                            {% if m.id not in ids_presentes %}
+                            <option value="{{ m.id }}">{{ m.nome_completo }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="add-medium-campo">
+                    <label for="vagas_input">Limite (vazio = sem limite)</label>
+                    <input type="number" id="vagas_input" name="vagas_dia" min="1" class="form-input" placeholder="Sem limite">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primario">+ Adicionar</button>
+        </form>
+    </details>
 </div>
 
-<!-- Filas por médium -->
-{% if filas_mediuns %}
-<h3 class="subtitulo-secao">Filas por médium</h3>
-<div class="grade-acoes">
-    {% for m in filas_mediuns %}
-    <a href="/dia/mediuns/{{ m.id }}" class="card-acao {% if m.fim %}destaque{% endif %}">
-        <img src="/static/medium.svg" class="icone-svg" alt="Médium">
-        <span>{{ m.nome_completo }}{% if m.vagas_restantes is not none %} <span style="font-size:.8rem;font-weight:normal">({{ m.vagas_restantes }}/{{ m.vagas_restantes + m.aguardando }})</span>{% endif %}</span>
-        {% if m.aguardando > 0 %}
-        <span class="badge-numero">{{ m.aguardando }}</span>
-        {% endif %}
-    </a>
+<!-- Médiuns presentes -->
+<div class="dia-mediuns-presentes">
+    <strong>Médiuns presentes:</strong>
+    {% for m in mediuns_dia %}
+    <span class="medium-tag">{{ m.nome_completo }}</span>
     {% endfor %}
 </div>
-{% endif %}
 
-<!-- Médiuns do dia -->
-<p style="margin-top:2rem;color:var(--cor-texto-suave);font-size:0.9rem">
-    Médiuns presentes:
-    {% for m in mediuns_dia %}{{ m.nome_completo }}{% if not loop.last %}, {% endif %}{% endfor %}
-</p>
-
-<!-- Adicionar médium ao dia (com campo de vagas) -->
-<form method="post" action="/dia/adicionar-medium" style="margin-top:1rem;display:flex;gap:.5rem;align-items:flex-end">
-    <div class="campo" style="min-width:220px">
-        <label>Adicionar médium presente</label>
-        <select name="medium_id" required>
-            <option value="">Selecione…</option>
-            {% set ids_presentes = mediuns_dia | map(attribute='id') | list %}
-            {% for m in (todos_mediuns or []) %}
-                {% if m.id not in ids_presentes %}
-                <option value="{{ m.id }}">{{ m.nome_completo }}</option>
-                {% endif %}
-            {% endfor %}
-        </select>
+<!-- Estatísticas (colapsáveis, no fim) -->
+<details class="dia-stats-details">
+    <summary>📊 Estatísticas do dia</summary>
+    <div class="dia-stats-grid">
+        <a href="/dia/lista?tipo=checkins" class="stat-card">
+            <span class="stat-numero">{{ total_checkins }}</span>
+            <span class="stat-label">Check-ins</span>
+        </a>
+        <a href="/dia/lista?tipo=passe-aguardando" class="stat-card stat-pendente">
+            <span class="stat-numero">{{ passe_aguardando }}</span>
+            <span class="stat-label">Passes aguardando</span>
+        </a>
+        <a href="/dia/lista?tipo=passe-realizado" class="stat-card stat-realizado">
+            <span class="stat-numero">{{ passe_realizado }}</span>
+            <span class="stat-label">Passes realizados</span>
+        </a>
+        <a href="/dia/lista?tipo=fraterno-aguardando" class="stat-card stat-pendente">
+            <span class="stat-numero">{{ acolh_aguardando }}</span>
+            <span class="stat-label">Fraternos aguardando</span>
+        </a>
+        <a href="/dia/lista?tipo=fraterno-realizado" class="stat-card stat-realizado">
+            <span class="stat-numero">{{ acolh_realizado }}</span>
+            <span class="stat-label">Fraternos realizados</span>
+        </a>
+        <a href="/dia/lista?tipo=reiki-aguardando" class="stat-card stat-pendente">
+            <span class="stat-numero">{{ reiki_aguardando }}</span>
+            <span class="stat-label">Reiki aguardando</span>
+        </a>
+        <a href="/dia/lista?tipo=reiki-realizado" class="stat-card stat-realizado">
+            <span class="stat-numero">{{ reiki_realizado }}</span>
+            <span class="stat-label">Reiki realizado</span>
+        </a>
+        <a href="/dia/lista?tipo=atendimento-aguardando" class="stat-card stat-pendente">
+            <span class="stat-numero">{{ atend_aguardando }}</span>
+            <span class="stat-label">Atendimentos aguardando</span>
+        </a>
+        <a href="/dia/lista?tipo=atendimento-realizado" class="stat-card stat-realizado">
+            <span class="stat-numero">{{ atend_realizado }}</span>
+            <span class="stat-label">Atendimentos realizados</span>
+        </a>
     </div>
-    <div class="campo" style="min-width:120px">
-        <label>Limite (vazio = sem limite)</label>
-        <input type="number" name="vagas_dia" min="1"
-               style="width:120px;padding:.35rem .5rem;border:1px solid var(--cor-borda);
-                      border-radius:var(--raio);font-size:.9rem">
-    </div>
-    <button type="submit" class="btn btn-primario btn-sm">+ Adicionar</button>
-</form>
+</details>
 
-<!-- Rodapé com encerrar dia -->
-<div style="display:flex;justify-content:flex-end;margin-top:3rem;padding-top:1.5rem;border-top:1px solid var(--cor-borda)">
+<!-- Ações do dia -->
+<div class="dia-acoes-footer">
     <form method="post" action="/dia/encerrar"
           onsubmit="return confirm('Encerrar o dia de hoje? Esta ação não pode ser desfeita.')">
-        <button type="submit" class="btn btn-perigo">Encerrar dia</button>
+        <button type="submit" class="btn btn-perigo">🔒 Encerrar dia</button>
     </form>
 </div>
 {% endblock %}

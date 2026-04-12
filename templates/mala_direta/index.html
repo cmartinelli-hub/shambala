@@ -2,121 +2,218 @@
 {% block titulo %}Mala Direta{% endblock %}
 
 {% block conteudo %}
+<!-- Header -->
 <div class="cabecalho-secao">
-    <h2>Mala Direta</h2>
-    <a href="/menu" class="btn btn-secundario">Menu</a>
+    <div>
+        <h1>Mala Direta</h1>
+        <p class="subtitulo">Envie mensagens por e-mail ou WhatsApp para múltiplas pessoas</p>
+    </div>
+    <a href="/menu" class="btn btn-secundario">← Menu</a>
 </div>
 
-<form method="get" action="/mala-direta" class="barra-busca">
-    <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar pessoa...">
-    <button type="submit" class="btn btn-secundario">Buscar</button>
-    {% if busca %}
-    <a href="/mala-direta" class="btn btn-secundario">Limpar</a>
-    {% endif %}
-</form>
+<!-- Busca geral -->
+<div class="maladireta-busca">
+    <span class="maladireta-busca-icon">🔍</span>
+    <input type="text" id="md-busca" placeholder="Buscar pessoa por nome ou e-mail…"
+           class="maladireta-busca-input" autocomplete="off">
+    <span class="maladireta-busca-contador" id="md-contador">
+        {{ total_email }} e-mails · {{ total_telefone }} telefones
+    </span>
+</div>
 
-<form method="post" action="/mala-direta/enviar" id="form-enviar">
-    <div class="grade-duas-colunas">
-        <!-- Coluna 1: Contatos com e-mail -->
-        <div class="painel-contatos">
-            <h3>E-mail ({{ total_email }} contatos)</h3>
-            <div style="margin-bottom:0.5rem">
-                <label><input type="checkbox" id="selecionar-todos-email" onchange="toggleTodos(this, 'email')"> Selecionar todos</label>
+<!-- Abas de canal -->
+<div class="md-tabs">
+    <button class="md-tab md-tab-active" data-tab="tab-email" onclick="mdSwitchTab('tab-email')">
+        ✉️ E-mail <span class="md-tab-count" id="md-tab-email-count">{{ total_email }}</span>
+    </button>
+    <button class="md-tab" data-tab="tab-whatsapp" onclick="mdSwitchTab('tab-whatsapp')">
+        💬 WhatsApp <span class="md-tab-count" id="md-tab-whatsapp-count">{{ total_telefone }}</span>
+    </button>
+</div>
+
+<form method="post" action="/mala-direta/enviar" id="form-mala-direta">
+
+    <!-- Aba E-mail -->
+    <div class="md-tab-content md-tab-active" id="tab-email">
+        <div class="md-selecao">
+            <div class="md-selecao-header">
+                <label class="md-selecionar-todos">
+                    <input type="checkbox" id="md-select-all-email" onchange="mdToggleTodos(this, 'email')">
+                    <span>Selecionar todos</span>
+                </label>
+                <span class="md-selecionado-info"><span id="md-sel-email-count">0</span> selecionado(s)</span>
             </div>
-            <div class="lista-contatos" id="lista-emails">
+            <div class="md-lista" id="md-lista-email">
                 {% if com_email %}
                     {% for p in com_email %}
-                    <label class="item-contato">
-                        <input type="checkbox" name="emails_selecionados" value="{{ p.id }}" class="chk-email" onchange="atualizarTotal()">
-                        <span class="nome">{{ p.nome_completo }}</span>
-                        <span class="detalhe">{{ p.email }}</span>
+                    <label class="md-item">
+                        <input type="checkbox" name="emails_selecionados" value="{{ p.id }}" class="md-chk-email" onchange="mdAtualizarTotal()">
+                        <div class="md-item-info">
+                            <span class="md-item-nome">{{ p.nome_completo }}</span>
+                            <span class="md-item-detalhe">{{ p.email }}</span>
+                        </div>
                     </label>
                     {% endfor %}
                 {% else %}
-                    <p class="vazio">Nenhuma pessoa com e-mail cadastrado{% if busca %} para "{{ busca }}"{% endif %}.</p>
+                    <div class="vazio">
+                        <div class="vazio-icone">✉️</div>
+                        <h3>Nenhum e-mail cadastrado</h3>
+                    </div>
                 {% endif %}
             </div>
         </div>
+    </div>
 
-        <!-- Coluna 2: Contatos com telefone (WhatsApp) -->
-        <div class="painel-contatos">
-            <h3>WhatsApp ({{ total_telefone }} contatos)</h3>
-            <div style="margin-bottom:0.5rem">
-                <label><input type="checkbox" id="selecionar-todos-tel" onchange="toggleTodos(this, 'tel')"> Selecionar todos</label>
+    <!-- Aba WhatsApp -->
+    <div class="md-tab-content" id="tab-whatsapp" style="display:none">
+        <div class="md-selecao">
+            <div class="md-selecao-header">
+                <label class="md-selecionar-todos">
+                    <input type="checkbox" id="md-select-all-whatsapp" onchange="mdToggleTodos(this, 'whatsapp')">
+                    <span>Selecionar todos</span>
+                </label>
+                <span class="md-selecionado-info"><span id="md-sel-tel-count">0</span> selecionado(s)</span>
             </div>
-            <div class="lista-contatos" id="lista-telefones">
+            <div class="md-lista" id="md-lista-tel">
                 {% if com_telefone %}
                     {% for p in com_telefone %}
-                    <label class="item-contato">
-                        <input type="checkbox" name="telefones_selecionados" value="{{ p.id }}" class="chk-tel" onchange="atualizarTotal()">
-                        <span class="nome">{{ p.nome_completo }}</span>
-                        <span class="detalhe">{{ p.telefone }}</span>
+                    <label class="md-item">
+                        <input type="checkbox" name="telefones_selecionados" value="{{ p.id }}" class="md-chk-tel" onchange="mdAtualizarTotal()">
+                        <div class="md-item-info">
+                            <span class="md-item-nome">{{ p.nome_completo }}</span>
+                            <span class="md-item-detalhe">📞 {{ p.telefone }}</span>
+                        </div>
                     </label>
                     {% endfor %}
                 {% else %}
-                    <p class="vazio">Nenhuma pessoa com telefone cadastrado{% if busca %} para "{{ busca }}"{% endif %}.</p>
+                    <div class="vazio">
+                        <div class="vazio-icone">💬</div>
+                        <h3>Nenhum telefone cadastrado</h3>
+                    </div>
                 {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- Composio da mensagem -->
-    <div class="card-form">
-        <h3 style="margin-bottom:1rem">Mensagem</h3>
-        <div style="margin-bottom:1rem">
-            <label for="assunto" style="display:block;margin-bottom:0.3rem;font-weight:600;font-size:0.9rem">Assunto (para e-mail):</label>
-            <input type="text" id="assunto" name="assunto" placeholder="Ex: Comunicado importante" maxlength="200">
+    <!-- Composição da mensagem -->
+    <div class="md-mensagem-card">
+        <h2 class="md-mensagem-titulo">✍️ Composição da Mensagem</h2>
+
+        <div class="md-mensagem-campos">
+            <div class="md-campo">
+                <label for="md-assunto">Assunto (para e-mail)</label>
+                <input type="text" id="md-assunto" name="assunto"
+                       placeholder="Ex: Comunicado importante" maxlength="200"
+                       class="form-input">
+            </div>
+            <div class="md-campo">
+                <label for="md-mensagem-texto">Mensagem</label>
+                <textarea id="md-mensagem-texto" name="mensagem" rows="8"
+                          placeholder="Digite a mensagem que será enviada..."
+                          class="form-input md-textarea"></textarea>
+                <span class="md-char-count"><span id="md-char-count">0</span> caracteres</span>
+            </div>
         </div>
-        <div style="margin-bottom:1rem">
-            <label for="mensagem" style="display:block;margin-bottom:0.3rem;font-weight:600;font-size:0.9rem">Mensagem:</label>
-            <textarea id="mensagem" name="mensagem" rows="6" placeholder="Digite a mensagem que ser enviada..." required></textarea>
+
+        <div class="md-resumo">
+            <span class="md-resumo-item">✉️ <strong id="md-resumo-email">0</strong> e-mails</span>
+            <span class="md-resumo-item">💬 <strong id="md-resumo-tel">0</strong> telefones</span>
         </div>
-        <div style="text-align:center;margin-bottom:1rem;font-size:0.9rem;color:var(--cor-texto-suave)">
-            <span id="sel-emails">0</span> e-mails selecionados &nbsp;|&nbsp;
-            <span id="sel-telefones">0</span> telefones selecionados
-        </div>
-        <div class="acoes-form" style="justify-content:center">
-            <button type="submit" name="canal" value="email" class="btn btn-email" onclick="return verificarSelecao('email')">
-                Enviar por E-mail
+
+        <div class="md-acoes">
+            <button type="submit" name="canal" value="email" class="btn md-btn-email"
+                    onclick="return mdVerificar('email')">
+                ✉️ Enviar por E-mail
             </button>
-            <button type="submit" name="canal" value="whatsapp" class="btn btn-whatsapp" onclick="return verificarSelecao('whatsapp')">
-                Enviar por WhatsApp
+            <button type="submit" name="canal" value="whatsapp" class="btn md-btn-whatsapp"
+                    onclick="return mdVerificar('whatsapp')">
+                💬 Enviar por WhatsApp
             </button>
         </div>
     </div>
+
+    <input type="hidden" name="acao" value="gerar">
 </form>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function toggleTodos(master, tipo) {
-    const cls = tipo === 'email' ? 'chk-email' : 'chk-tel';
-    const checks = document.querySelectorAll('.' + cls);
-    checks.forEach(function(c) { c.checked = master.checked; });
-    atualizarTotal();
+// Troca de abas
+function mdSwitchTab(tabId) {
+    document.querySelectorAll('.md-tab-content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.md-tab').forEach(el => el.classList.remove('md-tab-active'));
+    document.getElementById(tabId).style.display = '';
+    document.querySelector(`[data-tab="${tabId}"]`).classList.add('md-tab-active');
 }
 
-function atualizarTotal() {
-    const emails = document.querySelectorAll('.chk-email:checked').length;
-    const telefones = document.querySelectorAll('.chk-tel:checked').length;
-    document.getElementById('sel-emails').textContent = emails;
-    document.getElementById('sel-telefones').textContent = telefones;
+// Selecionar todos
+function mdToggleTodos(master, tipo) {
+    const cls = tipo === 'email' ? 'md-chk-email' : 'md-chk-tel';
+    document.querySelectorAll('.' + cls).forEach(c => c.checked = master.checked);
+    mdAtualizarTotal();
 }
 
-function verificarSelecao(valor) {
-    const emails = document.querySelectorAll('.chk-email:checked').length;
-    const telefones = document.querySelectorAll('.chk-tel:checked').length;
-    if (valor === 'email' && emails === 0) {
+// Atualizar contadores
+function mdAtualizarTotal() {
+    const emails = document.querySelectorAll('.md-chk-email:checked').length;
+    const telefones = document.querySelectorAll('.md-chk-tel:checked').length;
+    document.getElementById('md-sel-email-count').textContent = emails;
+    document.getElementById('md-sel-tel-count').textContent = telefones;
+    document.getElementById('md-resumo-email').textContent = emails;
+    document.getElementById('md-resumo-tel').textContent = telefones;
+}
+
+// Contador de caracteres
+const txtMsg = document.getElementById('md-mensagem-texto');
+if (txtMsg) {
+    txtMsg.addEventListener('input', () => {
+        document.getElementById('md-char-count').textContent = txtMsg.value.length;
+    });
+}
+
+// Busca em tempo real
+const buscaInput = document.getElementById('md-busca');
+if (buscaInput) {
+    buscaInput.addEventListener('input', () => {
+        const q = buscaInput.value.trim().toLowerCase();
+        let emailVis = 0, telVis = 0;
+
+        document.querySelectorAll('#md-lista-email .md-item').forEach(item => {
+            const nome = item.querySelector('.md-item-nome').textContent.toLowerCase();
+            const det = (item.querySelector('.md-item-detalhe')?.textContent || '').toLowerCase();
+            const match = nome.includes(q) || det.includes(q);
+            item.style.display = match ? '' : 'none';
+            if (match) emailVis++;
+        });
+
+        document.querySelectorAll('#md-lista-tel .md-item').forEach(item => {
+            const nome = item.querySelector('.md-item-nome').textContent.toLowerCase();
+            const det = (item.querySelector('.md-item-detalhe')?.textContent || '').toLowerCase();
+            const match = nome.includes(q) || det.includes(q);
+            item.style.display = match ? '' : 'none';
+            if (match) telVis++;
+        });
+
+        document.getElementById('md-tab-email-count').textContent = emailVis;
+        document.getElementById('md-tab-whatsapp-count').textContent = telVis;
+        document.getElementById('md-contador').textContent = `${emailVis} e-mails · ${telVis} telefones`;
+    });
+}
+
+// Verificar antes de enviar
+function mdVerificar(canal) {
+    const emails = document.querySelectorAll('.md-chk-email:checked').length;
+    const telefones = document.querySelectorAll('.md-chk-tel:checked').length;
+    const msg = document.getElementById('md-mensagem-texto').value.trim();
+
+    if (!msg) { alert('Digite uma mensagem.'); return false; }
+
+    if (canal === 'email' && emails === 0) {
         alert('Selecione ao menos um e-mail para enviar.');
         return false;
     }
-    if (valor === 'whatsapp' && telefones === 0) {
+    if (canal === 'whatsapp' && telefones === 0) {
         alert('Selecione ao menos um telefone para enviar por WhatsApp.');
-        return false;
-    }
-    const msg = document.getElementById('mensagem').value.trim();
-    if (!msg) {
-        alert('Digite uma mensagem.');
         return false;
     }
     return true;
@@ -124,68 +221,204 @@ function verificarSelecao(valor) {
 </script>
 
 <style>
-.grade-duas-colunas {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-@media (max-width: 768px) {
-    .grade-duas-colunas { grid-template-columns: 1fr; }
-}
-.painel-contatos {
+/* Busca */
+.maladireta-busca {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
     background: var(--cor-superficie);
     border: 1px solid var(--cor-borda);
     border-radius: var(--raio);
-    padding: 1rem;
-    max-height: 400px;
     box-shadow: var(--sombra);
+    margin-bottom: 1rem;
+}
+.maladireta-busca-icon { font-size: 1.2rem; opacity: 0.5; }
+.maladireta-busca-input {
+    flex: 1;
+    padding: 0.55rem 0.65rem;
+    border: none;
+    font-size: 0.95rem;
+    background: transparent;
+}
+.maladireta-busca-input:focus { outline: none; }
+.maladireta-busca-contador {
+    font-size: 0.8rem;
+    color: var(--cor-texto-suave);
+    white-space: nowrap;
+}
+
+/* Abas */
+.md-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 0;
+    border-bottom: 2px solid var(--cor-borda);
+}
+.md-tab {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--cor-texto-suave);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+.md-tab:hover { color: var(--cor-texto); }
+.md-tab-active {
+    color: var(--cor-primaria) !important;
+    border-bottom-color: var(--cor-primaria) !important;
+}
+.md-tab-count {
+    display: inline-block;
+    background: var(--cor-borda);
+    color: var(--cor-texto-suave);
+    padding: 0.1rem 0.5rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    margin-left: 0.3rem;
+}
+
+/* Seleção */
+.md-selecao {
+    background: var(--cor-superficie);
+    border: 1px solid var(--cor-borda);
+    border-top: none;
+    border-radius: 0 0 var(--raio) var(--raio);
+    max-height: 400px;
     display: flex;
     flex-direction: column;
 }
-.painel-contatos h3 {
-    margin: 0 0 0.5rem;
-    font-size: 1rem;
-    color: var(--cor-primaria);
+.md-selecao-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--cor-borda);
+    background: #f9fafb;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
-.lista-contatos {
-    overflow-y: auto;
-    flex: 1;
-}
-.item-contato {
+.md-selecionar-todos {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.5rem;
-    border-radius: 4px;
     cursor: pointer;
     font-size: 0.9rem;
+    font-weight: 600;
 }
-.item-contato:hover { background: var(--cor-fundo); }
-.item-contato .nome { font-weight: 600; }
-.item-contato .detalhe { color: var(--cor-texto-suave); font-size: 0.85rem; margin-left: auto; }
+.md-selecionado-info {
+    font-size: 0.8rem;
+    color: var(--cor-texto-suave);
+}
+.md-lista {
+    overflow-y: auto;
+    flex: 1;
+}
+.md-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.15s;
+}
+.md-item:hover { background: #f0f4f8; }
+.md-item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+.md-item-info { flex: 1; min-width: 0; }
+.md-item-nome { display: block; font-weight: 600; font-size: 0.9rem; }
+.md-item-detalhe { display: block; font-size: 0.8rem; color: var(--cor-texto-suave); }
 
-.btn-email {
+/* Card de mensagem */
+.md-mensagem-card {
+    background: var(--cor-superficie);
+    border-radius: var(--raio);
+    box-shadow: var(--sombra);
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+}
+.md-mensagem-titulo {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--cor-primaria);
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--cor-borda);
+}
+.md-mensagem-campos {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.md-textarea {
+    min-height: 150px;
+    resize: vertical;
+}
+.md-char-count {
+    font-size: 0.8rem;
+    color: var(--cor-texto-suave);
+    text-align: right;
+    display: block;
+    margin-top: 0.25rem;
+}
+
+/* Resumo */
+.md-resumo {
+    display: flex;
+    gap: 1.5rem;
+    margin: 1rem 0;
+    padding: 0.75rem;
+    background: #f9fafb;
+    border-radius: var(--raio);
+    font-size: 0.9rem;
+}
+.md-resumo-item {
+    color: var(--cor-texto-suave);
+}
+
+/* Botões */
+.md-acoes {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+.md-btn-email {
     background: var(--cor-primaria);
     color: #fff;
     padding: 0.75rem 2rem;
     border: none;
     border-radius: var(--raio);
-    cursor: pointer;
     font-size: 1rem;
     font-weight: 600;
+    cursor: pointer;
 }
-.btn-email:hover { background: var(--cor-primaria-escura); }
-.btn-whatsapp {
+.md-btn-email:hover { background: var(--cor-primaria-escura); }
+.md-btn-whatsapp {
     background: #25d366;
     color: #fff;
     padding: 0.75rem 2rem;
     border: none;
     border-radius: var(--raio);
-    cursor: pointer;
     font-size: 1rem;
     font-weight: 600;
+    cursor: pointer;
 }
-.btn-whatsapp:hover { background: #1da851; }
+.md-btn-whatsapp:hover { background: #1da851; }
+
+@media (max-width: 768px) {
+    .md-acoes { flex-direction: column; }
+    .md-btn-email, .md-btn-whatsapp { width: 100%; text-align: center; }
+}
 </style>
 {% endblock %}
