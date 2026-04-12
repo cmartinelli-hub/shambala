@@ -310,6 +310,24 @@ def criar_tabelas():
             )
         """)
 
+        # ── Configurações de Backup Remoto ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS configuracoes_backup (
+                id          SERIAL PRIMARY KEY,
+                chave       TEXT NOT NULL UNIQUE,
+                valor       TEXT NOT NULL DEFAULT ''
+            )
+        """)
+
+        # ── Configurações do Centro (nome e logo) ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS configuracoes_centro (
+                id          SERIAL PRIMARY KEY,
+                chave       TEXT NOT NULL UNIQUE,
+                valor       TEXT NOT NULL DEFAULT ''
+            )
+        """)
+
         # ── Trabalhadores ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trabalhadores (

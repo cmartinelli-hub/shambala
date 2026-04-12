@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from fastapi import APIRouter, Request, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
@@ -473,3 +473,111 @@ async def marcar_ausente(request: Request, id: int):
             (id, dia["id"]),
         )
     return RedirectResponse(url="/cadastros/trabalhadores/dia/trabalhador-checkin", status_code=303)
+
+# ── Check-in de Trabalhadores (Menu Principal - acesso geral) ────────────────
+router_checkin_trab = APIRouter(prefix="/checkin-trabalhador")
+
+
+@router_checkin_trab.get("", response_class=HTMLResponse)
+async def checkin_trabalhador_page(request: Request):
+    """Página de check-in de trabalhadores (acessível a todos os logados)."""
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return RedirectResponse(url="/login", status_code=303)
+
+    from datetime import date as _date
+    hoje = _date.today().isoformat()
+
+    with conectar() as conn:
+        dia = conn.execute(
+            "SELECT * FROM dias_trabalho WHERE data = %s AND aberto = 1", (hoje,)
+        ).fetchone()
+
+        if not dia:
+            return templates.TemplateResponse("trabalhadores/dia_sem_abertura.html", {
+                "request": request,
+                "atendente": atendente,
+            })
+
+        # Trabalhadores com agenda para hoje (dia da semana configurado)
+        dia_semana = _date.today().weekday()
+        trabalhadores_agenda = conn.execute(
+            """SELECT t.id, t.nome_completo, t.foto_trabalhador
+               FROM trabalhadores t
+               JOIN trabalhador_dias td ON td.trabalhador_id = t.id
+               WHERE t.ativo = 1 AND td.dia_semana = %s
+               ORDER BY t.nome_completo""",
+            (dia_semana,)
+        ).fetchall()
+
+        # Presenças de hoje
+        presencas = conn.execute(
+            """SELECT trabalhador_id, presente
+               FROM trabalhador_presenca
+               WHERE dia_trabalho_id = %s""",
+            (dia["id"],)
+        ).fetchall()
+
+    return templates.TemplateResponse("trabalhadores/checkin.html", {
+        "request": request,
+        "atendente": atendente,
+        "dia": dict(dia) if dia else None,
+        "trabalhadores_agenda": [dict(t) for t in trabalhadores_agenda],
+        "presencas": [dict(p) for p in presencas],
+        "erro": None,
+    })
+
+
+@router_checkin_trab.post("/{id}/presente", response_class=HTMLResponse)
+async def marcar_presente(request: Request, id: int):
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return RedirectResponse(url="/login", status_code=303)
+
+    from datetime import datetime as _dt
+    hoje = _dt.now().strftime("%Y-%m-%d")
+    agora = _dt.now().strftime("%H:%M")
+
+    with conectar() as conn:
+        dia = conn.execute(
+            "SELECT id FROM dias_trabalho WHERE data = %s AND aberto = 1", (hoje,)
+        ).fetchone()
+        if not dia:
+            return RedirectResponse(url="/checkin-trabalhador", status_code=303)
+
+        conn.execute(
+            """INSERT INTO trabalhador_presenca
+               (trabalhador_id, dia_trabalho_id, presente, hora_chegada)
+               VALUES (%s, %s, 1, %s)
+               ON CONFLICT (trabalhador_id, dia_trabalho_id)
+               DO UPDATE SET presente = 1, hora_chegada = %s""",
+            (id, dia["id"], agora, agora)
+        )
+    return RedirectResponse(url="/checkin-trabalhador", status_code=303)
+
+
+@router_checkin_trab.post("/{id}/ausente", response_class=HTMLResponse)
+async def marcar_ausente(request: Request, id: int):
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return RedirectResponse(url="/login", status_code=303)
+
+    from datetime import date as _date
+    hoje = _date.today().isoformat()
+
+    with conectar() as conn:
+        dia = conn.execute(
+            "SELECT id FROM dias_trabalho WHERE data = %s AND aberto = 1", (hoje,)
+        ).fetchone()
+        if not dia:
+            return RedirectResponse(url="/checkin-trabalhador", status_code=303)
+
+        conn.execute(
+            """INSERT INTO trabalhador_presenca
+               (trabalhador_id, dia_trabalho_id, presente, hora_chegada, hora_saida)
+               VALUES (%s, %s, 0, NULL, NULL)
+               ON CONFLICT (trabalhador_id, dia_trabalho_id)
+               DO UPDATE SET presente = 0""",
+            (id, dia["id"])
+        )
+    return RedirectResponse(url="/checkin-trabalhador", status_code=303)

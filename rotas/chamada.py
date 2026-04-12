@@ -1,7 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from templates_config import templates
+from templates_config import templates, _obter_config_centro as obter_config_centro
 router = APIRouter()
 
 
@@ -41,7 +41,10 @@ async def ultimo_chamado():
 
 @router.get("/chamada", response_class=HTMLResponse)
 async def pagina_chamada(request: Request):
-    return templates.TemplateResponse("chamada.html", {"request": request})
+    return templates.TemplateResponse("chamada.html", {
+        "request": request,
+        "centro": obter_config_centro(),
+    })
 
 
 @router.websocket("/chamada/ws")

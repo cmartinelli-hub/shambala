@@ -6,7 +6,7 @@ from fastapi import HTTPException
 
 from banco import conectar
 
-from templates_config import templates
+from templates_config import templates, _obter_config_centro as obter_config_centro
 router = APIRouter()
 
 # Sessões em memória: {token: atendente_id}
@@ -45,7 +45,11 @@ def exige_login(request: Request):
 
 @router.get("/login", response_class=HTMLResponse)
 async def pagina_login(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "erro": None})
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "erro": None,
+        "centro": obter_config_centro(),
+    })
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -64,7 +68,7 @@ async def fazer_login(
     if not row:
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "erro": "Usuário ou senha inválidos."},
+            {"request": request, "erro": "Usuário ou senha inválidos.", "centro": obter_config_centro()},
             status_code=401
         )
 

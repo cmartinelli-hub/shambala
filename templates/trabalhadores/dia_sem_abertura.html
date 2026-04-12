@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Check-in Trabalhadores{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <div>
+        <h1>Check-in Trabalhadores</h1>
+        <p class="subtitulo">Registre a presença dos trabalhadores no dia de hoje</p>
+    </div>
+    <a href="/menu" class="btn btn-secundario">← Menu</a>
+</div>
+
+<div class="vazio">
+    <div class="vazio-icone">📅</div>
+    <h3>Nenhum dia de trabalho aberto hoje</h3>
+    <p>Abra o dia primeiro para registrar presença dos trabalhadores.</p>
+    <a href="/dia" class="btn btn-primario">Abrir dia de trabalho</a>
+</div>
+{% endblock %}

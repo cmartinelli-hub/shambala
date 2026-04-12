@@ -3,13 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shambala — Login</title>
+    <title>{{ centro.centro_nome }} — Login</title>
     <link rel="stylesheet" href="/static/css/base.css">
 </head>
 <body class="pagina-login">
     <div class="caixa-login">
-        <img src="/static/logo.svg" alt="Estrela de Davi" class="logo-login">
-        <h1>Shambala</h1>
+        {% if centro.centro_logo %}
+        <img src="/static/logos/{{ centro.centro_logo }}" alt="Logo" class="logo-login">
+        {% else %}
+        <img src="/static/logo.svg" alt="Logo" class="logo-login">
+        {% endif %}
+        <h1>{{ centro.centro_nome }}</h1>
         <p class="subtitulo">Sistema de Atendimentos</p>
 
         {% if erro %}

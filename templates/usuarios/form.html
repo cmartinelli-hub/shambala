@@ -2,59 +2,126 @@
 {% block titulo %}{{ 'Editar' if registro else 'Novo' }} Usuário{% endblock %}
 
 {% block conteudo %}
-<div class="cabecalho-secao">
-    <h2>{{ 'Editar' if registro else 'Novo' }} Usuário</h2>
-    <a href="/cadastros/usuarios" class="btn btn-secundario">← Voltar</a>
+<!-- Header do formulário -->
+<div class="form-header">
+    <div>
+        <a href="/cadastros/usuarios" class="btn-voltar">← Voltar</a>
+        <h1 class="form-titulo">{% if registro %}Editar{% else %}Novo{% endif %} Usuário</h1>
+    </div>
+    {% if registro %}
+    <div class="form-header-avatar">
+        <div class="form-avatar-grande usuario-avatar-color">{{ registro.nome_completo[:1]|upper }}</div>
+    </div>
+    {% endif %}
 </div>
 
 {% if erro %}
-<div class="erro">{{ erro }}</div>
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
 {% endif %}
 
-<div class="card-form">
-    <form method="post">
-        <div class="grade-form">
-            <div class="campo">
-                <label>Nome completo *</label>
-                <input type="text" name="nome_completo" value="{{ registro.nome_completo if registro else '' }}" required autofocus>
+<form method="post" class="form-moderno">
+    <!-- Dados da conta -->
+    <div class="form-secao">
+        <h2 class="form-secao-titulo">👤 Dados da Conta</h2>
+        <div class="form-grid">
+            <div class="form-campo form-campo-largo">
+                <label for="nome_completo">Nome completo *</label>
+                <input type="text" id="nome_completo" name="nome_completo"
+                       value="{{ registro.nome_completo if registro else '' }}"
+                       placeholder="Ex: Maria da Silva"
+                       required autofocus class="form-input">
             </div>
-            <div class="campo">
-                <label>Nome de usuário *</label>
-                <input type="text" name="nome_usuario" value="{{ registro.nome_usuario if registro else '' }}" required>
+            <div class="form-campo">
+                <label for="nome_usuario">Nome de usuário *</label>
+                <input type="text" id="nome_usuario" name="nome_usuario"
+                       value="{{ registro.nome_usuario if registro else '' }}"
+                       placeholder="Ex: maria.silva"
+                       required class="form-input">
             </div>
-            <div class="campo">
-                <label>Senha {% if registro %}(deixe em branco para manter){% else %}*{% endif %}</label>
-                <input type="password" name="senha" {% if not registro %}required{% endif %}>
-            </div>
-            <div class="campo">
-                <label>Telefone</label>
-                <input type="tel" name="telefone" value="{{ registro.telefone if registro else '' }}">
-            </div>
-            <div class="campo campo-largo">
-                <label>E-mail</label>
-                <input type="email" name="email" value="{{ registro.email if registro else '' }}">
-            </div>
-            <div class="campo campo-largo">
-                <label>Grupos</label>
-                <div class="grupos-checkboxes">
-                    {% for g in grupos %}
-                    <label class="grupo-item">
-                        <input type="checkbox" name="grupos" value="{{ g.id }}"
-                            {% if g.id in grupos_selecionados %}checked{% endif %}>
-                        <span class="grupo-nome">{{ g.nome }}</span>
-                        {% if g.descricao %}
-                        <span class="grupo-desc">{{ g.descricao }}</span>
-                        {% endif %}
-                    </label>
-                    {% endfor %}
-                </div>
+            <div class="form-campo">
+                <label for="senha">Senha {% if registro %}(deixe em branco para manter){% else %}*{% endif %}</label>
+                <input type="password" id="senha" name="senha"
+                       {% if not registro %}required{% endif %}
+                       placeholder="••••••••"
+                       class="form-input">
             </div>
         </div>
+    </div>
 
-        <div class="acoes-form">
-            <button type="submit" class="btn btn-primario">Salvar</button>
-            <a href="/cadastros/usuarios" class="btn btn-secundario">Cancelar</a>
+    <!-- Contato -->
+    <div class="form-secao">
+        <h2 class="form-secao-titulo">📞 Contato</h2>
+        <div class="form-grid">
+            <div class="form-campo">
+                <label for="telefone">Telefone</label>
+                <input type="tel" id="telefone" name="telefone"
+                       value="{{ registro.telefone if registro else '' }}"
+                       placeholder="(00) 00000-0000" maxlength="15"
+                       class="form-input">
+            </div>
+            <div class="form-campo">
+                <label for="email">E-mail</label>
+                <input type="email" id="email" name="email"
+                       value="{{ registro.email if registro else '' }}"
+                       placeholder="email@exemplo.com"
+                       class="form-input">
+            </div>
         </div>
-    </form>
-</div>
+    </div>
+
+    <!-- Grupos -->
+    <div class="form-secao">
+        <h2 class="form-secao-titulo">🔒 Grupos de Acesso</h2>
+        {% if grupos %}
+        <div class="form-grupos-grid">
+            {% for g in grupos %}
+            <label class="form-grupo-card {% if g.id in grupos_selecionados %}grupo-selecionado{% endif %}">
+                <input type="checkbox" name="grupos" value="{{ g.id }}"
+                       {% if g.id in grupos_selecionados %}checked{% endif %}
+                       class="form-grupo-input">
+                <div class="form-grupo-info">
+                    <span class="form-grupo-nome">{{ g.nome }}</span>
+                    {% if g.descricao %}
+                    <span class="form-grupo-desc">{{ g.descricao }}</span>
+                    {% endif %}
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="form-vazio-grupos">Nenhum grupo de acesso configurado. <a href="/cadastros/permissoes">Criar grupo</a>.</p>
+        {% endif %}
+    </div>
+
+    <!-- Botões de ação -->
+    <div class="form-acoes">
+        <button type="submit" class="btn btn-primario btn-grande">💾 Salvar</button>
+        <a href="/cadastros/usuarios" class="btn btn-secundario">Cancelar</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Máscara telefone
+const tel = document.getElementById('telefone');
+if (tel) {
+    tel.addEventListener('input', function() {
+        let v = this.value.replace(/\D/g, '').slice(0, 11);
+        if (v.length > 2)  v = '(' + v.slice(0,2) + ') ' + v.slice(2);
+        if (v.length > 10) v = v.slice(0,10) + '-' + v.slice(10);
+        this.value = v;
+    });
+}
+
+// Toggle visual dos cards de grupo
+document.querySelectorAll('.form-grupo-input').forEach(input => {
+    input.addEventListener('change', function() {
+        this.closest('.form-grupo-card').classList.toggle('grupo-selecionado', this.checked);
+    });
+});
+</script>
 {% endblock %}

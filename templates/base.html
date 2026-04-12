@@ -3,15 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shambala — {% block titulo %}{% endblock %}</title>
+    {% set centro = centro_config() %}
+    <title>{{ centro.centro_nome }} — {% block titulo %}{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/base.css">
     {% block estilos %}{% endblock %}
 </head>
 <body>
     <div class="topo">
         <a href="/menu" class="topo-marca">
+            {% if centro.centro_logo %}
+            <img src="/static/logos/{{ centro.centro_logo }}" alt="Logo" class="logo-topo">
+            {% else %}
             <img src="/static/logo-branca.svg" alt="Logo" class="logo-topo">
-            <span>Shambala</span>
+            {% endif %}
+            <span>{{ centro.centro_nome }}</span>
         </a>
         <span>{{ atendente.nome_completo }} &nbsp;|&nbsp; <a href="/logout">Sair</a></span>
     </div>

@@ -3,47 +3,54 @@
 
 {% block conteudo %}
 <div class="cabecalho-secao">
-    <h2>Usuários do Sistema</h2>
-    <a href="/cadastros/usuarios/novo" class="btn btn-primario">+ Novo usuário</a>
+    <div>
+        <h1>Usuários do Sistema</h1>
+        <p class="subtitulo">{{ usuarios|length }} usuário{{ 's' if usuarios|length != 1 }} cadastrado{{ 's' if usuarios|length != 1 }}</p>
+    </div>
+    <a href="/cadastros/usuarios/novo" class="btn btn-primario">➕ Novo usuário</a>
 </div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Nome completo</th>
-            <th>Usuário</th>
-            <th>Grupos</th>
-            <th>Telefone</th>
-            <th>E-mail</th>
-            <th>Situação</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for u in usuarios %}
-        <tr class="{% if not u.ativo %}inativo{% endif %}">
-            <td>{{ u.nome_completo }}</td>
-            <td>{{ u.nome_usuario }}</td>
-            <td>{{ u.grupos_nome or '—' }}</td>
-            <td>{{ u.telefone or '—' }}</td>
-            <td>{{ u.email or '—' }}</td>
-            <td>
-                <span class="badge {% if u.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
-                    {{ 'Ativo' if u.ativo else 'Inativo' }}
-                </span>
-            </td>
-            <td class="acoes">
-                <a href="/cadastros/usuarios/{{ u.id }}/editar" class="btn btn-secundario btn-sm">Editar</a>
-                <form method="post" action="/cadastros/usuarios/{{ u.id }}/toggle-ativo" style="display:inline">
-                    <button type="submit" class="btn btn-sm {% if u.ativo %}btn-perigo{% else %}btn-secundario{% endif %}">
-                        {{ 'Desativar' if u.ativo else 'Ativar' }}
-                    </button>
-                </form>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" style="text-align:center;color:var(--cor-texto-suave)">Nenhum usuário cadastrado.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% if usuarios %}
+<div class="usuarios-grid">
+    {% for u in usuarios %}
+    <div class="usuario-card {% if not u.ativo %}usuario-inativo{% endif %}">
+        <div class="usuario-header">
+            <div class="usuario-avatar">{{ u.nome_completo[:1]|upper }}</div>
+            <div class="usuario-info">
+                <h3 class="usuario-nome">{{ u.nome_completo }}</h3>
+                <span class="usuario-login">👤 {{ u.nome_usuario }}</span>
+            </div>
+            <span class="usuario-badge {% if u.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
+                {{ 'Ativo' if u.ativo else 'Inativo' }}
+            </span>
+        </div>
+        <div class="usuario-contato">
+            {% if u.telefone %}
+            <span class="usuario-telefone">📞 {{ u.telefone }}</span>
+            {% endif %}
+            {% if u.email %}
+            <span class="usuario-email">✉️ {{ u.email }}</span>
+            {% endif %}
+            {% if u.grupos_nome %}
+            <span class="usuario-grupos">🔒 {{ u.grupos_nome }}</span>
+            {% endif %}
+        </div>
+        <div class="usuario-acoes">
+            <a href="/cadastros/usuarios/{{ u.id }}/editar" class="btn btn-sm btn-editar">✏️ Editar</a>
+            <form method="post" action="/cadastros/usuarios/{{ u.id }}/toggle-ativo" class="usuario-form-toggle">
+                <button type="submit" class="btn-toggle {% if u.ativo %}btn-desativar{% else %}btn-ativar{% endif %}">
+                    {{ 'Desativar' if u.ativo else 'Ativar' }}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="vazio">
+    <div class="vazio-icone">👤</div>
+    <h3>Nenhum usuário cadastrado</h3>
+    <p>Clique em "+ Novo usuário" para começar.</p>
+</div>
+{% endif %}
 {% endblock %}

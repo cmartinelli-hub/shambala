@@ -10,7 +10,7 @@
         {% endif %}
     </div>
     <div class="acoes-cabecalho">
-        <a href="/cadastros/trabalhadores" class="btn btn-secundario">← Voltar</a>
+        <a href="/menu" class="btn btn-secundario">← Menu</a>
     </div>
 </div>
 
@@ -76,10 +76,10 @@
         </div>
         {% if t.id not in presenca_map %}
         <div class="trab-checkin-acoes">
-            <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/presente" style="display:inline">
+            <form method="post" action="/checkin-trabalhador/{{ t.id }}/presente" style="display:inline">
                 <button type="submit" class="btn btn-trab-presente">✔ Presente</button>
             </form>
-            <form method="post" action="/cadastros/trabalhadores/dia/trabalhador-checkin/{{ t.id }}/ausente" style="display:inline">
+            <form method="post" action="/checkin-trabalhador/{{ t.id }}/ausente" style="display:inline">
                 <button type="submit" class="btn btn-trab-ausente">✕ Ausente</button>
             </form>
         </div>
