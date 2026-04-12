@@ -24,6 +24,10 @@ node_modules/
 # Logs
 *.log
 
-# SQLite legado
+# SQLite/DB legado
 *.sqlite
 *.sqlite3
+*.db
+
+# Claude
+.claude/
