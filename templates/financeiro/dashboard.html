@@ -24,21 +24,21 @@
 <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; margin-bottom:1.5rem">
     <div class="card-form" style="text-align:center; border-left: 4px solid #1da851">
         <div style="font-size:0.85rem; color:var(--cor-texto-suale)">Entradas (mês)</div>
-        <div style="font-size:1.8rem; font-weight:700; color:#1da851">R$ {{ entradas|replace('.', ',') }}</div>
+        <div style="font-size:1.8rem; font-weight:700; color:#1da851">R$ {{ "%.2f"|format(entradas)|replace('.', ',') }}</div>
     </div>
     <div class="card-form" style="text-align:center; border-left: 4px solid #ff4444">
         <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Saídas (mês)</div>
-        <div style="font-size:1.8rem; font-weight:700; color:#ff4444">R$ {{ saidas|replace('.', ',') }}</div>
+        <div style="font-size:1.8rem; font-weight:700; color:#ff4444">R$ {{ "%.2f"|format(saidas)|replace('.', ',') }}</div>
     </div>
     <div class="card-form" style="text-align:center; border-left: 4px solid #ffa400">
         <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Pendentes</div>
-        <div style="font-size:1.8rem; font-weight:700; color:#ffa400">R$ {{ pendentes|replace('.', ',') }}</div>
+        <div style="font-size:1.8rem; font-weight:700; color:#ffa400">R$ {{ "%.2f"|format(pendentes)|replace('.', ',') }}</div>
     </div>
 </div>
 
 <!-- Saldo -->
 <div class="card-form" style="margin-bottom:1.5rem; padding:1rem; background:{{ '1da85122' if entradas >= saidas else 'ff444422' }}; border: 1px solid {{ '#1da851' if entradas >= saidas else '#ff4444' }}; border-radius: var(--raio)">
-    <strong>Saldo do mês: R$ {{ (entradas - saidas)|abs|replace('.', ',') }}</strong>
+    <strong>Saldo do mês: R$ {{ "%.2f"|format((entradas - saidas)|abs)|replace('.', ',') }}</strong>
     {% if entradas >= saidas %} (positivo){% else %} (negativo){% endif %}
 </div>
 
