@@ -120,11 +120,38 @@ def e_admin(request: Request) -> bool:
 
 
 def criar_atendente_inicial():
-    """Cria o atendente padrão 'admin' se não existir nenhum."""
+    """Cria o atendente padrão 'admin' e o grupo Admin se não existirem."""
     with conectar() as conn:
+        # Garantir grupo Admin (id=1)
+        conn.execute(
+            "INSERT INTO grupos (id, nome, descricao) VALUES (1, 'Admin', 'Administradores') "
+            "ON CONFLICT (id) DO NOTHING"
+        )
+        # Garantir sequência alinhada após insert explícito
+        conn.execute("SELECT setval('grupos_id_seq', (SELECT MAX(id) FROM grupos))")
+
+        # Criar admin se não existir
         total = conn.execute("SELECT COUNT(*) AS c FROM atendentes").fetchone()["c"]
         if total == 0:
-            conn.execute(
-                "INSERT INTO atendentes (nome_usuario, nome_completo, senha_hash) VALUES (%s, %s, %s)",
+            cur = conn.execute(
+                "INSERT INTO atendentes (nome_usuario, nome_completo, senha_hash) "
+                "VALUES (%s, %s, %s) RETURNING id",
                 ("admin", "Administrador", hash_senha("admin"))
             )
+            admin_id = cur.fetchone()["id"]
+            conn.execute(
+                "INSERT INTO usuarios_grupos (usuario_id, grupo_id) VALUES (%s, 1) "
+                "ON CONFLICT DO NOTHING",
+                (admin_id,)
+            )
+        else:
+            # Garantir que admin existente esteja no grupo Admin
+            admin = conn.execute(
+                "SELECT id FROM atendentes WHERE nome_usuario = 'admin'"
+            ).fetchone()
+            if admin:
+                conn.execute(
+                    "INSERT INTO usuarios_grupos (usuario_id, grupo_id) VALUES (%s, 1) "
+                    "ON CONFLICT DO NOTHING",
+                    (admin["id"],)
+                )
