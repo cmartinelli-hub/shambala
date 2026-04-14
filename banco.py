@@ -301,6 +301,15 @@ def criar_tabelas():
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios_grupos (
+                id          SERIAL PRIMARY KEY,
+                usuario_id  INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                grupo_id    INTEGER NOT NULL REFERENCES grupos(id) ON DELETE CASCADE,
+                UNIQUE(usuario_id, grupo_id)
+            )
+        """)
+
         # ── Configurações SMTP ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS configuracoes_smtp (
