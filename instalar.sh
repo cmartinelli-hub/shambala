@@ -57,16 +57,21 @@ mkdir -p "$DESTINO"
 chown "$USUARIO:$USUARIO" "$DESTINO"
 
 # ── Copiar arquivos da aplicacao ────────────────────────────────────────────
-echo "[...] Copiando arquivos"
-for item in main.py banco.py templates_config.py backup.py requirements.txt \
-            maiusculas.py normalizar_telefones.py instalar.sh atualizar.sh \
-            abrir-chamada.sh gerar_pacote.sh \
-            rotas templates static shambala.service .env.example .gitignore \
-            README.md; do
-    if [ -e "$item" ]; then
-        cp -r "$item" "$DESTINO/"
-    fi
-done
+ORIGEM=$(realpath "$(dirname "$0")")
+if [ "$ORIGEM" != "$(realpath "$DESTINO")" ]; then
+    echo "[...] Copiando arquivos de $ORIGEM para $DESTINO"
+    for item in main.py banco.py templates_config.py backup.py requirements.txt \
+                maiusculas.py normalizar_telefones.py instalar.sh atualizar.sh \
+                abrir-chamada.sh gerar_pacote.sh \
+                rotas templates static shambala.service .env.example .gitignore \
+                README.md; do
+        if [ -e "$ORIGEM/$item" ]; then
+            cp -r "$ORIGEM/$item" "$DESTINO/"
+        fi
+    done
+else
+    echo "[...] Instalando no proprio diretorio ($DESTINO), copia ignorada"
+fi
 
 chown -R "$USUARIO:$USUARIO" "$DESTINO"
 
