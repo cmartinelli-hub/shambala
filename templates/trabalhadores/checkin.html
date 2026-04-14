@@ -2,15 +2,13 @@
 {% block titulo %}Check-in — Trabalhadores{% endblock %}
 
 {% block conteudo %}
+<a href="/menu" class="btn-voltar">← Menu</a>
 <div class="cabecalho-secao">
     <div>
         <h1>Check-in de Trabalhadores</h1>
         {% if dia %}
         <p class="subtitulo">📅 {{ dia.data | data_br }}</p>
         {% endif %}
-    </div>
-    <div class="acoes-cabecalho">
-        <a href="/menu" class="btn btn-secundario">← Menu</a>
     </div>
 </div>
 
