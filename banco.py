@@ -217,6 +217,18 @@ def _migrar(conn):
            WHERE ler = FALSE AND escrever = FALSE AND apagar = FALSE"""
     )
 
+    # Adiciona UNIQUE em trabalhador_presenca se não existir
+    existe_constraint = conn.execute(
+        """SELECT COUNT(*) AS c FROM information_schema.table_constraints
+           WHERE table_name = 'trabalhador_presenca'
+             AND constraint_type = 'UNIQUE'"""
+    ).fetchone()["c"]
+    if existe_constraint == 0:
+        conn.execute(
+            "ALTER TABLE trabalhador_presenca "
+            "ADD CONSTRAINT trabalhador_presenca_unique UNIQUE (trabalhador_id, dia_trabalho_id)"
+        )
+
 
 # ── Criação de tabelas ───────────────────────────────────────────────────────
 
@@ -547,7 +559,8 @@ def criar_tabelas():
                 dia_trabalho_id     INTEGER NOT NULL REFERENCES dias_trabalho(id),
                 presente            INTEGER NOT NULL DEFAULT 0,
                 hora_chegada        TEXT,
-                hora_saida          TEXT
+                hora_saida          TEXT,
+                UNIQUE(trabalhador_id, dia_trabalho_id)
             )
         """)
 
