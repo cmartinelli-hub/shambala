@@ -1,12 +1,19 @@
 #!/bin/bash
 set -e
 
-DESTINO="/opt/shamballa"
+DESTINO="/opt/shambala"
 
 echo "============================================"
 echo "  Atualizador do Sistema Shambala"
 echo "============================================"
 echo ""
+
+# ── Verificar root ──────────────────────────────────────────────────────────
+if [ "$EUID" -ne 0 ]; then
+    echo "[ERRO] Este script deve ser executado como root."
+    echo "Execute: bash atualizar.sh"
+    exit 1
+fi
 
 # ── Verificar se esta no diretorio correto ──────────────────────────────────
 if [ ! -f "main.py" ]; then
@@ -15,15 +22,15 @@ if [ ! -f "main.py" ]; then
 fi
 
 # ── Parar servico ───────────────────────────────────────────────────────────
-echo "[...] Parando servico shamballa"
-sudo systemctl stop shamballa 2>/dev/null || true
+echo "[...] Parando servico shambala"
+systemctl stop shambala 2>/dev/null || true
 
 # ── Copiar arquivos atualizados ─────────────────────────────────────────────
 echo "[...] Copiando arquivos atualizados para $DESTINO"
 for item in main.py banco.py templates_config.py backup.py requirements.txt \
             maiusculas.py normalizar_telefones.py instalar.sh atualizar.sh \
             abrir-chamada.sh gerar_pacote.sh \
-            rotas templates static shamballa.service .env.example .gitignore \
+            rotas templates static shambala.service .env.example .gitignore \
             README.md; do
     if [ -e "$item" ]; then
         rsync -a --delete "$item" "$DESTINO/" 2>/dev/null || cp -r "$item" "$DESTINO/"
@@ -36,13 +43,13 @@ echo "[...] Verificando dependencias Python"
 "$DESTINO/.venv/bin/pip" install -r "$DESTINO/requirements.txt" --quiet
 
 # ── Reiniciar servico ───────────────────────────────────────────────────────
-echo "[...] Reiniciando servico shamballa"
-sudo systemctl daemon-reload
-sudo systemctl start shamballa
+echo "[...] Reiniciando servico shambala"
+systemctl daemon-reload
+systemctl start shambala
 
 # ── Verificar status ────────────────────────────────────────────────────────
 sleep 2
-if sudo systemctl is-active --quiet shamballa.service; then
+if systemctl is-active --quiet shambala.service; then
     echo ""
     echo "============================================"
     echo "  Atualizacao concluida com sucesso!"
@@ -52,5 +59,5 @@ else
     echo "============================================"
     echo "  ATENCAO: O servico nao iniciou."
     echo "============================================"
-    echo "  Verifique: sudo journalctl -u shamballa -n 50"
+    echo "  Verifique: journalctl -u shambala -n 50"
 fi

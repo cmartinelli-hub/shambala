@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-DESTINO="/opt/shamballa"
-SERVICO="shamballa.service"
+DESTINO="/opt/shambala"
+SERVICO="shambala.service"
 USUARIO="shambala"
 
 echo "============================================"
@@ -61,7 +61,7 @@ echo "[...] Copiando arquivos"
 for item in main.py banco.py templates_config.py backup.py requirements.txt \
             maiusculas.py normalizar_telefones.py instalar.sh atualizar.sh \
             abrir-chamada.sh gerar_pacote.sh \
-            rotas templates static shamballa.service .env.example .gitignore \
+            rotas templates static shambala.service .env.example .gitignore \
             README.md; do
     if [ -e "$item" ]; then
         cp -r "$item" "$DESTINO/"
@@ -103,14 +103,14 @@ fi
 
 # ── Configurar servico systemd ──────────────────────────────────────────────
 echo "[...] Configurando servico systemd"
-sed "s/USUARIO/$USUARIO/g" "$DESTINO/shamballa.service" | tee /etc/systemd/system/shamballa.service > /dev/null
+sed "s/USUARIO/$USUARIO/g" "$DESTINO/shambala.service" | tee /etc/systemd/system/shambala.service > /dev/null
 systemctl daemon-reload
-systemctl enable shamballa.service
-systemctl start shamballa.service
+systemctl enable shambala.service
+systemctl start shambala.service
 
 # ── Verificar status ────────────────────────────────────────────────────────
 sleep 2
-if systemctl is-active --quiet shamballa.service; then
+if systemctl is-active --quiet shambala.service; then
     echo ""
     echo "============================================"
     echo "  Instalacao concluida com sucesso!"
@@ -127,9 +127,9 @@ if systemctl is-active --quiet shamballa.service; then
     echo "  (troque a senha apos o primeiro acesso!)"
     echo ""
     echo "  Comandos uteis:"
-    echo "    systemctl status shamballa   # ver status"
-    echo "    systemctl restart shamballa  # reiniciar"
-    echo "    journalctl -u shamballa -f   # ver logs"
+    echo "    systemctl status shambala   # ver status"
+    echo "    systemctl restart shambala  # reiniciar"
+    echo "    journalctl -u shambala -f   # ver logs"
 else
     echo ""
     echo "============================================"
@@ -139,9 +139,9 @@ else
     echo "Verifique:"
     echo "  1. O arquivo .env esta configurado? ($DESTINO/.env)"
     echo "  2. O PostgreSQL esta rodando? (systemctl status postgresql)"
-    echo "  3. Logs do servico: journalctl -u shamballa -n 50"
+    echo "  3. Logs do servico: journalctl -u shambala -n 50"
     echo ""
     echo "  Comandos uteis:"
-    echo "    systemctl status shamballa      # ver status detalhado"
-    echo "    journalctl -u shamballa -n 50   # ultimas 50 linhas de log"
+    echo "    systemctl status shambala      # ver status detalhado"
+    echo "    journalctl -u shambala -n 50   # ultimas 50 linhas de log"
 fi
