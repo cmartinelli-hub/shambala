@@ -1,12 +1,15 @@
-import hashlib
+import logging
 from typing import List
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
+import psycopg2
 
 from banco import conectar
-from rotas.auth import obter_atendente_logado, e_admin
+from rotas.auth import obter_atendente_logado, e_admin, hash_senha
 from rotas.permissoes import obter_grupos_usuario, salvar_grupos_usuario
 from templates_config import templates
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cadastros/usuarios")
 
@@ -19,10 +22,6 @@ def _guard(request: Request):
     if not e_admin(request):
         return None, HTMLResponse(status_code=403, content="Acesso negado. Apenas administradores.")
     return atendente, None
-
-
-def _hash(senha: str) -> str:
-    return hashlib.sha256(senha.encode()).hexdigest()
 
 
 # ── Lista ────────────────────────────────────────────────────────────────────
@@ -99,7 +98,7 @@ async def salvar_novo_usuario(
             row = conn.execute(
                 "INSERT INTO atendentes (nome_usuario, nome_completo, senha_hash, telefone, email, ativo) "
                 "VALUES (%s, %s, %s, %s, %s, 1) RETURNING id",
-                (nome_usuario.strip(), nome_completo.strip(), _hash(senha),
+                (nome_usuario.strip(), nome_completo.strip(), hash_senha(senha),
                  telefone.strip() or None, email.strip() or None)
             ).fetchone()
             novo_id = row["id"]
@@ -108,7 +107,7 @@ async def salvar_novo_usuario(
         salvar_grupos_usuario(novo_id, grupos)
 
         return RedirectResponse(url="/cadastros/atendentes", status_code=303)
-    except Exception as e:
+    except psycopg2.errors.UniqueViolation:
         with conectar() as conn:
             grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
         return templates.TemplateResponse("usuarios/form.html", {
@@ -117,7 +116,19 @@ async def salvar_novo_usuario(
             "registro": None,
             "grupos": [dict(g) for g in grupos_lista],
             "grupos_selecionados": grupos,
-            "erro": f"Nome de usuário já existe ou erro: {str(e)}",
+            "erro": "Nome de usuário já existe.",
+        })
+    except Exception:
+        logger.exception("Erro ao criar usuário")
+        with conectar() as conn:
+            grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
+        return templates.TemplateResponse("usuarios/form.html", {
+            "request": request,
+            "atendente": usuario,
+            "registro": None,
+            "grupos": [dict(g) for g in grupos_lista],
+            "grupos_selecionados": grupos,
+            "erro": "Erro interno ao salvar. Contate o administrador.",
         })
 
 
@@ -164,7 +175,7 @@ async def salvar_edicao_usuario(
             if senha.strip():
                 conn.execute(
                     "UPDATE atendentes SET nome_usuario=%s, nome_completo=%s, senha_hash=%s, telefone=%s, email=%s WHERE id=%s",
-                    (nome_usuario.strip(), nome_completo.strip(), _hash(senha),
+                    (nome_usuario.strip(), nome_completo.strip(), hash_senha(senha),
                      telefone.strip() or None, email.strip() or None, id)
                 )
             else:
@@ -178,7 +189,7 @@ async def salvar_edicao_usuario(
         salvar_grupos_usuario(id, grupos)
 
         return RedirectResponse(url="/cadastros/atendentes", status_code=303)
-    except Exception as e:
+    except psycopg2.errors.UniqueViolation:
         with conectar() as conn:
             registro = conn.execute("SELECT * FROM atendentes WHERE id=%s", (id,)).fetchone()
             grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
@@ -188,7 +199,20 @@ async def salvar_edicao_usuario(
             "registro": dict(registro) if registro else None,
             "grupos": [dict(g) for g in grupos_lista],
             "grupos_selecionados": grupos,
-            "erro": f"Erro ao salvar: {str(e)}",
+            "erro": "Nome de usuário já existe.",
+        })
+    except Exception:
+        logger.exception("Erro ao editar usuário id=%s", id)
+        with conectar() as conn:
+            registro = conn.execute("SELECT * FROM atendentes WHERE id=%s", (id,)).fetchone()
+            grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
+        return templates.TemplateResponse("usuarios/form.html", {
+            "request": request,
+            "atendente": usuario,
+            "registro": dict(registro) if registro else None,
+            "grupos": [dict(g) for g in grupos_lista],
+            "grupos_selecionados": grupos,
+            "erro": "Erro interno ao salvar. Contate o administrador.",
         })
 
 

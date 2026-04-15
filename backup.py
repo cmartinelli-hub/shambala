@@ -288,6 +288,23 @@ def restaurar_backup(caminho_sql_gz: str) -> list[str]:
     Retorna lista de mensagens (sucesso/erro).
     """
     msgs = []
+
+    # Validar extensão
+    if not caminho_sql_gz.endswith(".sql.gz"):
+        msgs.append("Formato inválido: esperado arquivo .sql.gz")
+        return msgs
+
+    # Validar que o caminho está dentro dos diretórios permitidos
+    _DIRS_PERMITIDOS = [PASTA_LOCAL, "/media", PASTA_PROJETO]
+    caminho_abs = os.path.realpath(caminho_sql_gz)
+    if not any(caminho_abs.startswith(os.path.realpath(d)) for d in _DIRS_PERMITIDOS):
+        msgs.append("Caminho não permitido para restauração.")
+        return msgs
+
+    if not os.path.exists(caminho_abs):
+        msgs.append(f"Arquivo não encontrado: {caminho_sql_gz}")
+        return msgs
+
     env = os.environ.copy()
     env["PGPASSWORD"] = os.environ.get("SHAMBALA_DB_PASS", "")
     dbname = os.environ.get("SHAMBALA_DB_NAME", "shambala")
@@ -295,19 +312,18 @@ def restaurar_backup(caminho_sql_gz: str) -> list[str]:
     dbhost = os.environ.get("SHAMBALA_DB_HOST", "localhost")
     dbport = os.environ.get("SHAMBALA_DB_PORT", "5432")
 
-    if not os.path.exists(caminho_sql_gz):
-        msgs.append(f"Arquivo não encontrado: {caminho_sql_gz}")
-        return msgs
-
+    tmp_sql = None
     try:
-        # Descomprimir
-        with gzip.open(caminho_sql_gz, "rb") as f_in:
-            tmp_sql = caminho_sql_gz.replace(".gz", "")
+        # Descomprimir para arquivo temporário seguro
+        with tempfile.NamedTemporaryFile(suffix=".sql", delete=False) as tmp:
+            tmp_sql = tmp.name
+
+        with gzip.open(caminho_abs, "rb") as f_in:
             with open(tmp_sql, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
         # Restaurar
-        result = subprocess.run(
+        subprocess.run(
             [
                 "psql",
                 "-h", dbhost,
@@ -323,14 +339,13 @@ def restaurar_backup(caminho_sql_gz: str) -> list[str]:
             stderr=subprocess.PIPE,
         )
         msgs.append(f"Restauração concluída com sucesso em {dbname}@{dbhost}")
-
-        # Limpar temp
-        if os.path.exists(tmp_sql):
-            os.unlink(tmp_sql)
     except subprocess.CalledProcessError as e:
         msgs.append(f"Erro ao restaurar: {e.stderr.decode('utf-8', errors='replace')}")
     except Exception as e:
         msgs.append(f"Erro: {e}")
+    finally:
+        if tmp_sql and os.path.exists(tmp_sql):
+            os.unlink(tmp_sql)
 
     return msgs
 

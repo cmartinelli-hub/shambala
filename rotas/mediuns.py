@@ -41,6 +41,8 @@ def _salvar_foto_medium(file: UploadFile, medium_id: int, foto_existente: str = 
 @router.get("/foto-placeholder/{inicial}")
 async def foto_placeholder_medium(inicial: str):
     """Gera placeholder SVG com a inicial do médium (roxo)."""
+    import html as _html
+    char = _html.escape(inicial[0].upper()) if inicial else "?"
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
         <defs>
             <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -51,9 +53,10 @@ async def foto_placeholder_medium(inicial: str):
         <circle cx="100" cy="100" r="100" fill="url(#g)"/>
         <text x="100" y="115" text-anchor="middle" fill="white"
               font-family="system-ui,sans-serif" font-size="90"
-              font-weight="bold">{inicial.upper()}</text>
+              font-weight="bold">{char}</text>
     </svg>'''
-    return Response(content=svg, media_type="image/svg+xml")
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
 
 
 def _guard(request: Request):
