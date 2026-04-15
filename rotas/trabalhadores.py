@@ -41,6 +41,8 @@ def _salvar_foto_trab(file: UploadFile, trab_id: int, foto_existente: str = None
 @router.get("/foto-placeholder/{inicial}")
 async def foto_placeholder_trab(inicial: str):
     """Gera placeholder SVG com a inicial do trabalhador (verde-água)."""
+    import html as _html
+    char = _html.escape(inicial[0].upper()) if inicial else "?"
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
         <defs>
             <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -51,9 +53,10 @@ async def foto_placeholder_trab(inicial: str):
         <circle cx="100" cy="100" r="100" fill="url(#g)"/>
         <text x="100" y="115" text-anchor="middle" fill="white"
               font-family="system-ui,sans-serif" font-size="90"
-              font-weight="bold">{inicial.upper()}</text>
+              font-weight="bold">{char}</text>
     </svg>'''
-    return Response(content=svg, media_type="image/svg+xml")
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
 
 
 def _guard(request: Request):
@@ -446,7 +449,9 @@ async def marcar_presente(request: Request, id: int):
         conn.execute(
             """INSERT INTO trabalhador_presenca
                (trabalhador_id, dia_trabalho_id, presente, hora_chegada)
-               VALUES (%s, %s, 1, %s)""",
+               VALUES (%s, %s, 1, %s)
+               ON CONFLICT (trabalhador_id, dia_trabalho_id)
+               DO UPDATE SET presente = 1, hora_chegada = EXCLUDED.hora_chegada""",
             (id, dia["id"], agora),
         )
     return RedirectResponse(url="/cadastros/trabalhadores/dia/trabalhador-checkin", status_code=303)
@@ -469,7 +474,9 @@ async def marcar_ausente(request: Request, id: int):
         conn.execute(
             """INSERT INTO trabalhador_presenca
                (trabalhador_id, dia_trabalho_id, presente)
-               VALUES (%s, %s, 0)""",
+               VALUES (%s, %s, 0)
+               ON CONFLICT (trabalhador_id, dia_trabalho_id)
+               DO UPDATE SET presente = 0""",
             (id, dia["id"]),
         )
     return RedirectResponse(url="/cadastros/trabalhadores/dia/trabalhador-checkin", status_code=303)

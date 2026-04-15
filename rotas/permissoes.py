@@ -57,16 +57,19 @@ def _guard(request: Request):
             (atendente["id"],)
         ).fetchone()
 
-    # Admin (grupo_id=1) tem acesso total; demais precisam de permissão
-    if grupo and grupo["grupo_id"] is not None and grupo["grupo_id"] != 1:
-        pode = conn.execute(
-            "SELECT ler FROM grupos_permissoes WHERE grupo_id = %s AND modulo = %s",
-            (grupo["grupo_id"], "cadastros.permissoes")
-        ).fetchone()
-        if not pode or not pode["ler"]:
-            return None, HTMLResponse(status_code=403, content="Acesso negado.")
+        # Admin (grupo_id=1) tem acesso total; demais precisam de permissão
+        if grupo and grupo["grupo_id"] is not None and grupo["grupo_id"] != 1:
+            pode = conn.execute(
+                "SELECT ler FROM grupos_permissoes WHERE grupo_id = %s AND modulo = %s",
+                (grupo["grupo_id"], "cadastros.permissoes")
+            ).fetchone()
+            if not pode or not pode["ler"]:
+                return None, HTMLResponse(status_code=403, content="Acesso negado.")
 
     return atendente, None
+
+
+_ACOES_VALIDAS = {"ler", "escrever", "apagar"}
 
 
 def pode_acessar(grupo_id: int, modulo: str, acao: str = "ler") -> bool:
@@ -79,16 +82,19 @@ def pode_acessar(grupo_id: int, modulo: str, acao: str = "ler") -> bool:
     """
     if grupo_id is None:
         return False
+    if acao not in _ACOES_VALIDAS:
+        return False
+    # Usar queries fixas por ação para evitar qualquer interpolação de nome de coluna
+    queries = {
+        "ler":      "SELECT ler      FROM grupos_permissoes WHERE grupo_id = %s AND modulo = %s",
+        "escrever": "SELECT escrever FROM grupos_permissoes WHERE grupo_id = %s AND modulo = %s",
+        "apagar":   "SELECT apagar   FROM grupos_permissoes WHERE grupo_id = %s AND modulo = %s",
+    }
     with conectar() as conn:
-        row = conn.execute(
-            "SELECT %s FROM grupos_permissoes WHERE grupo_id = %%s AND modulo = %%s" % acao,
-            (grupo_id, modulo)
-        ).fetchone()
+        row = conn.execute(queries[acao], (grupo_id, modulo)).fetchone()
         if not row:
             return False
-        val = row[acao]
-        # psycopg2 retorna boolean como bool; sqlite como int
-        return bool(val)
+        return bool(row[acao])
 
 
 def obter_atendente_com_grupo(request: Request):
