@@ -252,25 +252,32 @@ async def imprimir_agenda(
 
         sessoes = conn.execute(
             """
-            SELECT a.id as agenda_id, a.data, a.status,
-                   pt.id as plano_id
+            SELECT
+                a.id          AS agenda_id,
+                a.data,
+                a.status,
+                a.requer_passe,
+                a.encaixe,
+                pt.id         AS plano_id,
+                pt.sessoes_total,
+                (SELECT COUNT(*) FROM agendamentos a2
+                 WHERE a2.plano_id = a.plano_id AND a2.data <= a.data
+                )             AS numero_sessao,
+                STRING_AGG(pe.nome_completo, ', ' ORDER BY pe.nome_completo)
+                              AS pessoas_nomes
             FROM agendamentos a
             JOIN planos_tratamento pt ON pt.id = a.plano_id
+            JOIN plano_pessoas pp     ON pp.plano_id = pt.id
+            JOIN pessoas pe           ON pe.id = pp.pessoa_id
             WHERE pt.medium_id = %s AND a.data = %s
-            ORDER BY a.data""",
+            GROUP BY a.id, a.data, a.status, a.requer_passe, a.encaixe,
+                     pt.id, pt.sessoes_total
+            ORDER BY a.id
+            """,
             (medium_id, dia)
         ).fetchall()
 
-        resultado = []
-        for s in sessoes:
-            pessoas = conn.execute(
-                """SELECT pe.nome_completo, pe.telefone
-                   FROM plano_pessoas pp
-                   JOIN pessoas pe ON pe.id = pp.pessoa_id
-                   WHERE pp.plano_id = %s""",
-                (s["plano_id"],)
-            ).fetchall()
-            resultado.append((dict(s), [dict(p) for p in pessoas]))
+        resultado = [dict(s) for s in sessoes]
 
     return templates.TemplateResponse("imprimir_agenda.html", {
         "request": request,
