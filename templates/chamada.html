@@ -49,9 +49,9 @@
         }
 
         .codigo {
-            font-size: clamp(7rem, 28vw, 20rem);
+            font-size: clamp(15rem, 50vw, 35rem);
             font-weight: 900;
-            line-height: 1;
+            line-height: 0.95;
             color: #fff;
             letter-spacing: .04em;
             text-shadow: 0 4px 40px rgba(0,0,0,.3);
@@ -169,7 +169,8 @@
                 <div class="codigo entrada" id="cod">${data.codigo}</div>
             `;
             if (data.historico && data.historico.length > 0) {
-                lista.innerHTML = data.historico.map(c => `<li>${c}</li>`).join('');
+                const unicos = [...new Set(data.historico)];
+                lista.innerHTML = unicos.map(c => `<li>${c}</li>`).join('');
                 painel.style.display = 'flex';
             } else {
                 painel.style.display = 'none';
