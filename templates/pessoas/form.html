@@ -53,13 +53,14 @@
         </div>
 
         <div class="form-grid">
-            <div class="form-campo form-campo-largo">
+            <div class="form-campo form-campo-largo" style="position:relative">
                 <label for="nome-completo">Nome completo *</label>
                 <input type="text" id="nome-completo" name="nome_completo"
                        value="{{ registro.nome_completo if registro else '' }}"
                        placeholder="Ex: Maria da Silva"
-                       required autofocus class="form-input">
+                       required autofocus class="form-input" autocomplete="off">
                 <span id="aviso-nome" class="campo-aviso" style="display:none">Insira nome e sobrenome</span>
+                <div id="autocomplete-lista" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ccc;border-top:none;border-radius:0 0 4px 4px;max-height:200px;overflow-y:auto;z-index:100;box-shadow:0 4px 6px rgba(0,0,0,0.1)"></div>
             </div>
 
             <div class="form-campo">
@@ -237,7 +238,41 @@ function validarNome() {
     return !temErro;
 }
 
-campoNome.addEventListener('input', validarNome);
+campoNome.addEventListener('input', function() {
+    validarNome();
+    buscarSimilares(this.value);
+});
+
+// Autocomplete de nomes similares
+const autocompleteLista = document.getElementById('autocomplete-lista');
+async function buscarSimilares(termo) {
+    if (termo.length < 2) {
+        autocompleteLista.style.display = 'none';
+        return;
+    }
+    const r = await fetch(`/cadastros/pessoas/api/similares?q=${encodeURIComponent(termo)}`);
+    const pessoas = await r.json();
+    if (pessoas.length === 0) {
+        autocompleteLista.style.display = 'none';
+        return;
+    }
+    autocompleteLista.innerHTML = pessoas.map(p =>
+        `<div style="padding:8px;border-bottom:1px solid #eee;cursor:pointer;hover:background:#f5f5f5" onclick="carregarPessoa(${p.id},'${p.nome.replace(/'/g,"\\'")}')">
+            ${p.nome}
+        </div>`
+    ).join('');
+    autocompleteLista.style.display = 'block';
+}
+
+function carregarPessoa(id, nome) {
+    window.location.href = `/cadastros/pessoas/${id}/editar`;
+}
+
+document.addEventListener('click', function(e) {
+    if (e.target.id !== 'nome-completo') {
+        autocompleteLista.style.display = 'none';
+    }
+});
 
 form.addEventListener('submit', function(e) {
     if (!validarNome()) {

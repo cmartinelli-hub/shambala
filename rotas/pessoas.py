@@ -137,6 +137,21 @@ async def buscar_json(request: Request, nome: str = Query(""), excluir: int = Qu
     return JSONResponse([{"id": r["id"], "nome": r["nome_completo"]} for r in rows])
 
 
+# ── Autocomplete ──────────────────────────────────────────────────────────────
+
+@router.get("/api/similares", response_class=JSONResponse)
+async def api_similares(q: str = Query("")):
+    if len(q.strip()) < 2:
+        return JSONResponse([])
+    with conectar() as conn:
+        termo = f"%{_normalizar(q.strip())}%"
+        rows = conn.execute(
+            "SELECT id, nome_completo FROM pessoas WHERE norm(nome_completo) LIKE %s ORDER BY nome_completo LIMIT 10",
+            (termo,)
+        ).fetchall()
+    return JSONResponse([{"id": r["id"], "nome": r["nome_completo"]} for r in rows])
+
+
 # ── Lista / Busca ─────────────────────────────────────────────────────────────
 
 @router.get("", response_class=HTMLResponse)
