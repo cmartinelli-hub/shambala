@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from templates_config import templates, _obter_config_centro as obter_config_centro
 router = APIRouter()
 
-TEMPO_MINIMO_SEGUNDOS = 20
+TEMPO_MINIMO_SEGUNDOS = 10
 
 
 class GerenciadorConexoes:
