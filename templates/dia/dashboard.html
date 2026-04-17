@@ -510,7 +510,7 @@ document.querySelectorAll('.btn-chamar button, .btn-realizado button, .btn-cance
     function conectar() {
         const proto = location.protocol === "https:" ? "wss" : "ws";
         const ws = new WebSocket(`${proto}://${location.host}/chamada/ws`);
-        ws.onmessage = (ev) => mostrar(ev.data.trim(), true);
+        ws.onmessage = (ev) => { const d = JSON.parse(ev.data); mostrar(d.codigo, true); };
         ws.onclose = () => setTimeout(conectar, 3000);
         ws.onerror = () => ws.close();
     }

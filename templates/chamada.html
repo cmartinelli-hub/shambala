@@ -13,9 +13,10 @@
             font-family: system-ui, -apple-system, sans-serif;
             height: 100vh;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
             justify-content: center;
+            gap: 4vw;
             user-select: none;
             transition: background 0.6s ease;
         }
@@ -48,7 +49,7 @@
         }
 
         .codigo {
-            font-size: clamp(10rem, 42vw, 30rem);
+            font-size: clamp(7rem, 28vw, 20rem);
             font-weight: 900;
             line-height: 1;
             color: #fff;
@@ -86,6 +87,37 @@
             font-size: .7rem;
             color: rgba(255,255,255,.18);
         }
+
+        #painel-historico {
+            border-left: 1px solid rgba(255,255,255,.2);
+            padding-left: 3vw;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .historico-titulo {
+            font-size: clamp(.6rem, 1.2vw, .85rem);
+            letter-spacing: .2em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,.4);
+            margin-bottom: .5rem;
+        }
+
+        #lista-historico {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: .8rem;
+        }
+
+        #lista-historico li {
+            font-size: clamp(2rem, 6vw, 5rem);
+            font-weight: 700;
+            color: rgba(255,255,255,.45);
+            letter-spacing: .04em;
+            line-height: 1;
+        }
     </style>
 </head>
 <body>
@@ -102,11 +134,18 @@
         <div class="aguardando">aguardando chamada…</div>
     </div>
 
+    <div id="painel-historico" style="display:none">
+        <div class="historico-titulo">anteriores</div>
+        <ul id="lista-historico"></ul>
+    </div>
+
     <div class="status" id="status">conectando…</div>
 
     <script>
         const conteudo = document.getElementById("conteudo-codigo");
         const statusEl = document.getElementById("status");
+        const painel = document.getElementById("painel-historico");
+        const lista = document.getElementById("lista-historico");
 
         const cores = [
             "#0D47A1",  // azul royal
@@ -123,6 +162,20 @@
             document.body.style.background = cores[indiceCor];
         }
 
+        function mostrarChamada(data) {
+            proximaCor();
+            conteudo.innerHTML = `
+                <div class="label">senha</div>
+                <div class="codigo entrada" id="cod">${data.codigo}</div>
+            `;
+            if (data.historico && data.historico.length > 0) {
+                lista.innerHTML = data.historico.map(c => `<li>${c}</li>`).join('');
+                painel.style.display = 'flex';
+            } else {
+                painel.style.display = 'none';
+            }
+        }
+
         function conectar() {
             const proto = location.protocol === "https:" ? "wss" : "ws";
             const ws = new WebSocket(`${proto}://${location.host}/chamada/ws`);
@@ -132,12 +185,8 @@
             };
 
             ws.onmessage = (ev) => {
-                const codigo = ev.data.trim();
-                proximaCor();
-                conteudo.innerHTML = `
-                    <div class="label">senha</div>
-                    <div class="codigo entrada" id="cod">${codigo}</div>
-                `;
+                const data = JSON.parse(ev.data);
+                mostrarChamada(data);
             };
 
             ws.onclose = () => {
@@ -147,6 +196,11 @@
 
             ws.onerror = () => ws.close();
         }
+
+        fetch('/chamada/ultimo')
+            .then(r => r.json())
+            .then(d => { if (d.codigo) mostrarChamada(d); })
+            .catch(() => {});
 
         conectar();
     </script>
