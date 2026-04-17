@@ -2,6 +2,12 @@
 {% block titulo %}Ficha — {{ pessoa.nome_completo }}{% endblock %}
 
 {% block conteudo %}
+{% if request.query_params.get('erro') %}
+<div class="alerta alerta-erro" style="margin-bottom:1rem;padding:1rem;background:#fee;border:1px solid #c00;border-radius:4px;color:#c00">
+    ⚠️ {{ request.query_params.get('erro') }}
+</div>
+{% endif %}
+
 <!-- Header da ficha -->
 <div class="ficha-header">
     <div class="ficha-header-top">
@@ -9,6 +15,12 @@
         <div class="ficha-acoes">
             <a href="/cadastros/pessoas/{{ pessoa.id }}/editar" class="btn btn-primario">✏️ Editar</a>
             <a href="/cadastros/pessoas/{{ pessoa.id }}/lacos" class="btn btn-secundario">🔗 Laços</a>
+            {% if e_admin %}
+            <form method="post" action="/cadastros/pessoas/{{ pessoa.id }}/remover" style="display:inline"
+                  onsubmit="return confirm('Excluir {{ pessoa.nome_completo }}?\n\nEsta ação é permanente e não pode ser desfeita.')">
+                <button type="submit" class="btn" style="background:#dc3545;color:#fff">🗑️ Excluir</button>
+            </form>
+            {% endif %}
         </div>
     </div>
     <div class="ficha-pessoa-info">

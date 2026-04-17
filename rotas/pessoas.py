@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 import os
 import uuid
+from pathlib import Path
 from banco import conectar, _normalizar
 from rotas.auth import obter_atendente_logado
 from templates_config import templates
@@ -455,8 +456,64 @@ async def ficha_pessoa(request: Request, id: int):
         "lacos": [dict(l) for l in lacos],
         "planos": [dict(p) for p in planos],
         "historico": [dict(h) for h in historico],
+        "e_admin": obter_atendente_logado(request) and _e_admin(request),
     })
 
 
+# ── Exclusão ────────────────────────────────────────────────────────────────
+
+@router.post("/{id}/remover", response_class=HTMLResponse)
+async def remover_pessoa(request: Request, id: int):
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _e_admin(request):
+        return HTMLResponse(status_code=403, content="Acesso negado.")
+
+    with conectar() as conn:
+        pessoa = conn.execute(
+            "SELECT id, nome_completo, foto_pessoa FROM pessoas WHERE id = %s", (id,)
+        ).fetchone()
+        if not pessoa:
+            return RedirectResponse(url="/cadastros/pessoas", status_code=303)
+
+        vinculos = {
+            "check-ins": conn.execute(
+                "SELECT COUNT(*) AS c FROM checkins WHERE pessoa_id = %s", (id,)
+            ).fetchone()["c"],
+            "planos de tratamento": conn.execute(
+                "SELECT COUNT(*) AS c FROM plano_pessoas WHERE pessoa_id = %s", (id,)
+            ).fetchone()["c"],
+            "movimentações financeiras": conn.execute(
+                "SELECT COUNT(*) AS c FROM financeiro_movimentacoes WHERE pessoa_id = %s", (id,)
+            ).fetchone()["c"],
+            "empréstimos": conn.execute(
+                "SELECT COUNT(*) AS c FROM emprestimos WHERE pessoa_id = %s", (id,)
+            ).fetchone()["c"],
+            "doações": conn.execute(
+                "SELECT COUNT(*) AS c FROM doacoes_cestas WHERE pessoa_id = %s", (id,)
+            ).fetchone()["c"],
+        }
+        impedimentos = [k for k, v in vinculos.items() if v > 0]
+        if impedimentos:
+            msg = "Não é possível excluir: pessoa possui " + ", ".join(impedimentos)
+            return RedirectResponse(
+                url=f"/cadastros/pessoas/{id}?erro={msg}", status_code=303
+            )
+
+        if pessoa["foto_pessoa"]:
+            foto_path = Path("static/fotos") / pessoa["foto_pessoa"]
+            if foto_path.exists():
+                foto_path.unlink()
+
+        conn.execute(
+            "DELETE FROM lacos WHERE pessoa_id = %s OR pessoa_relacionada_id = %s",
+            (id, id)
+        )
+        conn.execute("DELETE FROM pessoas WHERE id = %s", (id,))
+
+    return RedirectResponse(url="/cadastros/pessoas", status_code=303)
+
+
 # ── Import tardio para evitar importação circular ──
-from rotas.auth import obter_atendente_logado
+from rotas.auth import obter_atendente_logado, e_admin as _e_admin
