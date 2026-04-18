@@ -5,17 +5,31 @@ from datetime import datetime
 from pathlib import Path
 from banco import conectar
 
-def _eh_root() -> bool:
-    """Verifica se está rodando como root."""
-    return os.geteuid() == 0 if hasattr(os, 'geteuid') else False
-
-
 def _executar_mount(cmd: list) -> subprocess.CompletedProcess:
-    """Executa comando mount/umount com sudo ou como root."""
-    if _eh_root():
+    """Executa comando mount/umount. Tenta sem sudo primeiro, depois com sudo."""
+    # Tenta executar o comando direto (root em Debian)
+    try:
         return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
-    else:
-        return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
+    except FileNotFoundError as e:
+        # Se erro é "comando não encontrado", retorna o erro
+        if "mount" in str(e) or "umount" in str(e):
+            raise
+        # Caso contrário, tenta com sudo
+        try:
+            return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
+        except FileNotFoundError:
+            # Sudo também não existe, retorna erro original
+            raise e
+    except subprocess.CalledProcessError:
+        # Se falhou sem sudo, tenta com sudo
+        try:
+            return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
+        except FileNotFoundError:
+            # Sudo não existe, retorna o erro original
+            raise
+        except subprocess.CalledProcessError as e_sudo:
+            # Ambos falharam, retorna erro do sudo
+            raise e_sudo
 
 
 def validar_dispositivo(dispositivo: str) -> bool:
