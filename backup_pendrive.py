@@ -5,31 +5,47 @@ from datetime import datetime
 from pathlib import Path
 from banco import conectar
 
+def _encontrar_mount() -> str:
+    """Encontra o caminho de mount (geralmente /bin/mount ou /sbin/mount)."""
+    for caminho in ["/bin/mount", "/sbin/mount", "mount"]:
+        try:
+            subprocess.run([caminho, "-V"], capture_output=True, timeout=2, check=False)
+            return caminho
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return "mount"  # Fallback para PATH
+
+
+def _encontrar_umount() -> str:
+    """Encontra o caminho de umount."""
+    for caminho in ["/bin/umount", "/sbin/umount", "umount"]:
+        try:
+            subprocess.run([caminho, "-V"], capture_output=True, timeout=2, check=False)
+            return caminho
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return "umount"  # Fallback para PATH
+
+
+_MOUNT_CMD = _encontrar_mount()
+_UMOUNT_CMD = _encontrar_umount()
+
+
 def _executar_mount(cmd: list) -> subprocess.CompletedProcess:
-    """Executa comando mount/umount. Tenta sem sudo primeiro, depois com sudo."""
-    # Tenta executar o comando direto (root em Debian)
+    """Executa comando mount/umount usando os caminhos corretos."""
+    # Substitui o comando pela versão com caminho completo
+    if cmd[0] == "mount":
+        cmd = [_MOUNT_CMD] + cmd[1:]
+    elif cmd[0] == "umount":
+        cmd = [_UMOUNT_CMD] + cmd[1:]
+
+    # Executa direto (esperamos estar como root)
     try:
         return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
     except FileNotFoundError as e:
-        # Se erro é "comando não encontrado", retorna o erro
-        if "mount" in str(e) or "umount" in str(e):
-            raise
-        # Caso contrário, tenta com sudo
-        try:
-            return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
-        except FileNotFoundError:
-            # Sudo também não existe, retorna erro original
-            raise e
-    except subprocess.CalledProcessError:
-        # Se falhou sem sudo, tenta com sudo
-        try:
-            return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
-        except FileNotFoundError:
-            # Sudo não existe, retorna o erro original
-            raise
-        except subprocess.CalledProcessError as e_sudo:
-            # Ambos falharam, retorna erro do sudo
-            raise e_sudo
+        raise Exception(f"Comando não encontrado: {cmd[0]}")
+    except subprocess.CalledProcessError as e:
+        raise e
 
 
 def validar_dispositivo(dispositivo: str) -> bool:
