@@ -34,7 +34,11 @@ class GerenciadorConexoes:
             self._task = asyncio.create_task(self._processar_fila())
 
     async def _enviar_agora(self, codigo: str):
-        if self.ultimo_codigo:
+        # Se o código é diferente do último, adiciona o último ao histórico
+        if self.ultimo_codigo and self.ultimo_codigo != codigo:
+            # Remove o código atual do histórico para evitar duplicatas
+            self.historico = [c for c in self.historico if c != codigo]
+            # Adiciona o último código ao início e mantém apenas os 3 primeiros
             self.historico = [self.ultimo_codigo] + self.historico[:2]
         self.ultimo_codigo = codigo
         self._ultima_transmissao = time.monotonic()
