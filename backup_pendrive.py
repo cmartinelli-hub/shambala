@@ -5,6 +5,19 @@ from datetime import datetime
 from pathlib import Path
 from banco import conectar
 
+def _eh_root() -> bool:
+    """Verifica se está rodando como root."""
+    return os.geteuid() == 0 if hasattr(os, 'geteuid') else False
+
+
+def _executar_mount(cmd: list) -> subprocess.CompletedProcess:
+    """Executa comando mount/umount com sudo ou como root."""
+    if _eh_root():
+        return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
+    else:
+        return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
+
+
 def validar_dispositivo(dispositivo: str) -> bool:
     """Valida que o dispositivo é um caminho /dev/* válido."""
     if not dispositivo.startswith("/dev/"):
@@ -71,15 +84,9 @@ def montar_dispositivo(dispositivo: str, ponto_montagem: str) -> tuple[bool, str
     except Exception as e:
         return False, f"Erro ao criar ponto de montagem: {str(e)}"
 
-    # Monta via sudo
+    # Monta (com sudo se necessário)
     try:
-        subprocess.run(
-            ["sudo", "mount", dispositivo, ponto_montagem],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10
-        )
+        _executar_mount(["mount", dispositivo, ponto_montagem])
         return True, "Montado com sucesso"
     except subprocess.TimeoutExpired:
         return False, "Timeout ao montar"
@@ -93,13 +100,7 @@ def montar_dispositivo(dispositivo: str, ponto_montagem: str) -> tuple[bool, str
 def desmontar_dispositivo(ponto_montagem: str) -> tuple[bool, str]:
     """Desmonta o dispositivo do ponto especificado."""
     try:
-        subprocess.run(
-            ["sudo", "umount", ponto_montagem],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10
-        )
+        _executar_mount(["umount", ponto_montagem])
         return True, "Desmontado com sucesso"
     except subprocess.TimeoutExpired:
         return False, "Timeout ao desmontar"
