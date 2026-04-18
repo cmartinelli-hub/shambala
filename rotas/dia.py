@@ -442,6 +442,43 @@ async def acolhimento_realizado(request: Request, checkin_id: int):
     return RedirectResponse(url="/dia/acolhimento", status_code=303)
 
 
+@router.get("/acolhimento/{checkin_id}/imprimir", response_class=HTMLResponse)
+async def imprimir_ficha_acolhimento(request: Request, checkin_id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        row = conn.execute("""
+            SELECT c.id, c.hora_checkin,
+                   p.id as pessoa_id, p.nome_completo, p.data_nascimento,
+                   p.telefone, p.email
+            FROM checkins c
+            JOIN pessoas p ON p.id = c.pessoa_id
+            WHERE c.id = %s
+        """, (checkin_id,)).fetchone()
+        if not row:
+            return RedirectResponse(url="/dia/acolhimento", status_code=303)
+
+    # Calcular idade
+    if row['data_nascimento']:
+        dn = date.fromisoformat(row['data_nascimento'])
+        hoje = date.today()
+        idade = hoje.year - dn.year - ((hoje.month, hoje.day) < (dn.month, dn.day))
+    else:
+        idade = ''
+
+    data_atendimento = date.today().strftime('%d/%m/%Y')
+
+    return templates.TemplateResponse("dia/imprimir_ficha_acolhimento.html", {
+        "request": request,
+        "atendente": atendente,
+        "pessoa": dict(row),
+        "idade": idade,
+        "data_atendimento": data_atendimento,
+    })
+
+
 # ── Fila por médium ───────────────────────────────────────────────────────────
 
 @router.get("/mediuns/{medium_id}", response_class=HTMLResponse)
