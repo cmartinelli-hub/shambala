@@ -86,4 +86,4 @@ Adicionar botão ao lado de "Atender" para cada fila:
 
 ## Status
 - ✅ Autocomplete pessoa implementado (commit 05d4d84)
-- ⏳ Ficha acolhimento: aguardando implementação
+- ✅ Ficha acolhimento implementada (commit 42f71d7)
