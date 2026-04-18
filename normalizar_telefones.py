@@ -64,8 +64,9 @@ def normalizar(tel):
 # ─────────────────────────────────────────────────────────────
 # Conectar ao banco de dados
 import os
-os.chdir('/home/claudio/projetos/shamballa')
-sys.path.insert(0, '/home/claudio/projetos/shamballa')
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+sys.path.insert(0, script_dir)
 
 try:
     from banco import conectar
