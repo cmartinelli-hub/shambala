@@ -32,32 +32,14 @@ _UMOUNT_CMD = _encontrar_umount()
 
 
 def _executar_mount(cmd: list) -> subprocess.CompletedProcess:
-    """Executa comando mount/umount usando os caminhos corretos."""
+    """Executa comando mount/umount (requer ser executado como root)."""
     # Substitui o comando pela versão com caminho completo
     if cmd[0] == "mount":
         cmd = [_MOUNT_CMD] + cmd[1:]
     elif cmd[0] == "umount":
         cmd = [_UMOUNT_CMD] + cmd[1:]
 
-    # Primeiro tenta executar direto (caso esteja como root)
-    try:
-        return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
-    except subprocess.CalledProcessError as e:
-        # Se falhar com erro de permissão, tenta com sudo
-        if "superusuário" in e.stderr or "permission denied" in e.stderr.lower():
-            try:
-                return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
-            except FileNotFoundError:
-                raise Exception(
-                    f"Erro ao montar: sudo não instalado. "
-                    f"Execute como root: /opt/shambala/.venv/bin/python3 -m backup_pendrive"
-                )
-            except subprocess.CalledProcessError as e_sudo:
-                raise Exception(f"Erro com sudo: {e_sudo.stderr}")
-        else:
-            raise e
-    except FileNotFoundError as e:
-        raise Exception(f"Comando não encontrado: {cmd[0]}")
+    return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
 
 
 def validar_dispositivo(dispositivo: str) -> bool:

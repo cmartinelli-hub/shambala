@@ -1,102 +1,101 @@
 # Configuração de Backup em Pendrive/HD Externo
 
-## Problema
+## Requisito: Executar o serviço como root
 
-O serviço Shambala roda como usuário `shambala` (não root), mas montar dispositivos requer privilégios elevados.
+O Shambala precisa rodar como `root` para poder montar/desmontar dispositivos USB sem depender de sudo.
 
-## Solução
+## Configuração no Debian/Linux
 
-Configure o `sudoers` para permitir que o usuário `shambala` execute `mount` e `umount` sem pedir senha.
-
-### Passo 1: Configure Sudoers (execute como root ou com sudo)
+### Opção 1: Modificar o arquivo systemd (Recomendado)
 
 ```bash
-sudo visudo -f /etc/sudoers.d/shambala-mount
+sudo nano /etc/systemd/system/shambala.service
 ```
 
-### Passo 2: Adicione a seguinte linha
+Altere a seção `[Service]` para:
 
+```ini
+[Service]
+User=root
+Group=root
+WorkingDirectory=/opt/shambala
+ExecStart=/opt/shambala/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
 ```
-shambala ALL=(ALL) NOPASSWD: /bin/mount, /bin/umount, /sbin/mount, /sbin/umount
-```
 
-### Passo 3: Salve e saia (Ctrl+X, depois Y, depois Enter)
-
-### Passo 4: Verifique as permissões
+Depois recarregue e reinicie:
 
 ```bash
-sudo ls -l /etc/sudoers.d/shambala-mount
+sudo systemctl daemon-reload
+sudo systemctl restart shambala
 ```
 
-Deverá mostrar: `-r--r----- 1 root root ...`
+Verifique o status:
 
-## Teste
+```bash
+sudo systemctl status shambala
+```
+
+### Opção 2: Rodar diretamente como root (teste)
+
+```bash
+sudo su -
+cd /opt/shambala
+./.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+## Após configurar
 
 1. Acesse `/configuracoes/backup-pendrive`
 2. Configure:
-   - **Dispositivo:** `/dev/sdb1` (ou o seu pendrive)
-   - **Ponto de Montagem:** `/home/shambala/pendrive`
+   - **Dispositivo:** `/dev/sdb1` (identifique com `lsblk`)
+   - **Ponto de Montagem:** `/home/shambala/pendrive` ou qualquer outro local
 3. Clique em **"Testar Conexão"**
+4. Clique em **"Executar Backup Agora"**
 
-## Troubleshooting
-
-### Se receber "sudo: comando não encontrado"
-
-Execute como root (não use sudo):
+## Identificar seu Pendrive
 
 ```bash
-echo "shambala ALL=(ALL) NOPASSWD: /bin/mount, /bin/umount, /sbin/mount, /sbin/umount" | tee -a /etc/sudoers.d/shambala-mount
-chmod 440 /etc/sudoers.d/shambala-mount
+# Ver lista de discos
+lsblk
+
+# Ou ver mensagens do kernel
+dmesg | tail -20
 ```
 
-### Se o pendrive não montar
-
-1. Identifique o dispositivo:
-   ```bash
-   lsblk
-   # ou
-   dmesg | tail -20
-   ```
-
-2. O dispositivo geralmente é `/dev/sdb1`, `/dev/sdc1`, etc.
-
-3. Teste montar manualmente:
-   ```bash
-   sudo mount /dev/sdb1 /home/shambala/pendrive
-   ```
-
-### Se a pasta não existir
-
-O sistema cria automaticamente, mas pode precisar de permissão:
-
-```bash
-sudo mkdir -p /home/shambala/pendrive
-sudo chown shambala:shambala /home/shambala/pendrive
+Procure por algo como:
 ```
+sdb      8:16    1  15.6G  0 disk
+└─sdb1   8:17    1  15.6G  0 part
+```
+
+Neste caso, o dispositivo é `/dev/sdb1`
 
 ## Estrutura de Backups
 
-Após o primeiro backup bem-sucedido, os arquivos estarão em:
+Após primeiro backup bem-sucedido:
 
 ```
-/home/shambala/pendrive/shambala_backup_YYYY-MM-DD/
-├── database.sql
-└── (outros arquivos, se aplicável)
+/home/shambala/pendrive/
+└── shambala_backup_2026-04-17/
+    └── database.sql
 ```
 
-## Automação (Cron)
+Cada backup cria um diretório com a data do backup.
 
-Para agendar backups automáticos, acesse `/configuracoes/backup-pendrive` e:
+## Histórico
 
-1. Ative "Ativar backup automático"
-2. Escolha um horário (ex: 22:00)
-3. Clique em "Salvar Configuração"
-
-O sistema criará um cron job para executar o backup automaticamente.
+A página `/configuracoes/backup-pendrive` mostra:
+- ✅ Data/hora de cada backup
+- ✅ Status (Sucesso/Erro)
+- ✅ Tamanho do arquivo
+- ✅ Espaço livre no pendrive
+- ✅ Mensagens de erro (se houver)
 
 ## Segurança
 
-⚠️ **Importante:** Nunca execute o serviço Shambala como root. A solução com `sudoers` NOPASSWD é segura porque:
-- Limita-se apenas aos comandos `mount` e `umount`
-- O usuário `shambala` é isolado (não tem shell interativo)
-- Os caminhos de mount são validados no código
+✓ **Seguro em servidor dedicado:** O Shambala é o principal serviço, rodando como root é aceitável
+✓ **Sem dependência de sudo:** Simplifica a instalação
+✓ **Sem senhas:** Sem necessidade de sudoers configuração
+✓ **Validações:** Caminhos de mount são validados no código
