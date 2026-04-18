@@ -163,12 +163,12 @@ async def listar(request: Request, busca: str = Query("")):
         if busca.strip():
             termo = f"%{_normalizar(busca.strip())}%"
             rows = conn.execute(
-                "SELECT id, nome_completo, telefone FROM pessoas WHERE norm(nome_completo) LIKE %s ORDER BY nome_completo",
+                "SELECT id, nome_completo, telefone, foto_pessoa FROM pessoas WHERE norm(nome_completo) LIKE %s ORDER BY nome_completo",
                 (termo,)
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, nome_completo, telefone FROM pessoas ORDER BY nome_completo"
+                "SELECT id, nome_completo, telefone, foto_pessoa FROM pessoas ORDER BY nome_completo"
             ).fetchall()
     return templates.TemplateResponse("pessoas/lista.html", {
         "request": request,
