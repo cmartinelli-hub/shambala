@@ -39,13 +39,25 @@ def _executar_mount(cmd: list) -> subprocess.CompletedProcess:
     elif cmd[0] == "umount":
         cmd = [_UMOUNT_CMD] + cmd[1:]
 
-    # Executa direto (esperamos estar como root)
+    # Primeiro tenta executar direto (caso esteja como root)
     try:
         return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
+    except subprocess.CalledProcessError as e:
+        # Se falhar com erro de permissão, tenta com sudo
+        if "superusuário" in e.stderr or "permission denied" in e.stderr.lower():
+            try:
+                return subprocess.run(["sudo"] + cmd, capture_output=True, text=True, check=True, timeout=10)
+            except FileNotFoundError:
+                raise Exception(
+                    f"Erro ao montar: sudo não instalado. "
+                    f"Execute como root: /opt/shambala/.venv/bin/python3 -m backup_pendrive"
+                )
+            except subprocess.CalledProcessError as e_sudo:
+                raise Exception(f"Erro com sudo: {e_sudo.stderr}")
+        else:
+            raise e
     except FileNotFoundError as e:
         raise Exception(f"Comando não encontrado: {cmd[0]}")
-    except subprocess.CalledProcessError as e:
-        raise e
 
 
 def validar_dispositivo(dispositivo: str) -> bool:
