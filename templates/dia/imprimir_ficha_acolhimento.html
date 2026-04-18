@@ -45,6 +45,21 @@
             height: 148mm;
             padding: 8mm;
             background: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .ficha-topo {
+            flex-shrink: 0;
+        }
+        .ficha-meio {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            margin: 4mm 0;
+        }
+        .ficha-rodape {
+            flex-shrink: 0;
         }
         .titulo {
             text-align: center;
@@ -87,10 +102,19 @@
             border: 1px solid #000;
             margin: 0 1mm;
         }
+        .descricao-label {
+            margin-bottom: 2mm;
+        }
         .descricao-box {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1mm 0;
+        }
+        .descricao-linha {
             border-bottom: 1px solid #000;
-            min-height: 12mm;
-            margin-bottom: 2.5mm;
+            height: 5mm;
         }
         .linha-passe {
             display: flex;
@@ -118,80 +142,93 @@
 </head>
 <body>
     <div class="ficha">
-        <div class="titulo">FICHA DE ACOLHIMENTO FRATERNO</div>
+        <div class="ficha-topo">
+            <div class="titulo">FICHA DE ACOLHIMENTO FRATERNO</div>
 
-        <div class="linha">
-            <div class="campo" style="flex: 2;">
-                <span class="rotulo">Nome:</span>
-                <span class="valor">{{ pessoa.nome_completo }}</span>
+            <div class="linha">
+                <div class="campo" style="flex: 2;">
+                    <span class="rotulo">Nome:</span>
+                    <span class="valor">{{ pessoa.nome_completo }}</span>
+                </div>
+                <div class="campo">
+                    <span class="rotulo">Data:</span>
+                    <span class="valor">{{ data_atendimento }}</span>
+                </div>
             </div>
-            <div class="campo">
-                <span class="rotulo">Data:</span>
-                <span class="valor">{{ data_atendimento }}</span>
+
+            <div class="linha">
+                <div class="campo">
+                    <span class="rotulo">Data Nasc.:</span>
+                    <span class="valor">{% if pessoa.data_nascimento %}{{ pessoa.data_nascimento }}{% endif %}</span>
+                </div>
+                <div class="campo">
+                    <span class="rotulo">Idade:</span>
+                    <span class="valor">{{ idade }}</span>
+                </div>
+            </div>
+
+            <div class="linha">
+                <div class="campo">
+                    <span class="rotulo">Telefone:</span>
+                    <span class="valor">{{ pessoa.telefone or '' }}</span>
+                </div>
+                <div class="campo">
+                    <span class="rotulo">E-mail:</span>
+                    <span class="valor">{{ pessoa.email or '' }}</span>
+                </div>
+            </div>
+
+            <div class="avaliacao">
+                <span class="rotulo">Avaliação:</span>
+                1 <span class="checkbox"></span>
+                2 <span class="checkbox"></span>
+                3 <span class="checkbox"></span>
+            </div>
+
+            <div class="descricao-label">
+                <span class="rotulo">Descrição:</span>
             </div>
         </div>
 
-        <div class="linha">
-            <div class="campo">
-                <span class="rotulo">Data Nasc.:</span>
-                <span class="valor">{% if pessoa.data_nascimento %}{{ pessoa.data_nascimento }}{% endif %}</span>
-            </div>
-            <div class="campo">
-                <span class="rotulo">Idade:</span>
-                <span class="valor">{{ idade }}</span>
-            </div>
-        </div>
-
-        <div class="linha">
-            <div class="campo">
-                <span class="rotulo">Telefone:</span>
-                <span class="valor">{{ pessoa.telefone or '' }}</span>
-            </div>
-            <div class="campo">
-                <span class="rotulo">E-mail:</span>
-                <span class="valor">{{ pessoa.email or '' }}</span>
+        <div class="ficha-meio">
+            <div class="descricao-box">
+                <div class="descricao-linha"></div>
+                <div class="descricao-linha"></div>
+                <div class="descricao-linha"></div>
+                <div class="descricao-linha"></div>
+                <div class="descricao-linha"></div>
             </div>
         </div>
 
-        <div class="avaliacao">
-            <span class="rotulo">Avaliação:</span>
-            1 <span class="checkbox"></span>
-            2 <span class="checkbox"></span>
-            3 <span class="checkbox"></span>
-        </div>
-
-        <div style="margin-bottom: 2.5mm;">
-            <span class="rotulo">Descrição:</span>
-        </div>
-        <div class="descricao-box"></div>
-
-        <div class="linha-passe">
-            <div>
-                <span class="rotulo">Passe Magnético:</span>
-                <span class="checkbox"></span> Não
-                <span class="checkbox"></span> Sim
+        <div class="ficha-rodape">
+            <div class="linha-passe">
+                <div>
+                    <span class="rotulo">Passe Magnético:</span>
+                    <span class="checkbox"></span> Não
+                    <span class="checkbox"></span> Sim
+                </div>
+                <div style="flex: 1;">
+                    <span class="rotulo">Datas:</span>
+                    <span style="border-bottom: 1px solid #000; display: inline-block; width: 25mm;"></span>
+                </div>
             </div>
-            <div style="flex: 1;">
-                <span class="rotulo">Datas:</span>
-                <span style="border-bottom: 1px solid #000; display: inline-block; width: 25mm;"></span>
-            </div>
-        </div>
 
-        <div class="linha">
-            <div class="campo">
-                <span class="rotulo">Médium:</span>
-                <span style="border-bottom: 1px solid #000; display: inline-block; width: 35mm;"></span>
+            <div class="linha">
+                <div class="campo">
+                    <span class="rotulo">Médium:</span>
+                    <span style="border-bottom: 1px solid #000; display: inline-block; width: 35mm;"></span>
+                </div>
+                <div class="campo">
+                    <span class="rotulo">Início:</span>
+                    <span style="border-bottom: 1px solid #000; display: inline-block; width: 18mm;"></span>
+                </div>
             </div>
-            <div class="campo">
-                <span class="rotulo">Início:</span>
-                <span style="border-bottom: 1px solid #000; display: inline-block; width: 18mm;"></span>
-            </div>
-        </div>
 
-        <div class="linha">
-            <div class="campo">
-                <span class="rotulo">Atendente:</span>
-                <span style="border-bottom: 1px solid #000; display: inline-block; width: 40mm;"></span>
+            <div class="linha">
+                <div class="campo">
+                    <span class="rotulo">Atendente:</span>
+                    <span style="border-bottom: 1px solid #000; display: inline-block; width: 40mm;"></span>
+                </div>
             </div>
         </div>
     </div>
