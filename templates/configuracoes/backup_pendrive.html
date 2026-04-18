@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block titulo %}Backup em Pendrive{% endblock %}
+
+{% block conteudo %}
+<a href="/configuracoes" class="btn-voltar">← Voltar</a>
+
+<div class="cabecalho-secao">
+    <div>
+        <h1>💾 Backup em Pendrive ou HD Externo</h1>
+        <p class="subtitulo">Configure backup automático em dispositivos removíveis</p>
+    </div>
+</div>
+
+{% if request.query_params.get('erro') %}
+<div class="alerta alerta-erro">
+    {% if request.query_params['erro'] == 'dispositivo_invalido' %}
+        ⚠️ Dispositivo inválido. Use o formato /dev/sdXN (ex: /dev/sdb1)
+    {% elif request.query_params['erro'] == 'montagem_invalida' %}
+        ⚠️ Caminho de montagem inválido. Não use /, /etc, /root ou caminhos com ../
+    {% else %}
+        ⚠️ Erro ao salvar configuração
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Formulário de Configuração -->
+<div class="config-card">
+    <div class="config-card-header">
+        <span class="config-card-icon">🔧</span>
+        <div>
+            <h2>Configurar Dispositivo</h2>
+            <p class="config-card-desc">Especifique qual dispositivo USB e onde montá-lo no sistema</p>
+        </div>
+    </div>
+
+    <form method="post" action="/configuracoes/backup-pendrive" class="config-form">
+        <div class="config-campos-row">
+            <div class="config-campo">
+                <label for="dispositivo">Dispositivo (ex: /dev/sdb1)</label>
+                <input type="text" id="dispositivo" name="dispositivo"
+                       value="{{ config.dispositivo or '' }}"
+                       placeholder="/dev/sdb1"
+                       class="form-input">
+                <small>Obtenha o nome com: lsblk ou dmesg após plugar o pendrive</small>
+            </div>
+
+            <div class="config-campo">
+                <label for="ponto_montagem">Ponto de Montagem (ex: /mnt/pendrive)</label>
+                <input type="text" id="ponto_montagem" name="ponto_montagem"
+                       value="{{ config.ponto_montagem or '' }}"
+                       placeholder="/mnt/pendrive"
+                       class="form-input">
+                <small>Será criado automaticamente se não existir</small>
+            </div>
+        </div>
+
+        <div class="config-campo">
+            <label>
+                <input type="checkbox" name="ativo" value="1" {% if config.ativo %}checked{% endif %}>
+                <span>Ativar backup automático</span>
+            </label>
+        </div>
+
+        <div class="config-campo">
+            <label for="horario_backup">Horário do backup automático (opcional)</label>
+            <input type="time" id="horario_backup" name="horario_backup"
+                   value="{{ config.horario_backup or '' }}"
+                   class="form-input">
+            <small>Deixe vazio para executar apenas manualmente</small>
+        </div>
+
+        <div class="config-acoes">
+            <button type="submit" class="btn btn-primario">💾 Salvar Configuração</button>
+            <button type="button" id="btn-testar" class="btn btn-secundario">🔍 Testar Conexão</button>
+        </div>
+    </form>
+</div>
+
+<!-- Status do Dispositivo -->
+<div class="config-card" id="card-status" style="display: none;">
+    <div class="config-card-header">
+        <span class="config-card-icon">📊</span>
+        <div>
+            <h2>Status do Dispositivo</h2>
+        </div>
+    </div>
+    <div id="status-conteudo" class="config-status-box">
+        <!-- Preenchido por JavaScript -->
+    </div>
+</div>
+
+<!-- Botão de Backup Manual -->
+<div class="config-card">
+    <div class="config-card-header">
+        <span class="config-card-icon">⚡</span>
+        <div>
+            <h2>Executar Backup Agora</h2>
+            <p class="config-card-desc">Faça um backup manual a qualquer momento</p>
+        </div>
+    </div>
+    <button id="btn-executar" type="button" class="btn btn-sucesso btn-grande">
+        🚀 Executar Backup Agora
+    </button>
+    <div id="progresso-backup" style="display: none; margin-top: 1rem;">
+        <div class="progresso-barra">
+            <div class="progresso-fill"></div>
+        </div>
+        <p id="progresso-texto">Aguarde...</p>
+    </div>
+</div>
+
+<!-- Histórico de Backups -->
+<div class="config-card">
+    <div class="config-card-header">
+        <span class="config-card-icon">📜</span>
+        <div>
+            <h2>Histórico de Backups</h2>
+            <p class="config-card-desc">Últimos 20 backups realizados</p>
+        </div>
+    </div>
+
+    {% if historico %}
+    <div class="historico-tabela">
+        <table>
+            <thead>
+                <tr>
+                    <th>Data/Hora</th>
+                    <th>Status</th>
+                    <th>Tamanho</th>
+                    <th>Espaço Livre</th>
+                    <th>Mensagem</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in historico %}
+                <tr class="historico-{% if item.status == 'sucesso' %}sucesso{% else %}erro{% endif %}">
+                    <td>{{ item.data_backup }}</td>
+                    <td>
+                        {% if item.status == 'sucesso' %}
+                            <span class="badge badge-sucesso">✓ Sucesso</span>
+                        {% else %}
+                            <span class="badge badge-erro">✕ Erro</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.tamanho_backup %}
+                            {{ "%.2f"|format(item.tamanho_backup / (1024*1024)) }} MB
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.espaco_disponivel %}
+                            {{ "%.2f"|format(item.espaco_disponivel / 1024) }} MB
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.mensagem_erro %}
+                            <small class="texto-erro">{{ item.mensagem_erro }}</small>
+                        {% elif item.caminho_backup %}
+                            {{ item.caminho_backup }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="config-vazio">Nenhum backup realizado ainda.</p>
+    {% endif %}
+</div>
+
+<!-- Instruções de Instalação -->
+<div class="config-card config-info-box">
+    <div class="config-card-header">
+        <span class="config-card-icon">ℹ️</span>
+        <div>
+            <h2>Instruções de Configuração</h2>
+        </div>
+    </div>
+
+    <div class="config-instrucoes">
+        <h3>1. Plugue o Pendrive</h3>
+        <p>Conecte o pendrive ou HD externo ao servidor.</p>
+
+        <h3>2. Identifique o Dispositivo</h3>
+        <p>Abra um terminal e execute:</p>
+        <code>lsblk</code>
+        <p>ou</p>
+        <code>dmesg | tail -20</code>
+        <p>Procure por algo como <code>/dev/sdb1</code></p>
+
+        <h3>3. Permissões Sudo (uma vez)</h3>
+        <p>Para que o sistema possa montar/desmontar, execute como root:</p>
+        <code>echo "shambala ALL=(ALL) NOPASSWD: /usr/bin/mount, /usr/bin/umount" | sudo tee -a /etc/sudoers.d/shambala</code>
+
+        <h3>4. Configure no Formulário Acima</h3>
+        <ul>
+            <li><strong>Dispositivo:</strong> /dev/sdb1 (ajuste conforme seu hardware)</li>
+            <li><strong>Ponto de Montagem:</strong> /mnt/pendrive (ou outro local)</li>
+            <li><strong>Clique em "Testar Conexão"</strong> para validar</li>
+        </ul>
+
+        <h3>5. Backup Automático (Opcional)</h3>
+        <p>Ative a opção "Ativar backup automático" e escolha um horário. O sistema criará um cron job para executar o backup automaticamente.</p>
+    </div>
+</div>
+
+<style>
+.historico-tabela {
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+
+.historico-tabela table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.historico-tabela th,
+.historico-tabela td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.historico-tabela th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+}
+
+.historico-sucesso {
+    background-color: #f0fdf4;
+}
+
+.historico-erro {
+    background-color: #fef2f2;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: bold;
+}
+
+.badge-sucesso {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.badge-erro {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+.config-status-box {
+    background-color: #f9fafb;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 4px solid #3b82f6;
+}
+
+.config-acoes {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.btn-grande {
+    padding: 1rem 2rem;
+    font-size: 1rem;
+}
+
+.config-instrucoes {
+    margin-top: 1rem;
+}
+
+.config-instrucoes h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    color: #1f2937;
+    font-size: 1rem;
+}
+
+.config-instrucoes code {
+    display: block;
+    background-color: #f3f4f6;
+    padding: 0.75rem;
+    border-radius: 0.25rem;
+    font-family: monospace;
+    font-size: 0.85rem;
+    margin: 0.5rem 0;
+    overflow-x: auto;
+}
+
+.config-instrucoes p {
+    margin: 0.5rem 0;
+    color: #4b5563;
+}
+
+.config-instrucoes ul {
+    margin-left: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+.config-instrucoes li {
+    margin: 0.25rem 0;
+}
+
+.alerta {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.alerta-erro {
+    background-color: #fef2f2;
+    border-left: 4px solid #dc2626;
+    color: #991b1b;
+}
+
+.progresso-barra {
+    width: 100%;
+    height: 2rem;
+    background-color: #e5e7eb;
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.progresso-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btnTestar = document.getElementById('btn-testar');
+    const btnExecutar = document.getElementById('btn-executar');
+    const cardStatus = document.getElementById('card-status');
+    const statusConteudo = document.getElementById('status-conteudo');
+    const progressoBackup = document.getElementById('progresso-backup');
+    const progressoTexto = document.getElementById('progresso-texto');
+
+    btnTestar.addEventListener('click', async function() {
+        const dispositivo = document.getElementById('dispositivo').value;
+        const ponto = document.getElementById('ponto_montagem').value;
+
+        if (!dispositivo || !ponto) {
+            alert('Preencha dispositivo e ponto de montagem');
+            return;
+        }
+
+        btnTestar.disabled = true;
+        btnTestar.textContent = '⏳ Testando...';
+
+        try {
+            const resp = await fetch('/configuracoes/backup-pendrive/testar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dispositivo, ponto_montagem: ponto })
+            });
+
+            const dados = await resp.json();
+            cardStatus.style.display = 'block';
+
+            if (dados.sucesso) {
+                const espacoUsado = (dados.espaco_usado_mb / 1024).toFixed(2);
+                const espacoDisp = (dados.espaco_disponivel_mb / 1024).toFixed(2);
+                statusConteudo.innerHTML = `
+                    <div style="color: #166534;">
+                        <p><strong>✓ Dispositivo montado com sucesso!</strong></p>
+                        <p>Espaço usado: ${espacoUsado} GB</p>
+                        <p>Espaço disponível: ${espacoDisp} GB</p>
+                    </div>
+                `;
+            } else {
+                statusConteudo.innerHTML = `
+                    <div style="color: #991b1b;">
+                        <p><strong>✕ Erro ao conectar</strong></p>
+                        <p>${dados.erro}</p>
+                    </div>
+                `;
+            }
+        } catch (err) {
+            statusConteudo.innerHTML = `<p style="color: red;">Erro: ${err.message}</p>`;
+        } finally {
+            btnTestar.disabled = false;
+            btnTestar.textContent = '🔍 Testar Conexão';
+        }
+    });
+
+    btnExecutar.addEventListener('click', async function() {
+        if (!confirm('Executar backup agora? O processo pode levar alguns minutos.')) {
+            return;
+        }
+
+        btnExecutar.disabled = true;
+        progressoBackup.style.display = 'block';
+        progressoTexto.textContent = 'Iniciando backup...';
+
+        try {
+            const resp = await fetch('/configuracoes/backup-pendrive/executar', {
+                method: 'POST'
+            });
+
+            const dados = await resp.json();
+
+            if (dados.sucesso) {
+                progressoTexto.textContent = `✓ Backup concluído! ${dados.tamanho_mb.toFixed(2)}MB salvos`;
+                progressoBackup.querySelector('.progresso-fill').style.width = '100%';
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                progressoTexto.textContent = `✕ Erro: ${dados.erro}`;
+                progressoBackup.style.backgroundColor = '#fef2f2';
+            }
+        } catch (err) {
+            progressoTexto.textContent = `Erro: ${err.message}`;
+        } finally {
+            btnExecutar.disabled = false;
+        }
+    });
+});
+</script>
+
+{% endblock %}

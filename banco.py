@@ -525,6 +525,33 @@ def criar_tabelas():
             )
         """)
 
+        # ── Configuração de Backup em Pendrive ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS configuracoes_backup_pendrive (
+                id                  SERIAL PRIMARY KEY,
+                tipo_backup         VARCHAR(20),
+                dispositivo         VARCHAR(100),
+                ponto_montagem      VARCHAR(255),
+                ativo               INTEGER DEFAULT 0,
+                horario_backup      TIME,
+                criado_em           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                atualizado_em       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ── Histórico de backups em pendrive ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS backup_pendrive_historico (
+                id                  SERIAL PRIMARY KEY,
+                data_backup         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status              VARCHAR(20),
+                caminho_backup      VARCHAR(255),
+                tamanho_backup      BIGINT,
+                espaco_disponivel   BIGINT,
+                mensagem_erro       TEXT
+            )
+        """)
+
         # ── Índices para consultas frequentes ──
         conn.execute("CREATE INDEX IF NOT EXISTS idx_checkins_dia ON checkins(dia_trabalho_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_checkins_pessoa ON checkins(pessoa_id)")

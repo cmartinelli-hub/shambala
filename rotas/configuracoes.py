@@ -1,10 +1,16 @@
 from fastapi import APIRouter, Request, Form, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 import os
 from banco import conectar
 from rotas.auth import obter_atendente_logado
 from templates_config import templates
+from backup_pendrive import (
+    montar_dispositivo, desmontar_dispositivo,
+    fazer_pg_dump, obter_espaco_disponivel,
+    executar_backup_completo, registrar_backup_historico,
+    validar_dispositivo, validar_ponto_montagem
+)
 
 router = APIRouter(prefix="/configuracoes")
 
@@ -272,3 +278,152 @@ async def salvar_config_centro(
             )
 
     return RedirectResponse(url="/configuracoes", status_code=303)
+
+
+# ── Configuração de Backup em Pendrive ───────────────────────────────────────
+
+def _ler_config_pendrive(conn) -> dict:
+    """Lê configuração de backup em pendrive."""
+    config = conn.execute(
+        "SELECT * FROM configuracoes_backup_pendrive LIMIT 1"
+    ).fetchone()
+    if not config:
+        return {
+            "id": None,
+            "tipo_backup": "pendrive",
+            "dispositivo": "",
+            "ponto_montagem": "",
+            "ativo": 0,
+            "horario_backup": None,
+        }
+    return dict(config)
+
+
+def _ler_historico_pendrive(conn) -> list:
+    """Lê histórico de backups."""
+    rows = conn.execute(
+        "SELECT * FROM backup_pendrive_historico ORDER BY data_backup DESC LIMIT 20"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/backup-pendrive", response_class=HTMLResponse)
+async def pagina_backup_pendrive(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        config = _ler_config_pendrive(conn)
+        historico = _ler_historico_pendrive(conn)
+    return templates.TemplateResponse("configuracoes/backup_pendrive.html", {
+        "request": request,
+        "atendente": atendente,
+        "config": config,
+        "historico": historico,
+    })
+
+
+@router.post("/backup-pendrive")
+async def salvar_config_pendrive(
+    request: Request,
+    dispositivo: str = Form(""),
+    ponto_montagem: str = Form(""),
+    ativo: int = Form(0),
+    horario_backup: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    dispositivo = dispositivo.strip()
+    ponto_montagem = ponto_montagem.strip()
+
+    # Validações básicas
+    if dispositivo and not validar_dispositivo(dispositivo):
+        return RedirectResponse(url="/configuracoes/backup-pendrive?erro=dispositivo_invalido", status_code=303)
+    if ponto_montagem and not validar_ponto_montagem(ponto_montagem):
+        return RedirectResponse(url="/configuracoes/backup-pendrive?erro=montagem_invalida", status_code=303)
+
+    with conectar() as conn:
+        existente = _ler_config_pendrive(conn)
+        if existente.get("id"):
+            # Atualiza existente
+            conn.execute(
+                """UPDATE configuracoes_backup_pendrive
+                   SET dispositivo = %s, ponto_montagem = %s, ativo = %s, horario_backup = %s, atualizado_em = CURRENT_TIMESTAMP
+                   WHERE id = %s""",
+                (dispositivo, ponto_montagem, ativo, horario_backup or None, existente["id"])
+            )
+        else:
+            # Insere novo
+            conn.execute(
+                """INSERT INTO configuracoes_backup_pendrive
+                   (tipo_backup, dispositivo, ponto_montagem, ativo, horario_backup)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                ("pendrive", dispositivo, ponto_montagem, ativo, horario_backup or None)
+            )
+
+    return RedirectResponse(url="/configuracoes/backup-pendrive", status_code=303)
+
+
+@router.post("/backup-pendrive/testar")
+async def testar_backup_pendrive(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return JSONResponse({"erro": "Não autenticado"}, status_code=401)
+
+    with conectar() as conn:
+        config = _ler_config_pendrive(conn)
+
+    if not config.get("dispositivo"):
+        return JSONResponse({"erro": "Dispositivo não configurado"}, status_code=400)
+
+    # Tenta montar
+    ok, msg = montar_dispositivo(config["dispositivo"], config["ponto_montagem"])
+
+    if ok:
+        usado, disp = obter_espaco_disponivel(config["ponto_montagem"])
+        return JSONResponse({
+            "sucesso": True,
+            "mensagem": msg,
+            "espaco_usado_mb": usado,
+            "espaco_disponivel_mb": disp,
+        })
+    else:
+        return JSONResponse({"erro": msg}, status_code=400)
+
+
+@router.post("/backup-pendrive/executar")
+async def executar_backup_pendrive(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return JSONResponse({"erro": "Não autenticado"}, status_code=401)
+
+    with conectar() as conn:
+        config = _ler_config_pendrive(conn)
+
+    if not config.get("dispositivo") or not config.get("ponto_montagem"):
+        return JSONResponse({"erro": "Dispositivo ou ponto de montagem não configurados"}, status_code=400)
+
+    # Executa backup completo
+    resultado = executar_backup_completo(config["dispositivo"], config["ponto_montagem"])
+
+    # Registra no histórico
+    with conectar() as conn:
+        registrar_backup_historico(
+            status="sucesso" if resultado["sucesso"] else "erro",
+            caminho_backup=resultado["caminho_backup"],
+            tamanho=resultado["tamanho_backup"],
+            espaco_disp=resultado["espaco_disponivel"],
+            erro="" if resultado["sucesso"] else resultado["mensagem"]
+        )
+
+    if resultado["sucesso"]:
+        return JSONResponse({
+            "sucesso": True,
+            "mensagem": resultado["mensagem"],
+            "tamanho_mb": resultado["tamanho_backup"] / (1024 * 1024),
+            "espaco_disponivel_mb": resultado["espaco_disponivel"],
+        })
+    else:
+        return JSONResponse({"erro": resultado["mensagem"]}, status_code=400)
