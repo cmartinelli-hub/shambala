@@ -70,11 +70,14 @@ CREATE DATABASE shambala OWNER shambala;
 GRANT ALL PRIVILEGES ON DATABASE shambala TO shambala;
 \c shambala
 CREATE EXTENSION IF NOT EXISTS unaccent;
+GRANT ALL ON SCHEMA public TO shambala;
 ALTER USER shambala CREATEDB;
 EOF
 ```
 
 > **Importante:** Troque `sua_senha_aqui` por uma senha forte.
+>
+> **PostgreSQL 15+:** O `GRANT ALL ON SCHEMA public` é necessário porque a partir do PostgreSQL 15 o schema `public` não concede `CREATE` por padrão a usuários comuns.
 
 ### 3. Clonar o repositório
 
@@ -176,9 +179,29 @@ A tela de chamada roda em um navegador dedicado (pode ser outro computador), exi
 # Backup manual
 pg_dump -h localhost -U shambala shambala | gzip > shambala-$(date +%Y-%m-%d).sql.gz
 
-# Restaurar
+# Restaurar (SEMPRE com -U shambala para manter o dono correto dos objetos)
+systemctl stop shambala
 gunzip < shambala-2026-04-12.sql.gz | psql -h localhost -U shambala shambala
+systemctl start shambala
 ```
+
+> **Atenção:** Restaurar com outro usuário (ex: `postgres` ou `root`) faz com que tabelas e funções fiquem com dono errado, e o sistema não sobe. Se isso acontecer, corrija com:
+> ```bash
+> sudo -u postgres psql -d shambala -c "
+> DO \$\$
+> DECLARE r RECORD;
+> BEGIN
+>   FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+>     EXECUTE 'ALTER TABLE public.' || quote_ident(r.tablename) || ' OWNER TO shambala';
+>   END LOOP;
+>   FOR r IN SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public' LOOP
+>     EXECUTE 'ALTER SEQUENCE public.' || quote_ident(r.sequence_name) || ' OWNER TO shambala';
+>   END LOOP;
+> END \$\$;"
+> sudo -u postgres psql -d shambala -c 'ALTER FUNCTION norm(TEXT) OWNER TO shambala;'
+> sudo -u postgres psql -d shambala -c 'GRANT ALL ON SCHEMA public TO shambala;'
+> systemctl start shambala
+> ```
 
 ### Manutenção de dados
 

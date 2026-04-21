@@ -4,7 +4,11 @@
 {% block conteudo %}
 <div class="cabecalho-secao">
     <h2>Agenda do plano</h2>
-    <a href="/cadastros/mediuns/{{ medium.id }}/planos" class="btn btn-secundario">← Voltar</a>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a href="/cadastros/mediuns/{{ medium.id }}/planos" class="btn btn-secundario">← Voltar</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">Dashboard</a>
+        <a href="/dia" class="btn btn-secundario">Painel</a>
+    </div>
 </div>
 
 <div style="margin-bottom:1.5rem;padding:1rem;background:var(--cor-fundo-card);border-radius:6px">
@@ -22,10 +26,24 @@
         {% else %}<span style="color:var(--cor-perigo)">Cancelado</span>{% endif %}
 </div>
 
-{% set futuros   = agendamentos | selectattr("status", "equalto", "agendado") | list %}
-{% set passados  = agendamentos | rejectattr("status", "equalto", "agendado") | list %}
+<!-- Navegação por mês -->
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+    {% if tem_ant %}
+    <a href="?mes={{ mes_ant }}" class="btn btn-secundario btn-sm">‹ {{ mes_ant }}</a>
+    {% else %}
+    <span class="btn btn-secundario btn-sm" style="opacity:.35;cursor:default">‹</span>
+    {% endif %}
 
-<!-- Agendamentos futuros -->
+    <strong style="font-size:1.05rem">{{ mes_label }}</strong>
+
+    {% if tem_prox %}
+    <a href="?mes={{ mes_prox }}" class="btn btn-secundario btn-sm">{{ mes_prox }} ›</a>
+    {% else %}
+    <span class="btn btn-secundario btn-sm" style="opacity:.35;cursor:default">›</span>
+    {% endif %}
+</div>
+
+<!-- Agendamentos do mês -->
 {% if futuros %}
 <table style="margin-bottom:2rem">
     <thead>
@@ -76,7 +94,7 @@
     </tbody>
 </table>
 {% else %}
-<p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">Nenhum agendamento futuro.</p>
+<p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">Nenhum agendamento em {{ mes_label }}.</p>
 {% endif %}
 
 <!-- Adicionar avulso -->
@@ -120,7 +138,7 @@
             <tr><th>Data</th><th>Status</th><th>Passe</th><th>Encaixe</th></tr>
         </thead>
         <tbody>
-            {% for ag in passados | sort(attribute='data', reverse=True) %}
+            {% for ag in passados %}
             <tr>
                 <td>{{ ag.data | data_br }}</td>
                 <td>

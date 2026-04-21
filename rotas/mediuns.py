@@ -1,5 +1,5 @@
 from datetime import date
-from fastapi import APIRouter, Request, Form, UploadFile
+from fastapi import APIRouter, Request, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 import os
@@ -347,11 +347,42 @@ async def cancelar_plano(request: Request, id: int, plano_id: int):
 
 # ── Agendamentos do plano ─────────────────────────────────────────────────────
 
+_MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+             "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+
 @router.get("/{id}/planos/{plano_id}/agenda", response_class=HTMLResponse)
-async def ver_agenda(request: Request, id: int, plano_id: int):
+async def ver_agenda(request: Request, id: int, plano_id: int,
+                     mes: str = Query(None)):
     atendente, redir = _guard(request)
     if redir:
         return redir
+
+    hoje = date.today()
+    if not mes:
+        mes = hoje.strftime("%Y-%m")
+    try:
+        ano_m, num_m = int(mes[:4]), int(mes[5:7])
+    except (ValueError, IndexError):
+        ano_m, num_m = hoje.year, hoje.month
+        mes = hoje.strftime("%Y-%m")
+
+    mes_inicio = f"{ano_m}-{num_m:02d}-01"
+    if num_m == 12:
+        mes_fim = f"{ano_m + 1}-01-01"
+    else:
+        mes_fim = f"{ano_m}-{num_m + 1:02d}-01"
+
+    if num_m == 1:
+        mes_ant = f"{ano_m - 1}-12"
+    else:
+        mes_ant = f"{ano_m}-{num_m - 1:02d}"
+    if num_m == 12:
+        mes_prox = f"{ano_m + 1}-01"
+    else:
+        mes_prox = f"{ano_m}-{num_m + 1:02d}"
+
+    mes_label = f"{_MESES_PT[num_m - 1]} {ano_m}"
+
     with conectar() as conn:
         medium = conn.execute("SELECT id, nome_completo FROM mediuns WHERE id=%s", (id,)).fetchone()
         plano = conn.execute(
@@ -365,17 +396,41 @@ async def ver_agenda(request: Request, id: int, plano_id: int):
         ).fetchone()
         if not plano or not medium:
             return RedirectResponse(url=f"/cadastros/mediuns/{id}/planos", status_code=303)
-        agendamentos = conn.execute(
-            "SELECT * FROM agendamentos WHERE plano_id=%s ORDER BY data",
+        futuros = conn.execute(
+            """SELECT * FROM agendamentos
+               WHERE plano_id=%s AND status='agendado' AND data >= %s AND data < %s
+               ORDER BY data""",
+            (plano_id, mes_inicio, mes_fim)
+        ).fetchall()
+        passados = conn.execute(
+            """SELECT * FROM agendamentos
+               WHERE plano_id=%s AND status != 'agendado'
+               ORDER BY data DESC""",
             (plano_id,)
         ).fetchall()
+        tem_ant = conn.execute(
+            "SELECT 1 FROM agendamentos WHERE plano_id=%s AND status='agendado' AND data < %s LIMIT 1",
+            (plano_id, mes_inicio)
+        ).fetchone() is not None
+        tem_prox = conn.execute(
+            "SELECT 1 FROM agendamentos WHERE plano_id=%s AND status='agendado' AND data >= %s LIMIT 1",
+            (plano_id, mes_fim)
+        ).fetchone() is not None
+
     return templates.TemplateResponse("mediuns/agenda.html", {
         "request": request,
         "atendente": atendente,
         "medium": dict(medium),
         "plano": dict(plano),
-        "agendamentos": [dict(a) for a in agendamentos],
-        "hoje": date.today().isoformat(),
+        "futuros": [dict(a) for a in futuros],
+        "passados": [dict(a) for a in passados],
+        "hoje": hoje.isoformat(),
+        "mes": mes,
+        "mes_label": mes_label,
+        "mes_ant": mes_ant,
+        "mes_prox": mes_prox,
+        "tem_ant": tem_ant,
+        "tem_prox": tem_prox,
     })
 
 

@@ -493,9 +493,6 @@ async def remover_pessoa(request: Request, id: int):
             return RedirectResponse(url="/cadastros/pessoas", status_code=303)
 
         vinculos = {
-            "check-ins": conn.execute(
-                "SELECT COUNT(*) AS c FROM checkins WHERE pessoa_id = %s", (id,)
-            ).fetchone()["c"],
             "planos de tratamento": conn.execute(
                 "SELECT COUNT(*) AS c FROM plano_pessoas WHERE pessoa_id = %s", (id,)
             ).fetchone()["c"],
@@ -521,6 +518,7 @@ async def remover_pessoa(request: Request, id: int):
             if foto_path.exists():
                 foto_path.unlink()
 
+        conn.execute("DELETE FROM checkins WHERE pessoa_id = %s", (id,))
         conn.execute(
             "DELETE FROM lacos WHERE pessoa_id = %s OR pessoa_relacionada_id = %s",
             (id, id)
