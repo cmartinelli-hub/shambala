@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block titulo %}Produtos{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Produtos</h2>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a href="/caixa/caixas" class="btn btn-secundario btn-sm">🗂️ Caixas</a>
+        <a href="/caixa/produtos/novo" class="btn btn-primario btn-sm">+ Produto</a>
+    </div>
+</div>
+
+<form method="get" style="display:flex;gap:.5rem;margin-bottom:1rem">
+    <input type="text" name="q" value="{{ q }}" placeholder="Buscar por nome ou código de barras…"
+           style="flex:1;max-width:360px">
+    <button type="submit" class="btn btn-secundario btn-sm">Buscar</button>
+    {% if q %}<a href="/caixa/produtos" class="btn btn-secundario btn-sm">Limpar</a>{% endif %}
+</form>
+
+{% if produtos %}
+<div style="overflow-x:auto">
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Nome</th>
+            <th>Categoria</th>
+            <th>Cód. Barras</th>
+            <th>Custo</th>
+            <th>Venda</th>
+            <th>Margem</th>
+            <th>Situação</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for p in produtos %}
+    {% set margem = ((p.preco_venda - p.preco_custo) / p.preco_custo * 100) if p.preco_custo > 0 else 0 %}
+    <tr style="{% if not p.ativo %}opacity:.5{% endif %}">
+        <td><strong>{{ p.nome }}</strong></td>
+        <td>
+            {% for val, label in categorias %}
+                {% if val == p.categoria %}{{ label }}{% endif %}
+            {% endfor %}
+        </td>
+        <td style="font-family:monospace;font-size:.85rem">{{ p.codigo_barras or '—' }}</td>
+        <td>R$ {{ "%.2f"|format(p.preco_custo) }}</td>
+        <td><strong>R$ {{ "%.2f"|format(p.preco_venda) }}</strong></td>
+        <td style="color:{% if margem >= 0 %}#1da851{% else %}#c0392b{% endif %}">
+            {{ "%.0f"|format(margem) }}%
+        </td>
+        <td>
+            {% if p.ativo %}
+                <span style="color:#1da851;font-weight:600">Ativo</span>
+            {% else %}
+                <span style="color:#999">Inativo</span>
+            {% endif %}
+        </td>
+        <td style="display:flex;gap:.3rem;flex-wrap:wrap">
+            <a href="/caixa/produtos/{{ p.id }}/editar" class="btn btn-secundario btn-sm">Editar</a>
+            <form method="post" action="/caixa/produtos/{{ p.id }}/toggle-ativo" style="margin:0">
+                <button class="btn btn-sm {% if p.ativo %}btn-alerta{% else %}btn-secundario{% endif %}">
+                    {{ 'Desativar' if p.ativo else 'Ativar' }}
+                </button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p style="color:var(--cor-texto-suave)">
+    {% if q %}Nenhum produto encontrado para "{{ q }}".{% else %}Nenhum produto cadastrado.{% endif %}
+</p>
+{% endif %}
+{% endblock %}

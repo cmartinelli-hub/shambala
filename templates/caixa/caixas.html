@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titulo %}Caixas{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Caixas</h2>
+    <a href="/caixa/produtos" class="btn btn-secundario btn-sm">🛒 Produtos</a>
+</div>
+
+<div class="card-form" style="max-width:480px;margin-bottom:2rem">
+    <h3 style="margin-bottom:1rem;font-size:1rem">Novo Caixa</h3>
+    <form method="post" action="/caixa/caixas/novo">
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>Nome *</label>
+                <input type="text" name="nome" required placeholder="Ex: Cantina, Rifas…">
+            </div>
+            <div class="campo campo-largo">
+                <label>Descrição</label>
+                <input type="text" name="descricao" placeholder="Opcional">
+            </div>
+        </div>
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Adicionar</button>
+        </div>
+    </form>
+</div>
+
+<div style="overflow-x:auto">
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Nome</th>
+            <th>Descrição</th>
+            <th>Situação</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for c in caixas %}
+    <tr style="{% if not c.ativo %}opacity:.5{% endif %}">
+        <td><strong>{{ c.nome }}</strong></td>
+        <td>{{ c.descricao or '—' }}</td>
+        <td>
+            {% if c.ativo %}
+                <span style="color:#1da851;font-weight:600">Ativo</span>
+            {% else %}
+                <span style="color:#999">Inativo</span>
+            {% endif %}
+        </td>
+        <td>
+            <form method="post" action="/caixa/caixas/{{ c.id }}/toggle-ativo" style="margin:0">
+                <button class="btn btn-sm {% if c.ativo %}btn-alerta{% else %}btn-secundario{% endif %}">
+                    {{ 'Desativar' if c.ativo else 'Ativar' }}
+                </button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

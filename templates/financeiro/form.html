@@ -50,21 +50,31 @@
             </div>
             <div class="campo">
                 <label>Trabalhador</label>
-                <select name="trabalhador_id">
-                    <option value="">-- Nenhum --</option>
-                    {% for t in trabalhadores %}
-                    <option value="{{ t.id }}">{{ t.nome_completo }}</option>
-                    {% endfor %}
-                </select>
+                <div style="position:relative">
+                    <input type="text" id="busca-trabalhador" placeholder="Buscar trabalhador…"
+                           autocomplete="off"
+                           style="width:100%;box-sizing:border-box">
+                    <input type="hidden" name="trabalhador_id" id="trabalhador_id">
+                    <div id="sug-trabalhador"
+                         style="display:none;position:absolute;z-index:200;width:100%;
+                                background:var(--cor-superficie);border:1px solid var(--cor-borda);
+                                border-radius:var(--raio);box-shadow:var(--sombra);
+                                max-height:200px;overflow-y:auto"></div>
+                </div>
             </div>
             <div class="campo">
                 <label>Pessoa</label>
-                <select name="pessoa_id">
-                    <option value="">-- Nenhum --</option>
-                    {% for p in pessoas %}
-                    <option value="{{ p.id }}">{{ p.nome_completo }}</option>
-                    {% endfor %}
-                </select>
+                <div style="position:relative">
+                    <input type="text" id="busca-pessoa" placeholder="Buscar pessoa…"
+                           autocomplete="off"
+                           style="width:100%;box-sizing:border-box">
+                    <input type="hidden" name="pessoa_id" id="pessoa_id">
+                    <div id="sug-pessoa"
+                         style="display:none;position:absolute;z-index:200;width:100%;
+                                background:var(--cor-superficie);border:1px solid var(--cor-borda);
+                                border-radius:var(--raio);box-shadow:var(--sombra);
+                                max-height:200px;overflow-y:auto"></div>
+                </div>
             </div>
             <div class="campo campo-largo">
                 <label>Descrição</label>
@@ -91,18 +101,93 @@
     const catSelect = document.querySelector('select[name="categoria"]');
     const campoPix = document.getElementById('campo-pix');
 
-    // Mostra campo PIX quando categoria é mensalidade ou doação entrada
     catSelect.addEventListener('change', function() {
         const cat = this.value;
         const tipo = tipoSelect.value;
         campoPix.style.display = (cat === 'mensalidade' || cat === 'doacao' && tipo === 'entrada') ? '' : 'none';
     });
 
-    // Default date hoje
     const dateInput = document.querySelector('input[type="date"]');
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];
     }
+})();
+
+// Autocomplete de trabalhadores (filtro client-side)
+(function() {
+    const LISTA = {{ trabalhadores | tojson }};
+    const input = document.getElementById('busca-trabalhador');
+    const hidden = document.getElementById('trabalhador_id');
+    const sug = document.getElementById('sug-trabalhador');
+
+    function renderizar(itens) {
+        if (!itens.length) { sug.style.display = 'none'; return; }
+        sug.innerHTML = itens.map(t =>
+            `<div data-id="${t.id}" data-nome="${t.nome_completo}"
+                  style="padding:.45rem .7rem;font-size:.88rem;cursor:pointer"
+                  onmouseover="this.style.background='var(--cor-fundo)'"
+                  onmouseout="this.style.background=''">
+                ${t.nome_completo}
+             </div>`
+        ).join('');
+        sug.style.display = 'block';
+    }
+
+    input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        hidden.value = '';
+        if (!q) { sug.style.display = 'none'; return; }
+        renderizar(LISTA.filter(t => t.nome_completo.toLowerCase().includes(q)));
+    });
+
+    sug.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('[data-id]');
+        if (!item) return;
+        input.value = item.dataset.nome;
+        hidden.value = item.dataset.id;
+        sug.style.display = 'none';
+    });
+
+    input.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; }, 150));
+})();
+
+// Autocomplete de pessoas (AJAX)
+(function() {
+    const input = document.getElementById('busca-pessoa');
+    const hidden = document.getElementById('pessoa_id');
+    const sug = document.getElementById('sug-pessoa');
+    let timer = null;
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        hidden.value = '';
+        const q = input.value.trim();
+        if (q.length < 2) { sug.style.display = 'none'; return; }
+        timer = setTimeout(async () => {
+            const res = await fetch(`/cadastros/pessoas/buscar?nome=${encodeURIComponent(q)}&excluir=0`);
+            const lista = await res.json();
+            if (!lista.length) { sug.style.display = 'none'; return; }
+            sug.innerHTML = lista.map(p =>
+                `<div data-id="${p.id}" data-nome="${p.nome}"
+                      style="padding:.45rem .7rem;font-size:.88rem;cursor:pointer"
+                      onmouseover="this.style.background='var(--cor-fundo)'"
+                      onmouseout="this.style.background=''">
+                    ${p.nome}
+                 </div>`
+            ).join('');
+            sug.style.display = 'block';
+        }, 200);
+    });
+
+    sug.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('[data-id]');
+        if (!item) return;
+        input.value = item.dataset.nome;
+        hidden.value = item.dataset.id;
+        sug.style.display = 'none';
+    });
+
+    input.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; }, 150));
 })();
 </script>
 {% endblock %}

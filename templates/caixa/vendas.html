@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block titulo %}Vendas do Dia{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Vendas do Dia</h2>
+    <a href="/caixa/pdv{% if caixa_id %}?caixa_id={{ caixa_id }}{% endif %}" class="btn btn-primario btn-sm">← Voltar ao PDV</a>
+</div>
+
+<form method="get" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+    <select name="caixa_id" style="padding:.35rem .6rem">
+        <option value="0">Todos os caixas</option>
+        {% for c in caixas %}
+        <option value="{{ c.id }}" {% if c.id == caixa_id %}selected{% endif %}>{{ c.nome }}</option>
+        {% endfor %}
+    </select>
+    <input type="date" name="data" value="{{ data_ref }}" style="padding:.35rem .6rem">
+    <button type="submit" class="btn btn-secundario btn-sm">Filtrar</button>
+</form>
+
+<div style="margin-bottom:1rem;font-size:1.1rem;font-weight:700;color:var(--cor-primaria)">
+    Total do dia: R$ {{ "%.2f"|format(total_dia) }}
+</div>
+
+{% if vendas %}
+<div style="overflow-x:auto">
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Caixa</th>
+            <th>Pagamento</th>
+            <th>Total</th>
+            <th>Troco</th>
+            <th>Atendente</th>
+            <th>Status</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for v in vendas %}
+    <tr style="{% if v.status == 'cancelada' %}opacity:.45;text-decoration:line-through{% endif %}">
+        <td>{{ v.id }}</td>
+        <td>{{ v.caixa_nome }}</td>
+        <td>{{ '💵 Espécie' if v.forma_pagamento == 'especie' else '📱 PIX' }}</td>
+        <td><strong>R$ {{ "%.2f"|format(v.total) }}</strong></td>
+        <td>{% if v.troco > 0 %}R$ {{ "%.2f"|format(v.troco) }}{% else %}—{% endif %}</td>
+        <td>{{ v.atendente_nome or '—' }}</td>
+        <td>
+            {% if v.status == 'concluida' %}
+                <span style="color:#1da851;font-weight:600">Concluída</span>
+            {% else %}
+                <span style="color:#999">Cancelada</span>
+            {% endif %}
+        </td>
+        <td>
+            {% if v.status == 'concluida' %}
+            <form method="post" action="/caixa/vendas/{{ v.id }}/cancelar" style="margin:0">
+                <button class="btn btn-alerta btn-sm"
+                        onclick="return confirm('Cancelar venda #{{ v.id }}?')">Cancelar</button>
+            </form>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p style="color:var(--cor-texto-suave)">Nenhuma venda registrada para este período.</p>
+{% endif %}
+{% endblock %}

@@ -269,7 +269,7 @@ async def imprimir_agenda(
             JOIN planos_tratamento pt ON pt.id = a.plano_id
             JOIN plano_pessoas pp     ON pp.plano_id = pt.id
             JOIN pessoas pe           ON pe.id = pp.pessoa_id
-            WHERE pt.medium_id = %s AND a.data = %s
+            WHERE pt.medium_id = %s AND a.data = %s AND a.status = 'agendado'
             GROUP BY a.id, a.data, a.status, a.requer_passe, a.encaixe,
                      pt.id, pt.sessoes_total
             ORDER BY a.id

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block titulo %}{{ 'Editar' if produto else 'Novo' }} Produto{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>{{ 'Editar' if produto else 'Novo' }} Produto</h2>
+    <a href="/caixa/produtos" class="btn btn-secundario">← Voltar</a>
+</div>
+
+<div class="card-form">
+    <form method="post">
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>Nome *</label>
+                <input type="text" name="nome" required autofocus
+                       value="{{ produto.nome if produto else '' }}"
+                       placeholder="Ex: Coxinha, Coca-Cola 350ml…">
+            </div>
+
+            <div class="campo">
+                <label>Categoria *</label>
+                <select name="categoria" required>
+                    {% for val, label in categorias %}
+                    <option value="{{ val }}"
+                        {% if produto and produto.categoria == val %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="campo">
+                <label>Código de Barras</label>
+                <input type="text" name="codigo_barras" id="campo-barras"
+                       value="{{ produto.codigo_barras if produto and produto.codigo_barras else '' }}"
+                       placeholder="Leia ou digite o código"
+                       style="font-family:monospace">
+            </div>
+
+            <div class="campo">
+                <label>Preço de Custo (R$)</label>
+                <input type="number" name="preco_custo" step="0.01" min="0"
+                       value="{{ '%.2f'|format(produto.preco_custo) if produto else '0.00' }}">
+            </div>
+
+            <div class="campo">
+                <label>Preço de Venda (R$) *</label>
+                <input type="number" name="preco_venda" step="0.01" min="0" required
+                       id="preco_venda"
+                       value="{{ '%.2f'|format(produto.preco_venda) if produto else '0.00' }}">
+            </div>
+
+            <div class="campo">
+                <label>Margem estimada</label>
+                <div id="margem-display"
+                     style="padding:.4rem .6rem;font-size:1rem;font-weight:700;color:#1da851">
+                    —
+                </div>
+            </div>
+
+            <div class="campo">
+                <label>Situação</label>
+                <select name="ativo">
+                    <option value="1" {% if not produto or produto.ativo %}selected{% endif %}>Ativo</option>
+                    <option value="0" {% if produto and not produto.ativo %}selected{% endif %}>Inativo</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar</button>
+            <a href="/caixa/produtos" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const custo  = document.querySelector('input[name="preco_custo"]');
+    const venda  = document.getElementById('preco_venda');
+    const margem = document.getElementById('margem-display');
+
+    function calcMargem() {
+        const c = parseFloat(custo.value) || 0;
+        const v = parseFloat(venda.value) || 0;
+        if (c <= 0) { margem.textContent = '—'; margem.style.color = '#999'; return; }
+        const m = ((v - c) / c * 100);
+        margem.textContent = m.toFixed(1) + '%';
+        margem.style.color = m >= 0 ? '#1da851' : '#c0392b';
+    }
+
+    custo.addEventListener('input', calcMargem);
+    venda.addEventListener('input', calcMargem);
+    calcMargem();
+
+    // Foco automático no campo de barras se vier de leitura
+    document.getElementById('campo-barras').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); venda.focus(); }
+    });
+})();
+</script>
+{% endblock %}

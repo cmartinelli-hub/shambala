@@ -94,16 +94,12 @@ async def form_nova(request: Request):
         trabalhadores = conn.execute(
             "SELECT id, nome_completo FROM trabalhadores WHERE ativo = 1 ORDER BY nome_completo"
         ).fetchall()
-        pessoas = conn.execute(
-            "SELECT id, nome_completo FROM pessoas ORDER BY nome_completo LIMIT 200"
-        ).fetchall()
 
     return templates.TemplateResponse("financeiro/form.html", {
         "request": request,
         "atendente": atendente,
         "registro": None,
         "trabalhadores": [dict(t) for t in trabalhadores],
-        "pessoas": [dict(p) for p in pessoas],
     })
 
 
@@ -184,7 +180,7 @@ async def mensalidades(
             "trabalhador": t,
             "valor": float(t["valor_mensalidade"]),
             "dia_vencimento": dia_venc,
-            "data_vencimento": data_venc,
+            "data_vencimento": data_venc.isoformat(),
             "mov_id": t["mov_id"],
             "mov_status": t["mov_status"],
             "vencido": data_venc < hoje and t["mov_status"] != "pago",

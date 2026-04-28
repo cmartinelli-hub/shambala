@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block titulo %}PDV{% if caixa_sel %} — {{ caixa_sel.nome }}{% endif %}{% endblock %}
+
+{% block estilos %}
+<style>
+.conteudo { max-width: none; padding: 0 1rem 2rem; }
+
+.pdv-wrap {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 1rem;
+    align-items: start;
+}
+
+/* ── Busca e catálogo ── */
+.pdv-busca input {
+    width: 100%;
+    font-size: 1.1rem;
+    padding: .5rem .8rem;
+    border: 2px solid var(--cor-primaria);
+    border-radius: var(--raio);
+    background: var(--cor-superficie);
+    color: var(--cor-texto);
+    box-sizing: border-box;
+}
+.pdv-sugestoes {
+    position: absolute;
+    z-index: 100;
+    width: 100%;
+    background: var(--cor-superficie);
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    box-shadow: var(--sombra);
+    max-height: 260px;
+    overflow-y: auto;
+}
+.pdv-sugestao-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: .55rem .8rem;
+    cursor: pointer;
+    font-size: .95rem;
+    border-bottom: 1px solid var(--cor-borda);
+}
+.pdv-sugestao-item:last-child { border-bottom: none; }
+.pdv-sugestao-item:hover { background: var(--cor-fundo); }
+.pdv-sugestao-preco { font-weight: 700; color: var(--cor-primaria); }
+
+/* ── Carrinho ── */
+.pdv-carrinho-wrap {
+    background: var(--cor-superficie);
+    border-radius: var(--raio);
+    box-shadow: var(--sombra);
+    display: flex;
+    flex-direction: column;
+    min-height: 500px;
+}
+.pdv-carrinho-titulo {
+    background: var(--cor-primaria);
+    color: #fff;
+    padding: .6rem 1rem;
+    font-weight: 700;
+    border-radius: var(--raio) var(--raio) 0 0;
+    font-size: 1rem;
+}
+.pdv-carrinho-itens {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 320px;
+}
+.pdv-item {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    align-items: center;
+    gap: .4rem;
+    padding: .5rem .8rem;
+    border-bottom: 1px solid var(--cor-borda);
+    font-size: .9rem;
+}
+.pdv-item-nome { font-weight: 600; }
+.pdv-item-qty {
+    width: 44px;
+    text-align: center;
+    border: 1px solid var(--cor-borda);
+    border-radius: 4px;
+    padding: .15rem .3rem;
+    font-size: .9rem;
+    background: var(--cor-fundo);
+    color: var(--cor-texto);
+}
+.pdv-item-sub { font-weight: 700; color: var(--cor-primaria); min-width: 60px; text-align: right; }
+.pdv-item-rm {
+    background: none;
+    border: none;
+    color: #c0392b;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0 .2rem;
+    line-height: 1;
+}
+.pdv-vazio {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--cor-texto-suave);
+    font-size: .9rem;
+}
+
+/* ── Total e pagamento ── */
+.pdv-total-bar {
+    padding: .8rem 1rem;
+    background: var(--cor-fundo);
+    border-top: 2px solid var(--cor-borda);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1.4rem;
+    font-weight: 900;
+}
+.pdv-total-val { color: var(--cor-primaria); }
+.pdv-pagamento { padding: .8rem 1rem; border-top: 1px solid var(--cor-borda); }
+.pdv-pagamento label { font-weight: 600; display: block; margin-bottom: .4rem; font-size: .85rem; }
+.pdv-radio-group { display: flex; gap: .5rem; margin-bottom: .6rem; }
+.pdv-radio-group label {
+    flex: 1; text-align: center; padding: .4rem;
+    border: 2px solid var(--cor-borda); border-radius: var(--raio);
+    cursor: pointer; font-weight: 700; font-size: .9rem;
+    transition: all .1s;
+}
+.pdv-radio-group input[type=radio] { display: none; }
+.pdv-radio-group input:checked + label {
+    border-color: var(--cor-primaria);
+    background: var(--cor-primaria);
+    color: #fff;
+}
+.pdv-especie, .pdv-pix { display: none; }
+.pdv-especie.ativo, .pdv-pix.ativo { display: block; }
+.pdv-input-valor {
+    width: 100%; font-size: 1.1rem; padding: .4rem .6rem;
+    border: 1px solid var(--cor-borda); border-radius: var(--raio);
+    background: var(--cor-superficie); color: var(--cor-texto);
+    box-sizing: border-box;
+}
+.pdv-troco {
+    margin-top: .4rem; font-size: 1rem; font-weight: 700;
+    color: #1da851; min-height: 1.4em;
+}
+.pdv-btn-finalizar {
+    width: 100%; margin-top: .6rem; padding: .7rem;
+    font-size: 1rem; font-weight: 700;
+}
+.pdv-btn-pix {
+    width: 100%; margin-bottom: .6rem; padding: .5rem;
+    font-size: .9rem;
+}
+.pdv-qr-inline {
+    text-align: center; margin: .4rem 0;
+    display: none;
+}
+.pdv-qr-inline img { max-width: 180px; border-radius: 4px; }
+.pdv-qr-code {
+    font-size: .65rem; word-break: break-all;
+    color: var(--cor-texto-suave); margin-top: .3rem;
+    max-height: 50px; overflow: hidden;
+}
+.pdv-ok {
+    background: #d4edda; border: 1px solid #1da851;
+    border-radius: var(--raio); padding: .6rem 1rem;
+    color: #155724; font-weight: 600; margin-bottom: 1rem;
+}
+</style>
+{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+        <h2 style="margin:0">PDV</h2>
+        {% if caixa_sel %}
+        <span style="background:var(--cor-primaria);color:#fff;padding:.2rem .8rem;border-radius:var(--raio);font-weight:700">
+            {{ caixa_sel.nome }}
+        </span>
+        {% endif %}
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <a href="/caixa/vendas{% if caixa_sel %}?caixa_id={{ caixa_sel.id }}{% endif %}" class="btn btn-secundario btn-sm">📋 Vendas do dia</a>
+        <a href="/caixa/qrcode" target="_blank" class="btn btn-secundario btn-sm">📺 Segundo monitor</a>
+        <a href="/caixa/produtos" class="btn btn-secundario btn-sm">🛒 Produtos</a>
+    </div>
+</div>
+
+{% if not caixa_sel %}
+{# ── Seleção de caixa ── #}
+<div class="card-form" style="max-width:400px">
+    <h3 style="margin-bottom:1rem">Selecionar Caixa</h3>
+    <div style="display:flex;flex-direction:column;gap:.5rem">
+        {% for c in caixas %}
+        <a href="/caixa/pdv?caixa_id={{ c.id }}"
+           class="btn btn-primario" style="text-align:center;padding:.7rem">
+            {{ c.nome }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+{% else %}
+{# ── PDV ativo ── #}
+{% if request.query_params.get('ok') %}
+<div class="pdv-ok">✅ Venda #{{ request.query_params.get('ok') }} registrada com sucesso!</div>
+{% endif %}
+
+<div class="pdv-wrap">
+    {# ── Coluna esquerda: busca ── #}
+    <div>
+        <div class="pdv-busca" style="position:relative;margin-bottom:.6rem">
+            <input type="text" id="pdv-busca-input"
+                   placeholder="Buscar produto por nome ou leia o código de barras…"
+                   autocomplete="off">
+            <div class="pdv-sugestoes" id="pdv-sugestoes" style="display:none"></div>
+        </div>
+        <p style="font-size:.8rem;color:var(--cor-texto-suave)">
+            Digite o nome ou aponte o leitor de código de barras para o produto.
+            Pressione <kbd>Enter</kbd> com um único resultado para adicionar direto ao carrinho.
+        </p>
+    </div>
+
+    {# ── Coluna direita: carrinho + pagamento ── #}
+    <div class="pdv-carrinho-wrap">
+        <div class="pdv-carrinho-titulo">🛒 Carrinho</div>
+        <div class="pdv-carrinho-itens" id="pdv-itens">
+            <div class="pdv-vazio" id="pdv-vazio">Nenhum item adicionado.</div>
+        </div>
+
+        <div class="pdv-total-bar">
+            <span>Total</span>
+            <span class="pdv-total-val" id="pdv-total">R$ 0,00</span>
+        </div>
+
+        <div class="pdv-pagamento">
+            <label>Forma de pagamento</label>
+            <div class="pdv-radio-group">
+                <input type="radio" name="pgto" id="pgto-especie" value="especie" checked>
+                <label for="pgto-especie">💵 Espécie</label>
+                <input type="radio" name="pgto" id="pgto-pix" value="pix">
+                <label for="pgto-pix">📱 PIX</label>
+            </div>
+
+            <div class="pdv-especie ativo" id="painel-especie">
+                <label for="valor-recebido">Valor recebido (R$)</label>
+                <input type="number" id="valor-recebido" class="pdv-input-valor"
+                       step="0.01" min="0" placeholder="0,00">
+                <div class="pdv-troco" id="troco-display"></div>
+            </div>
+
+            <div class="pdv-pix" id="painel-pix">
+                <button class="btn btn-secundario pdv-btn-pix" id="btn-gerar-pix" type="button">
+                    📱 Gerar QR Code PIX
+                </button>
+                <div class="pdv-qr-inline" id="pdv-qr-inline">
+                    <img id="pdv-qr-img" src="" alt="QR Code PIX">
+                    <div class="pdv-qr-code" id="pdv-qr-code"></div>
+                </div>
+            </div>
+
+            <button class="btn btn-primario pdv-btn-finalizar" id="btn-finalizar" disabled>
+                ✅ Finalizar Venda
+            </button>
+        </div>
+    </div>
+</div>
+
+{# Formulário oculto para submissão #}
+<form id="form-finalizar" method="post" action="/caixa/pdv/finalizar" style="display:none">
+    <input type="hidden" name="caixa_id" value="{{ caixa_sel.id }}">
+    <input type="hidden" name="forma_pagamento" id="f-pagamento">
+    <input type="hidden" name="valor_recebido" id="f-valor-recebido">
+    <input type="hidden" name="itens_json" id="f-itens-json">
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if caixa_sel %}
+<script>
+const carrinho = [];
+
+// ── Busca de produtos ────────────────────────────────────────────────────────
+(function() {
+    const input = document.getElementById('pdv-busca-input');
+    const sug   = document.getElementById('pdv-sugestoes');
+    let timer = null;
+    let resultados = [];
+
+    input.focus();
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (!q) { sug.style.display = 'none'; return; }
+        timer = setTimeout(() => buscar(q), 180);
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (resultados.length === 1) {
+                adicionarAoCarrinho(resultados[0]);
+                input.value = '';
+                sug.style.display = 'none';
+                resultados = [];
+            }
+        }
+    });
+
+    async function buscar(q) {
+        const res = await fetch(`/caixa/produtos/buscar?q=${encodeURIComponent(q)}`);
+        resultados = await res.json();
+        if (!resultados.length) { sug.style.display = 'none'; return; }
+        // Se código de barras retornou exato, adiciona direto
+        if (resultados.length === 1 && resultados[0].codigo_barras === q) {
+            adicionarAoCarrinho(resultados[0]);
+            input.value = '';
+            sug.style.display = 'none';
+            resultados = [];
+            return;
+        }
+        sug.innerHTML = resultados.map((p, i) =>
+            `<div class="pdv-sugestao-item" data-idx="${i}">
+                <span>${p.nome}</span>
+                <span class="pdv-sugestao-preco">R$ ${fmtVal(p.preco_venda)}</span>
+             </div>`
+        ).join('');
+        sug.style.display = 'block';
+    }
+
+    sug.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('[data-idx]');
+        if (!item) return;
+        adicionarAoCarrinho(resultados[parseInt(item.dataset.idx)]);
+        input.value = '';
+        sug.style.display = 'none';
+        resultados = [];
+        input.focus();
+    });
+
+    input.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; }, 150));
+})();
+
+// ── Carrinho ─────────────────────────────────────────────────────────────────
+function adicionarAoCarrinho(produto) {
+    const idx = carrinho.findIndex(i => i.produto_id === produto.id);
+    if (idx >= 0) {
+        carrinho[idx].quantidade += 1;
+        carrinho[idx].subtotal = carrinho[idx].quantidade * carrinho[idx].preco_unitario;
+    } else {
+        carrinho.push({
+            produto_id: produto.id,
+            nome: produto.nome,
+            quantidade: 1,
+            preco_unitario: produto.preco_venda,
+            subtotal: produto.preco_venda,
+        });
+    }
+    renderCarrinho();
+}
+
+function renderCarrinho() {
+    const el = document.getElementById('pdv-itens');
+    const vazio = document.getElementById('pdv-vazio');
+
+    if (!carrinho.length) {
+        vazio.style.display = '';
+        el.querySelectorAll('.pdv-item').forEach(n => n.remove());
+        atualizarTotal();
+        return;
+    }
+    vazio.style.display = 'none';
+
+    // Reconstrói todos os itens
+    el.querySelectorAll('.pdv-item').forEach(n => n.remove());
+    carrinho.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'pdv-item';
+        div.innerHTML = `
+            <span class="pdv-item-nome">${item.nome}</span>
+            <input class="pdv-item-qty" type="number" min="1" value="${item.quantidade}" data-idx="${idx}">
+            <span class="pdv-item-sub" id="sub-${idx}">R$ ${fmtVal(item.subtotal)}</span>
+            <button class="pdv-item-rm" data-idx="${idx}" title="Remover">✕</button>`;
+        el.appendChild(div);
+    });
+
+    el.querySelectorAll('.pdv-item-qty').forEach(inp => {
+        inp.addEventListener('change', (e) => {
+            const i = parseInt(e.target.dataset.idx);
+            const q = Math.max(1, parseInt(e.target.value) || 1);
+            carrinho[i].quantidade = q;
+            carrinho[i].subtotal = q * carrinho[i].preco_unitario;
+            document.getElementById(`sub-${i}`).textContent = `R$ ${fmtVal(carrinho[i].subtotal)}`;
+            atualizarTotal();
+        });
+    });
+
+    el.querySelectorAll('.pdv-item-rm').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            carrinho.splice(parseInt(e.target.dataset.idx), 1);
+            renderCarrinho();
+        });
+    });
+
+    atualizarTotal();
+}
+
+function atualizarTotal() {
+    const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
+    document.getElementById('pdv-total').textContent = `R$ ${fmtVal(total)}`;
+    document.getElementById('btn-finalizar').disabled = carrinho.length === 0;
+    calcTroco();
+}
+
+// ── Pagamento ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('input[name="pgto"]').forEach(r => {
+    r.addEventListener('change', () => {
+        document.getElementById('painel-especie').classList.toggle('ativo', r.value === 'especie');
+        document.getElementById('painel-pix').classList.toggle('ativo', r.value === 'pix');
+        if (r.value === 'especie') calcTroco();
+    });
+});
+
+document.getElementById('valor-recebido').addEventListener('input', calcTroco);
+
+function calcTroco() {
+    const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
+    const recebido = parseFloat(document.getElementById('valor-recebido').value) || 0;
+    const el = document.getElementById('troco-display');
+    if (recebido <= 0) { el.textContent = ''; return; }
+    const troco = recebido - total;
+    el.textContent = troco >= 0
+        ? `Troco: R$ ${fmtVal(troco)}`
+        : `⚠ Faltam R$ ${fmtVal(-troco)}`;
+    el.style.color = troco >= 0 ? '#1da851' : '#c0392b';
+}
+
+document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
+    const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
+    if (!total) return;
+    const res = await fetch(`/caixa/pix-qr?valor=${total.toFixed(2)}`);
+    const dados = await res.json();
+    const qrInline = document.getElementById('pdv-qr-inline');
+    document.getElementById('pdv-qr-img').src = `data:image/png;base64,${dados.qr_base64}`;
+    document.getElementById('pdv-qr-code').textContent = dados.pix_code;
+    qrInline.style.display = 'block';
+});
+
+// ── Finalizar ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-finalizar').addEventListener('click', () => {
+    const pgto = document.querySelector('input[name="pgto"]:checked').value;
+    document.getElementById('f-pagamento').value = pgto;
+    document.getElementById('f-valor-recebido').value =
+        pgto === 'especie' ? (document.getElementById('valor-recebido').value || 0) : 0;
+    document.getElementById('f-itens-json').value = JSON.stringify(carrinho);
+    document.getElementById('form-finalizar').submit();
+});
+
+// ── Utilitários ───────────────────────────────────────────────────────────────
+function fmtVal(v) {
+    return parseFloat(v).toFixed(2).replace('.', ',');
+}
+</script>
+{% endif %}
+{% endblock %}

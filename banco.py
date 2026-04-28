@@ -185,6 +185,7 @@ def _migrar(conn):
         ("financeiro_movimentacoes", "status", "TEXT NOT NULL DEFAULT 'pago'"),
         ("pessoas", "cpf", "TEXT UNIQUE"),
         ("mediuns_dia", "vagas_dia", "INTEGER"),
+        ("financeiro_movimentacoes", "caixa_id", "INTEGER REFERENCES caixas(id)"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -337,6 +338,56 @@ def criar_tabelas():
                 id          SERIAL PRIMARY KEY,
                 chave       TEXT NOT NULL UNIQUE,
                 valor       TEXT NOT NULL DEFAULT ''
+            )
+        """)
+
+        # ── Caixas (PDV) ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS caixas (
+                id          SERIAL PRIMARY KEY,
+                nome        TEXT NOT NULL UNIQUE,
+                descricao   TEXT,
+                ativo       INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+
+        # ── Produtos (PDV) ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS produtos (
+                id              SERIAL PRIMARY KEY,
+                nome            TEXT NOT NULL,
+                categoria       TEXT NOT NULL DEFAULT 'outro',
+                preco_custo     NUMERIC(10,2) NOT NULL DEFAULT 0,
+                preco_venda     NUMERIC(10,2) NOT NULL DEFAULT 0,
+                codigo_barras   TEXT UNIQUE,
+                ativo           INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+
+        # ── Vendas PDV ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vendas_pdv (
+                id              SERIAL PRIMARY KEY,
+                caixa_id        INTEGER NOT NULL REFERENCES caixas(id),
+                data_venda      TEXT NOT NULL DEFAULT (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')::date::text,
+                total           NUMERIC(10,2) NOT NULL DEFAULT 0,
+                forma_pagamento TEXT NOT NULL DEFAULT 'especie',
+                troco           NUMERIC(10,2) NOT NULL DEFAULT 0,
+                status          TEXT NOT NULL DEFAULT 'concluida',
+                atendente_id    INTEGER REFERENCES atendentes(id),
+                observacao      TEXT
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vendas_pdv_itens (
+                id              SERIAL PRIMARY KEY,
+                venda_id        INTEGER NOT NULL REFERENCES vendas_pdv(id) ON DELETE CASCADE,
+                produto_id      INTEGER NOT NULL REFERENCES produtos(id),
+                nome_produto    TEXT NOT NULL,
+                quantidade      INTEGER NOT NULL DEFAULT 1,
+                preco_unitario  NUMERIC(10,2) NOT NULL,
+                subtotal        NUMERIC(10,2) NOT NULL
             )
         """)
 
@@ -631,6 +682,18 @@ def criar_tabelas():
         """)
 
         _migrar(conn)
+
+        # Seed: caixas padrão
+        for nome_cx, desc_cx in [
+            ("Geral",       "Movimentações gerais do centro"),
+            ("Lanchonete",  "Caixa da lanchonete"),
+            ("Biblioteca",  "Caixa da biblioteca"),
+            ("Bazar",       "Caixa do bazar de roupas e afins"),
+        ]:
+            conn.execute(
+                "INSERT INTO caixas (nome, descricao) VALUES (%s, %s) ON CONFLICT (nome) DO NOTHING",
+                (nome_cx, desc_cx)
+            )
 
         # Seed: segunda e quarta se ainda não há registros
         existe = conn.execute("SELECT COUNT(*) AS c FROM dias_atendimento").fetchone()["c"]
