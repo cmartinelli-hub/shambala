@@ -139,19 +139,26 @@
         btn.textContent = 'Imprimindo…';
         msg.textContent = '';
         try {
-            const r = await fetch('/caixa/vendas/{{ venda.id }}/imprimir', { method: 'POST' });
-            const j = await r.json();
-            if (r.ok) {
+            const rb = await fetch('/caixa/vendas/{{ venda.id }}/escpos');
+            if (!rb.ok) throw new Error('Erro ao buscar dados da venda.');
+            const bytes = await rb.arrayBuffer();
+            const ra = await fetch('http://localhost:9001/imprimir', {
+                method: 'POST',
+                body: bytes,
+                headers: {'Content-Type': 'application/octet-stream'}
+            });
+            if (ra.ok) {
                 btn.textContent = '✓ Impresso';
             } else {
+                const j = await ra.json().catch(() => ({}));
                 msg.textContent = j.erro || 'Erro ao imprimir.';
                 btn.disabled = false;
-                btn.textContent = '🖨 Imprimir';
+                btn.textContent = '🖨 Reimprimir';
             }
         } catch (e) {
-            msg.textContent = 'Erro de conexão com o servidor.';
+            msg.textContent = 'Agente não respondeu — verifique se está rodando em localhost:9001.';
             btn.disabled = false;
-            btn.textContent = '🖨 Imprimir';
+            btn.textContent = '🖨 Reimprimir';
         }
     }
 

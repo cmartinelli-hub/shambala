@@ -205,11 +205,11 @@
 {% else %}
 {# ── PDV ativo ── #}
 {% if request.query_params.get('ok') %}
-<div class="pdv-ok" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
-    <span>✅ Venda #{{ request.query_params.get('ok') }} registrada com sucesso!</span>
-    <button class="btn btn-primario btn-sm"
-            onclick="window.open('/caixa/vendas/{{ request.query_params.get('ok') }}/comprovante','_blank')">
-        &#x1F5A8; Imprimir Comprovante
+<div class="pdv-ok" id="div-ok" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+    <span id="msg-ok">⏳ Venda #{{ request.query_params.get('ok') }} registrada — imprimindo comanda…</span>
+    <button class="btn btn-secundario btn-sm" id="btn-reimprimir" style="display:none"
+            onclick="imprimirAgente({{ request.query_params.get('ok') }})">
+        &#x1F5A8; Reimprimir
     </button>
 </div>
 {% endif %}
@@ -470,6 +470,35 @@ document.getElementById('btn-finalizar').addEventListener('click', () => {
 function fmtVal(v) {
     return parseFloat(v).toFixed(2).replace('.', ',');
 }
+
+{% if request.query_params.get('ok') %}
+// ── Impressão automática via agente local ─────────────────────────────────────
+async function imprimirAgente(vendaId) {
+    const msg = document.getElementById('msg-ok');
+    const btn = document.getElementById('btn-reimprimir');
+    if (msg) msg.textContent = `⏳ Imprimindo comanda #${vendaId}…`;
+    try {
+        const rb = await fetch(`/caixa/vendas/${vendaId}/escpos`);
+        if (!rb.ok) throw new Error('Erro ao buscar dados da venda.');
+        const bytes = await rb.arrayBuffer();
+        const ra = await fetch('http://localhost:9001/imprimir', {
+            method: 'POST',
+            body: bytes,
+            headers: {'Content-Type': 'application/octet-stream'}
+        });
+        if (ra.ok) {
+            if (msg) msg.textContent = `✅ Venda #${vendaId} registrada e comanda impressa!`;
+        } else {
+            const j = await ra.json().catch(() => ({}));
+            if (msg) msg.textContent = `✅ Venda #${vendaId} registrada. Erro impressora: ${j.erro || ra.status}`;
+        }
+    } catch(e) {
+        if (msg) msg.textContent = `✅ Venda #${vendaId} registrada. Agente não respondeu — verifique se está rodando.`;
+    }
+    if (btn) btn.style.display = '';
+}
+window.addEventListener('load', () => imprimirAgente({{ request.query_params.get('ok') }}));
+{% endif %}
 </script>
 {% endif %}
 {% endblock %}

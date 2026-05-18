@@ -137,33 +137,6 @@ async def finalizar_venda(
                  float(item["subtotal"]))
             )
 
-        caixa_row = conn.execute(
-            "SELECT nome FROM caixas WHERE id=%s", (caixa_id,)
-        ).fetchone()
-        centro = conn.execute(
-            "SELECT chave, valor FROM configuracoes_centro"
-        ).fetchall()
-
-    centro_nome = {r["chave"]: r["valor"] for r in centro}.get("centro_nome", "Centro Espírita")
-    venda_dict = {
-        "id": venda_id,
-        "caixa_nome": caixa_row["nome"] if caixa_row else "",
-        "atendente_nome": atendente.get("nome_completo", ""),
-        "total": total,
-        "forma_pagamento": forma_pagamento,
-        "troco": troco,
-        "data_venda": date.today().isoformat(),
-    }
-    itens_dict = [
-        {"nome_produto": i["nome"], "quantidade": i["quantidade"],
-         "preco_unitario": float(i["preco_unitario"]), "subtotal": float(i["subtotal"])}
-        for i in itens
-    ]
-    try:
-        _imprimir_escpos(venda_dict, itens_dict, centro_nome)
-    except Exception:
-        pass  # falha na impressora não bloqueia a venda
-
     # Sinaliza ao segundo monitor que a venda foi concluída
     import asyncio
     asyncio.create_task(_gerenciador_qr.transmitir({"tipo": "confirmado"}))
@@ -272,6 +245,39 @@ async def cancelar_venda(request: Request, id: int):
 
     caixa_id = v["caixa_id"] if v else 0
     return RedirectResponse(url=f"/caixa/vendas?caixa_id={caixa_id}", status_code=303)
+
+
+@router.get("/vendas/{id}/escpos")
+async def escpos_venda(request: Request, id: int):
+    """Retorna os bytes ESC/POS da venda para impressão pelo agente local do caixa."""
+    from fastapi.responses import Response
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return JSONResponse({}, status_code=401)
+
+    with conectar() as conn:
+        venda = conn.execute(
+            """SELECT v.*, c.nome AS caixa_nome, a.nome_completo AS atendente_nome
+               FROM vendas_pdv v
+               JOIN caixas c ON c.id = v.caixa_id
+               LEFT JOIN atendentes a ON a.id = v.atendente_id
+               WHERE v.id = %s""",
+            (id,)
+        ).fetchone()
+        if not venda:
+            return JSONResponse({"erro": "Venda não encontrada"}, status_code=404)
+
+        itens = conn.execute(
+            "SELECT nome_produto, quantidade, preco_unitario, subtotal "
+            "FROM vendas_pdv_itens WHERE venda_id = %s ORDER BY id",
+            (id,)
+        ).fetchall()
+
+        centro = conn.execute("SELECT chave, valor FROM configuracoes_centro").fetchall()
+        centro_nome = {r["chave"]: r["valor"] for r in centro}.get("centro_nome", "Centro Espírita")
+
+    dados = _gerar_bytes_escpos(dict(venda), [dict(i) for i in itens], centro_nome)
+    return Response(content=dados, media_type="application/octet-stream")
 
 
 @router.get("/vendas/{id}/comprovante", response_class=HTMLResponse)
@@ -589,7 +595,7 @@ async def imprimir_venda(request: Request, id: int):
         return JSONResponse({"erro": str(e)}, status_code=500)
 
 
-def _imprimir_escpos(venda: dict, itens: list, centro_nome: str):
+def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str) -> bytes:
     from datetime import datetime
 
     ESC = b'\x1b'
@@ -691,8 +697,12 @@ def _imprimir_escpos(venda: dict, itens: list, centro_nome: str):
     buf += LF
     buf += CORTAR
 
+    return bytes(buf)
+
+
+def _imprimir_escpos(venda: dict, itens: list, centro_nome: str):
     with open(IMPRESSORA_DISPOSITIVO, 'wb') as f:
-        f.write(bytes(buf))
+        f.write(_gerar_bytes_escpos(venda, itens, centro_nome))
 
 
 def _fmt_produto(p: dict) -> dict:
