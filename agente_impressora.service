@@ -1,0 +1,13 @@
+[Unit]
+Description=Agente de impressao ESC/POS — Shambala
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/agente_impressora/agente_impressora.py
+Restart=on-failure
+RestartSec=5
+User=agente-impressora
+
+[Install]
+WantedBy=multi-user.target
