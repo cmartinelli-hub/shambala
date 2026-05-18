@@ -55,7 +55,12 @@
         </td>
         <td>
             {% if v.status == 'concluida' %}
-            <form method="post" action="/caixa/vendas/{{ v.id }}/cancelar" style="margin:0">
+            <button class="btn btn-secundario btn-sm"
+                    style="margin-right:.3rem"
+                    onclick="window.open('/caixa/vendas/{{ v.id }}/comprovante','_blank')">
+                &#x1F5A8;
+            </button>
+            <form method="post" action="/caixa/vendas/{{ v.id }}/cancelar" style="display:inline;margin:0">
                 <button class="btn btn-alerta btn-sm"
                         onclick="return confirm('Cancelar venda #{{ v.id }}?')">Cancelar</button>
             </form>

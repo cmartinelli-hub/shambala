@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Comanda #{{ venda.id }} — {{ centro_nome }}</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        font-family: 'Courier New', Courier, monospace;
+        color: #000;
+        background: #fff;
+        display: flex;
+        justify-content: center;
+        padding: 8px;
+    }
+
+    .comanda {
+        width: 100%;
+        max-width: 72ch;
+    }
+
+    /* ── Cabeçalho pequeno ── */
+    .cabecalho {
+        text-align: center;
+        font-size: 7pt;
+        line-height: 1.4;
+        margin-bottom: 6px;
+        padding-bottom: 6px;
+        border-bottom: 1px dashed #000;
+    }
+    .cabecalho .centro { font-size: 8pt; font-weight: bold; }
+    .cabecalho .info { font-size: 7pt; }
+
+    /* ── Itens GRANDES ── */
+    .itens {
+        margin: 8px 0;
+    }
+    .item {
+        font-size: 18pt;
+        font-weight: bold;
+        line-height: 1.5;
+        padding: 2px 0;
+    }
+    .item .qtd {
+        display: inline-block;
+        min-width: 2.5ch;
+    }
+
+    /* ── Rodapé pequeno ── */
+    .rodape {
+        text-align: center;
+        font-size: 7pt;
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px dashed #000;
+    }
+
+    .botoes {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 12px;
+    }
+    .btn-imprimir {
+        padding: 6px 20px;
+        font-size: 10pt;
+        font-weight: 700;
+        background: #1a6fb5;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: sans-serif;
+    }
+    .btn-imprimir:disabled {
+        background: #888;
+        cursor: default;
+    }
+    .btn-fechar {
+        padding: 6px 20px;
+        font-size: 10pt;
+        background: #ddd;
+        color: #333;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: sans-serif;
+    }
+    .msg-erro {
+        color: #c00;
+        font-family: sans-serif;
+        font-size: 9pt;
+        margin-top: 6px;
+        text-align: center;
+    }
+
+    @media print {
+        @page {
+            size: 80mm auto;
+            margin: 2mm 3mm;
+        }
+        body { padding: 0; }
+        .botoes { display: none; }
+    }
+</style>
+</head>
+<body>
+<div class="comanda">
+    <div class="cabecalho">
+        <div class="centro">{{ centro_nome }}</div>
+        <div class="info">Comanda #{{ venda.id }} &mdash; {{ venda.data_venda|data_br }} &mdash; {{ venda.caixa_nome }}</div>
+    </div>
+
+    <div class="itens">
+        {% for item in itens %}
+        <div class="item">
+            <span class="qtd">{{ item.quantidade }}x</span> {{ item.nome_produto|upper }}
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="rodape">
+        Obrigado pela preferencia!
+    </div>
+</div>
+
+<div class="botoes">
+    <button id="btn-termica" class="btn-imprimir" onclick="imprimirTermica()">&#x1F5A8; Reimprimir</button>
+    <button class="btn-fechar" onclick="window.close()">Fechar</button>
+</div>
+<div id="msg-erro" class="msg-erro"></div>
+
+<script>
+    async function imprimirTermica() {
+        const btn = document.getElementById('btn-termica');
+        const msg = document.getElementById('msg-erro');
+        btn.disabled = true;
+        btn.textContent = 'Imprimindo…';
+        msg.textContent = '';
+        try {
+            const r = await fetch('/caixa/vendas/{{ venda.id }}/imprimir', { method: 'POST' });
+            const j = await r.json();
+            if (r.ok) {
+                btn.textContent = '✓ Impresso';
+            } else {
+                msg.textContent = j.erro || 'Erro ao imprimir.';
+                btn.disabled = false;
+                btn.textContent = '🖨 Imprimir';
+            }
+        } catch (e) {
+            msg.textContent = 'Erro de conexão com o servidor.';
+            btn.disabled = false;
+            btn.textContent = '🖨 Imprimir';
+        }
+    }
+
+</script>
+</body>
+</html>

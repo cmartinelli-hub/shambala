@@ -1,5 +1,5 @@
 # Projeto Shambala — Contexto Completo
-*Atualizado em 2026-04-12*
+*Atualizado em 2026-05-18*
 
 ## Repositório
 
@@ -25,11 +25,14 @@ assistindo a uma palestra, e são chamadas pelo código exibido num monitor via 
 - **Serviço:** systemd (`shamballa.service`), inicia automático no boot
 - **Porta:** 8000, acessível em toda a rede local (`--host 0.0.0.0`)
 - **Monitor de chamada:** segundo dispositivo com navegador aberto em `/chamada` em tela cheia (F11)
+- **Segundo monitor PDV:** terceiro dispositivo opcional em `/caixa/qrcode` para exibir QR Code PIX
 - **Banco de dados:** PostgreSQL 12+
   - Host/porta/credenciais via variáveis de ambiente (`.env`)
   - Pool de conexões: 1-10 conexões simultâneas
   - Extensão `unaccent` para buscas normalizadas com acentos
-- **Backups:** `pg_dump` comprimido com envio opcional via SCP
+- **Backups:**
+  - `pg_dump` comprimido com envio opcional via SCP (remoto)
+  - Backup em pendrive/HD externo configurável via `/configuracoes/backup-pendrive`
 
 ---
 
@@ -42,7 +45,7 @@ assistindo a uma palestra, e são chamadas pelo código exibido num monitor via 
 | Pool de conexões | SimpleConnectionPool (1-10 conns) |
 | Templates | Jinja2 (server-side rendering) |
 | Frontend | HTML + CSS + JS puro (sem framework) |
-| Tempo real | WebSocket (tela de chamada) |
+| Tempo real | WebSocket (tela de chamada + segundo monitor PDV) |
 | Serviço | systemd |
 
 **Idioma do código:** Português em tudo — variáveis, funções, rotas, tabelas, campos.
@@ -67,6 +70,9 @@ psycopg2-binary>=2.9.0
 python-dotenv>=1.0.0
 jinja2>=3.1.0
 requests>=2.31.0
+python-multipart>=0.0.9
+qrcode[pil]>=7.4.2
+bcrypt>=4.0.0
 ```
 
 ---
@@ -107,9 +113,9 @@ requests>=2.31.0
 
 ### `pessoas`
 ```
-id, nome_apresentacao (NOT NULL), nome_completo, telefone, email
+id, nome_apresentacao (NOT NULL), nome_completo, telefone, email, cpf (UNIQUE)
 cep, logradouro, numero, complemento, bairro, cidade, uf
-data_nascimento (YYYY-MM-DD), deficiencia (0/1), prioridade (0/1)
+data_nascimento (YYYY-MM-DD), deficiencia (0/1), prioridade (0/1), foto_pessoa
 ```
 
 ### `lacos`
@@ -122,17 +128,18 @@ Informativo, sem impacto operacional. Ex: "esposo(a)", "filho(a)".
 ```
 id, nome_completo (NOT NULL), telefone, email
 cep, logradouro, numero, complemento, bairro, cidade, uf
-ativo (0/1, padrão 1), vagas_dia (padrão 10)
+ativo (0/1, padrão 1), vagas_dia (padrão 10), foto_medium
 ```
 
-### `usuarios` (atendentes)
+### `atendentes` (usuários do sistema)
 ```
 id, nome_usuario (UNIQUE NOT NULL), nome_completo (NOT NULL)
-senha_hash (SHA-256), telefone, email, ativo (padrão 1)
+senha_hash, telefone, email, ativo (padrão 1)
+grupo_id (FK grupos, nullable)
 ```
-Atendente inicial criado automaticamente: **admin / admin**
-
+> O módulo é `rotas/usuarios.py` mas a tabela no banco chama-se `atendentes`.
 > A rota `/cadastros/atendentes` redireciona para `/cadastros/usuarios` (compatibilidade).
+> Atendente inicial criado automaticamente: **admin / admin**
 
 ### `dias_trabalho`
 ```
@@ -141,7 +148,7 @@ id, data (UNIQUE), aberto (0/1)
 
 ### `mediuns_dia`
 ```
-id, dia_trabalho_id (FK), medium_id (FK)  — UNIQUE(dia_trabalho_id, medium_id)
+id, dia_trabalho_id (FK), medium_id (FK), vagas_dia (nullable override)  — UNIQUE(dia_trabalho_id, medium_id)
 ```
 
 ### `planos_tratamento`
@@ -180,10 +187,10 @@ Configurável via `/configuracoes`. Padrão: segunda (0) e quarta (2).
 
 ### `trabalhadores`
 ```
-id, nome_completo (NOT NULL), telefone, email, cpf, rg, data_nascimento
+id, nome_completo (NOT NULL), telefone, email, cpf (UNIQUE), rg, data_nascimento
 endereco completo (cep, logradouro, numero, complemento, bairro, cidade, uf)
-valor_mensalidade (NUMERIC 10,2)
-ativo (0/1, padrão 1), created_at (YYYY-MM-DD)
+valor_mensalidade (NUMERIC 10,2), dia_vencimento (padrão 10)
+ativo (0/1, padrão 1), foto_trabalhador, created_at (YYYY-MM-DD)
 ```
 
 ### `trabalhador_dias`
@@ -196,6 +203,7 @@ UNIQUE(trabalhador_id, dia_semana)
 ```
 id, trabalhador_id (FK), dia_trabalho_id (FK)
 presente (0/1), hora_chegada (nullable), hora_saida (nullable)
+UNIQUE(trabalhador_id, dia_trabalho_id)
 ```
 
 ### `grupos` e `grupos_permissoes`
@@ -205,15 +213,48 @@ grupos:
 
 grupos_permissoes:
   id, grupo_id (FK), modulo (TEXT NOT NULL)
+  ler (BOOLEAN), escrever (BOOLEAN), apagar (BOOLEAN)
   UNIQUE(grupo_id, modulo)
 ```
-Preparação para RBAC (controle de permissões por módulo).
+Modelo Unix de permissões (ler/escrever/apagar) por módulo.
+
+### `usuarios_grupos`
+```
+id, usuario_id (FK atendentes), grupo_id (FK grupos)
+UNIQUE(usuario_id, grupo_id)
+```
 
 ### `configuracoes_smtp`
 ```
 id, chave (UNIQUE NOT NULL), valor (NOT NULL DEFAULT '')
 ```
-Armazenamento de configurações de email para mala direta.
+Chaves: smtp_servidor, smtp_porta, smtp_usuario, smtp_senha, smtp_email_de.
+
+### `configuracoes_backup`
+```
+id, chave (UNIQUE NOT NULL), valor (NOT NULL DEFAULT '')
+```
+Chaves: backup_host, backup_user, backup_path, backup_ssh_key_path.
+
+### `configuracoes_centro`
+```
+id, chave (UNIQUE NOT NULL), valor (NOT NULL DEFAULT '')
+```
+Chaves: `centro_nome` (nome do centro para comprovantes), `centro_logo` (nome do arquivo em `/static/logos/`).
+
+### `configuracoes_backup_pendrive`
+```
+id, tipo_backup (VARCHAR 20), dispositivo (VARCHAR 100)
+ponto_montagem (VARCHAR 255), ativo (INTEGER DEFAULT 0)
+horario_backup (TIME), criado_em (TIMESTAMP), atualizado_em (TIMESTAMP)
+```
+
+### `backup_pendrive_historico`
+```
+id, data_backup (TIMESTAMP), status (VARCHAR 20)
+caminho_backup (VARCHAR 255), tamanho_backup (BIGINT)
+espaco_disponivel (BIGINT), mensagem_erro (TEXT)
+```
 
 ---
 
@@ -225,6 +266,7 @@ id, tipo (entrada/saida), categoria (mensalidade/doacao/livro/etc)
 valor (NUMERIC 10,2), data_movimentacao (TEXT YYYY-MM-DD)
 descricao (TEXT), trabalhador_id (FK nullable), pessoa_id (FK nullable)
 pix_copiadecola (TEXT), status (pago/pendente/cancelado, padrão pago)
+caixa_id (FK caixas, nullable)  ← adicionado via migração
 ```
 
 ### Rotas
@@ -235,6 +277,79 @@ GET       /financeiro/mensalidades      ← controle de mensalidades
 POST      /financeiro/{id}/pagar        ← marcar como pago
 POST      /financeiro/{id}/cancelar     ← cancelar movimento
 ```
+
+---
+
+## Módulo Caixa/PDV (`/caixa`)
+
+### Tabelas
+
+**`caixas`**
+```
+id, nome (NOT NULL UNIQUE), descricao, ativo (padrão 1)
+chave_pix_id (FK chaves_pix, nullable)  ← atenção: coluna no BD mas tabela chaves_pix não está em banco.py
+```
+Caixas padrão (seed): Geral, Lanchonete, Biblioteca, Bazar.
+
+**`chaves_pix`**
+```
+id, nome, tipo (cpf/cnpj/email/telefone/aleatoria), chave, cidade, ativa (BOOLEAN)
+```
+> **Atenção:** a criação desta tabela e da coluna `caixas.chave_pix_id` não está em `banco.py` ainda — pendente de adicionar.
+
+**`produtos`**
+```
+id, nome (NOT NULL), categoria (salgado_assado/salgado_frito/bebida/doce/outro)
+preco_custo (NUMERIC 10,2), preco_venda (NUMERIC 10,2)
+codigo_barras (UNIQUE nullable), ativo (padrão 1)
+```
+
+**`vendas_pdv`**
+```
+id, caixa_id (FK NOT NULL), data_venda (TEXT YYYY-MM-DD)
+total (NUMERIC 10,2), forma_pagamento (especie/pix), troco (NUMERIC 10,2)
+status (concluida/cancelada), atendente_id (FK atendentes nullable), observacao
+```
+
+**`vendas_pdv_itens`**
+```
+id, venda_id (FK ON DELETE CASCADE), produto_id (FK)
+nome_produto (TEXT, snapshot), quantidade, preco_unitario, subtotal
+```
+
+### Rotas
+```
+WS        /caixa/ws                         ← WebSocket segundo monitor (QR Code)
+GET       /caixa/qrcode                     ← tela segundo monitor (fullscreen)
+GET       /caixa/pdv?caixa_id=N             ← PDV (terminal de venda)
+POST      /caixa/pdv/finalizar              ← finalizar venda (form)
+GET       /caixa/pix-qr?valor=X&caixa_id=N ← gera QR PIX + transmite ao segundo monitor
+GET       /caixa/vendas?caixa_id=N&data=D   ← histórico de vendas do dia
+POST      /caixa/vendas/{id}/cancelar       ← cancelar venda
+GET       /caixa/vendas/{id}/comprovante    ← comanda imprimível (popup/print)
+GET       /caixa/produtos/buscar?q=X        ← JSON autocomplete + código de barras
+GET       /caixa/produtos                   ← lista de produtos
+GET/POST  /caixa/produtos/novo              ← cadastrar produto
+GET/POST  /caixa/produtos/{id}/editar       ← editar produto
+POST      /caixa/produtos/{id}/toggle-ativo ← ativar/desativar produto
+GET       /caixa/caixas                     ← lista de caixas + chaves PIX
+POST      /caixa/caixas/novo                ← criar caixa
+POST      /caixa/caixas/{id}/pix            ← vincular chave PIX à caixa
+POST      /caixa/caixas/{id}/toggle-ativo   ← ativar/desativar caixa
+```
+
+### Fluxo PDV
+1. Operador seleciona caixa → entra no PDV
+2. Busca produto por nome (autocomplete) ou código de barras (leitor USB)
+3. Adiciona itens ao carrinho (JS puro, sem reload)
+4. Ao selecionar PIX: sistema gera QR Code via `GET /caixa/pix-qr` e transmite ao segundo monitor via WebSocket
+5. Finaliza venda: `POST /caixa/pdv/finalizar` (form com `itens_json`)
+6. Comprovante disponível em `/caixa/vendas/{id}/comprovante` (layout 80mm para impressão)
+
+### PIX (geração de payload)
+- Payload EMV completo com CRC16 (`_gerar_payload_pix` em `rotas/caixa.py`)
+- Chave PIX buscada da tabela `chaves_pix` vinculada ao caixa selecionado
+- QR transmitido ao segundo monitor (`/caixa/qrcode`) via WebSocket
 
 ---
 
@@ -279,11 +394,24 @@ POST      /biblioteca/venda/nova        ← registrar venda
 
 ## Módulo Doações (`/doacoes`)
 
-### Tabela `doacoes_cestas`
+### Tabelas
+**`doacoes_cestas`**
 ```
 id, pessoa_id (FK NOT NULL), data_entrega (TEXT NOT NULL)
 itens (TEXT descrição do conteúdo), observacao (TEXT)
 entregue (INTEGER NOT NULL DEFAULT 0)
+```
+
+**`tipos_doacao`**
+```
+id, nome (UNIQUE NOT NULL), descricao, ativo (padrão 1)
+```
+Seeds: Cesta Básica, Roupas, Calçados, Brinquedos, Higiene Pessoal, Outros.
+
+**`doacao_itens`**
+```
+id, doacao_id (FK ON DELETE CASCADE), tipo_doacao_id (FK), quantidade (padrão 1)
+UNIQUE(doacao_id, tipo_doacao_id)
 ```
 
 ### Rotas
@@ -336,6 +464,8 @@ GET       /cadastros/trabalhadores/{id}/dias
 GET       /cadastros/trabalhadores/checkin     ← registrar presença
 GET       /cadastros/trabalhadores/agenda      ← agenda de presença
 
+GET       /cadastros/permissoes                ← controle RBAC
+
 GET       /dia                          ← abrir dia ou painel (detecta automaticamente)
 POST      /dia/abrir
 POST      /dia/encerrar
@@ -366,7 +496,20 @@ GET       /chamada                      ← tela fullscreen WebSocket
 GET       /chamada/ultimo               ← JSON {"codigo": "..."}
 WS        /chamada/ws
 
-GET       /configuracoes                ← configurar dias de atendimento
+GET       /configuracoes                ← configurar dias de atendimento, SMTP, backup remoto, centro
+POST      /configuracoes/dias/adicionar
+POST      /configuracoes/dias/{dia_semana}/remover
+POST      /configuracoes/smtp           ← salvar configuração SMTP
+POST      /configuracoes/backup         ← salvar configuração backup remoto
+POST      /configuracoes/centro         ← salvar nome e logo do centro
+GET       /configuracoes/pix            ← gerenciar chaves PIX
+POST      /configuracoes/pix/novo       ← cadastrar chave PIX
+POST      /configuracoes/pix/{id}/toggle ← ativar/desativar chave
+POST      /configuracoes/pix/{id}/remover ← remover chave
+GET       /configuracoes/backup-pendrive ← configuração backup em pendrive
+POST      /configuracoes/backup-pendrive ← salvar config pendrive
+POST      /configuracoes/backup-pendrive/testar ← testar montagem
+POST      /configuracoes/backup-pendrive/executar ← executar backup agora
 
 GET       /mala-direta                  ← envio de mensagens em massa
 GET       /mala-direta/resultado        ← resultado de envio
@@ -397,7 +540,23 @@ POST      /doacoes/{id}/entregar/desentrega
 GET/POST  /doacoes/{id}/editar
 POST      /doacoes/{id}/apagar
 
-GET       /permissoes                   ← controle de permissões por grupo
+WS        /caixa/ws                     ← WebSocket segundo monitor PDV
+GET       /caixa/qrcode                 ← tela segundo monitor (QR PIX)
+GET       /caixa/pdv                    ← terminal de venda
+POST      /caixa/pdv/finalizar
+GET       /caixa/pix-qr                 ← gera e transmite QR Code PIX
+GET       /caixa/vendas                 ← histórico de vendas
+POST      /caixa/vendas/{id}/cancelar
+GET       /caixa/vendas/{id}/comprovante
+GET       /caixa/produtos/buscar        ← autocomplete + código de barras
+GET       /caixa/produtos
+GET/POST  /caixa/produtos/novo
+GET/POST  /caixa/produtos/{id}/editar
+POST      /caixa/produtos/{id}/toggle-ativo
+GET       /caixa/caixas
+POST      /caixa/caixas/novo
+POST      /caixa/caixas/{id}/pix
+POST      /caixa/caixas/{id}/toggle-ativo
 ```
 
 ---
@@ -437,6 +596,14 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 - Dados pessoais, laços familiares, histórico de planos, histórico completo de check-ins
 - **ATENÇÃO:** a rota `/{id}` deve ser declarada por **último** em `rotas/pessoas.py`
 
+### PDV / Caixa
+- Carrinho em JS puro (sem reload de página)
+- Busca de produto: nome (autocomplete) ou código de barras (leitor USB HID)
+- PIX: `GET /caixa/pix-qr` gera payload EMV + QR e transmite via WebSocket ao segundo monitor
+- Espécie: campo valor recebido → calcula troco
+- Comprovante: página otimizada para impressão direta no navegador (`@media print`, tamanho 80mm)
+- Texto ESC/POS formatado gerado em `_gerar_recibo()` para futura impressora térmica
+
 ---
 
 ## Arquivos-chave
@@ -444,9 +611,10 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | Arquivo | Função |
 |---|---|
 | `main.py` | App FastAPI, lifespan, monta todas as rotas, filtro `data_br` |
-| `banco.py` | `conectar()`, `criar_tabelas()`, `_migrar()`, pool psycopg2, wrapper compatibilidade |
+| `banco.py` | `conectar()`, `criar_tabelas()`, `_migrar()`, pool psycopg2, `gerar_agendamentos_plano()` |
 | `templates_config.py` | Instância única de `Jinja2Templates` |
 | `backup.py` | Backup via `pg_dump` + envio SCP opcional |
+| `backup_pendrive.py` | Backup em pendrive/HD externo (montar, desmontar, pg_dump, histórico) |
 | `maiusculas.py` | Capitalização inteligente de nomes |
 | `normalizar_telefones.py` | Padronização de telefones para `(XX) XXXXX-XXXX` |
 | `requirements.txt` | Dependências Python do projeto |
@@ -460,19 +628,20 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `rotas/auth.py` | Login/logout, sessões em memória, `obter_atendente_logado()` |
 | `rotas/pessoas.py` | CRUD pessoas, laços, ficha — `/{id}` por último |
 | `rotas/mediuns.py` | CRUD médiuns, planos de tratamento, agenda |
-| `rotas/usuarios.py` | Gestão de usuários/atendentes |
+| `rotas/usuarios.py` | Gestão de usuários/atendentes (tabela: `atendentes`) |
 | `rotas/dia.py` | Painel, dashboard, todas as filas, fraterno |
 | `rotas/checkin.py` | Busca, form check-in, `_situacao_pessoa()`, `_senhas_em_uso()` |
 | `rotas/chamada.py` | WebSocket, transmissão de códigos |
 | `rotas/agenda.py` | Agenda global, criação de plano avulso |
 | `rotas/relatorios.py` | Por dia, médium, pessoa, frequência |
-| `rotas/configuracoes.py` | Dias de atendimento |
+| `rotas/configuracoes.py` | Dias de atendimento, SMTP, backup remoto, centro, PIX, pendrive |
 | `rotas/trabalhadores.py` | Voluntários, presença, agenda |
 | `rotas/financeiro.py` | Movimentações, mensalidades, PIX |
 | `rotas/biblioteca.py` | Acervo, ISBN/OpenLibrary, empréstimos, vendas |
 | `rotas/doacoes.py` | Cestas básicas, rastreamento |
 | `rotas/mala_direta.py` | Envio em massa WhatsApp/email |
-| `rotas/permissoes.py` | Controle RBAC (preparação) |
+| `rotas/permissoes.py` | Controle RBAC (grupos + permissões Unix ler/escrever/apagar) |
+| `rotas/caixa.py` | PDV, produtos, caixas, QR Code PIX, histórico de vendas, comprovante |
 
 ---
 
@@ -486,6 +655,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 - **Parâmetros SQL:** `%s` (psycopg2), nunca `?` (SQLite)
 - **Datas:** armazenadas como `TEXT` `YYYY-MM-DD`; exibidas via filtro Jinja2 `data_br`
 - **Telefones:** formato `(XX) XXXXX-XXXX`
+- **Ordem de rotas:** rotas com parâmetro dinâmico (`/{id}`) sempre **por último** no módulo — evita conflito com `/buscar`, `/novo` etc. (vale para `rotas/pessoas.py`, `rotas/caixa.py`, etc.)
 
 ---
 
@@ -504,7 +674,7 @@ O script `instalar.sh` faz tudo: verifica Python, cria venv, instala dependênci
 ### Desenvolvimento
 
 ```bash
-cd ~/shambala
+cd /nc/projetos/shambala
 .venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -523,14 +693,19 @@ sudo journalctl -u shamballa -f     # logs ao vivo
 pg_dump -h localhost -U shambala shambala | gzip > backup-$(date +%Y-%m-%d).sql.gz
 
 # Restaurar
-gunzip < backup-2026-04-12.sql.gz | psql -h localhost -U shambala shambala
+gunzip < backup-2026-05-18.sql.gz | psql -h localhost -U shambala shambala
+```
+
+### Git/GitHub
+```bash
+git push github main   # remote chama-se "github", não "origin"
 ```
 
 ### Atualização
 
 ```bash
-cd ~/shambala
-git pull
+cd /nc/projetos/shambala
+git pull github main
 .venv/bin/pip install -r requirements.txt
 sudo systemctl restart shamballa
 ```
@@ -554,12 +729,15 @@ sudo systemctl restart shamballa
 | Problema | Causa | Solução |
 |---|---|---|
 | 404 em `/cadastros/pessoas/123` | Rota `/{id}` não está por última | Reorganizar rotas em `pessoas.py` |
+| 404 em `/caixa/produtos/buscar` | Mesma causa, em `caixa.py` | `buscar` e `novo` devem vir antes de `/{id}/editar` |
 | Nomes aparecem errados | Não capitalizados | Rodar `maiusculas.py --aplicar` |
 | Dashboard vazio | Dia não foi aberto | Acessar `/dia` e abrir dia de trabalho |
 | Última chamada não aparece | WebSocket desconectado | Recarregar `/chamada` |
 | Erro ao conectar banco | PostgreSQL offline | `sudo systemctl status postgresql` |
 | "relation does not exist" | Tabelas não criadas | Rodar `python3 banco.py` |
+| "relation chaves_pix does not exist" | Tabela não está em banco.py | Criar manualmente ou adicionar ao banco.py |
 | Erro ao encerrar dia | Backup falhando | Verificar espaço em disco, permissões |
+| QR Code PIX não aparece no segundo monitor | WebSocket desconectado | Recarregar `/caixa/qrcode` |
 
 ---
 
@@ -570,10 +748,9 @@ sudo systemctl restart shamballa
 | Sistema (recepção) | `http://<IP-DO-SERVIDOR>:8000` |
 | Dashboard | `http://<IP-DO-SERVIDOR>:8000/dia/dashboard` |
 | Tela de chamada | `http://<IP-DO-SERVIDOR>:8000/chamada` |
+| PDV | `http://<IP-DO-SERVIDOR>:8000/caixa/pdv` |
+| Segundo monitor PDV | `http://<IP-DO-SERVIDOR>:8000/caixa/qrcode` |
 | Login padrão | admin / admin |
-
-A tela de chamada fica num **dispositivo dedicado** conectado ao monitor do auditório,
-abrindo `/chamada` em tela cheia (F11). Não precisa de login.
 
 ---
 
@@ -584,7 +761,8 @@ shambala/
 ├── main.py                          # App FastAPI principal
 ├── banco.py                         # Conexões PostgreSQL, tabelas, migrações
 ├── templates_config.py              # Instância Jinja2 centralizada
-├── backup.py                        # Backup via pg_dump
+├── backup.py                        # Backup via pg_dump + SCP remoto
+├── backup_pendrive.py               # Backup em pendrive/HD externo
 ├── maiusculas.py                    # Script: capitaliza nomes
 ├── normalizar_telefones.py          # Script: padroniza telefones
 ├── requirements.txt                 # Dependências Python
@@ -593,10 +771,9 @@ shambala/
 ├── abrir-chamada.sh                 # Abre tela de chamada no navegador
 ├── gerar_pacote.sh                  # Gera pacote para transferência
 ├── .env.example                     # Template de configuração
-├── .gitignore                       # Arquivos ignorados pelo git
-├── shamballa.service                # Systemd service (USUARIO substituído na instalação)
+├── .gitignore
+├── shamballa.service                # Systemd service
 ├── rotas/
-│   ├── __init__.py
 │   ├── auth.py                      # /login, /logout, sessões
 │   ├── pessoas.py                   # /cadastros/pessoas
 │   ├── mediuns.py                   # /cadastros/mediuns
@@ -607,12 +784,13 @@ shambala/
 │   ├── chamada.py                   # /chamada — WebSocket
 │   ├── agenda.py                    # /agenda
 │   ├── relatorios.py                # /relatorios
-│   ├── configuracoes.py             # /configuracoes
+│   ├── configuracoes.py             # /configuracoes (dias, smtp, backup, centro, pix, pendrive)
 │   ├── mala_direta.py               # /mala-direta
 │   ├── financeiro.py                # /financeiro
 │   ├── biblioteca.py                # /biblioteca
 │   ├── doacoes.py                   # /doacoes
-│   └── permissoes.py                # /permissoes (RBAC)
+│   ├── permissoes.py                # /cadastros/permissoes (RBAC)
+│   └── caixa.py                     # /caixa — PDV, produtos, vendas, QR PIX
 ├── templates/
 │   ├── base.html
 │   ├── login.html
@@ -624,20 +802,31 @@ shambala/
 │   ├── dia/
 │   ├── checkin/
 │   ├── configuracoes/
+│   │   ├── index.html
+│   │   ├── pix.html
+│   │   └── backup_pendrive.html
 │   ├── mala_direta/
 │   ├── financeiro/
 │   ├── biblioteca/
-│   └── doacoes/
+│   ├── doacoes/
+│   └── caixa/
+│       ├── pdv.html
+│       ├── qrcode.html
+│       ├── vendas.html
+│       ├── produtos.html
+│       ├── produto_form.html
+│       ├── caixas.html
+│       └── comprovante.html
 ├── static/
 │   ├── css/base.css
 │   ├── js/cep.js
-│   └── logos/
-└── .venv/                           # Virtual environment (após instalação)
+│   └── logos/                       # Logos do centro (upload via configurações)
+└── .venv/                           # Virtual environment
 ```
 
 ---
 
-## Estado do projeto (2026-04-12)
+## Estado do projeto (2026-05-18)
 
 **Em produção. Publicado no GitHub (GPL-3.0).**
 
@@ -648,21 +837,29 @@ shambala/
 - ✅ Painel "Última chamada" com WebSocket
 - ✅ Validação de senha duplicada e acompanhantes
 - ✅ Agendamentos automáticos e planos de tratamento
-- ✅ Agenda global com agendamento avulso
+- ✅ Agenda global com agendamento avulso e paginação por mês
 - ✅ Relatórios completos
 - ✅ Tela de chamada WebSocket em monitor dedicado
 - ✅ Dias de atendimento configuráveis
 - ✅ Gestão de trabalhadores com presença
 - ✅ Mala direta via WhatsApp e email
-- ✅ Financeiro: movimentações, mensalidades, PIX
+- ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas
 - ✅ Doações: cestas básicas com rastreamento
 - ✅ Capitalização inteligente de nomes
 - ✅ Banco PostgreSQL com pool de conexões
+- ✅ RBAC: grupos e permissões Unix (ler/escrever/apagar) por módulo
+- ✅ Configurações: SMTP, backup remoto, nome/logo do centro
+- ✅ Backup em pendrive/HD externo (configurável via web)
+- ✅ **Caixa/PDV completo** (carrinho, espécie, PIX QR Code, segundo monitor WebSocket)
+- ✅ Comprovante imprimível (layout 80mm para impressora térmica)
+- ✅ Gestão de chaves PIX (múltiplas, vinculadas a caixa)
+- ✅ Excluir pessoa mesmo com check-in registrado
 
-### Próximos passos recomendados
-- 🔄 Completar RBAC (usar tabelas `grupos` e `grupos_permissoes`)
-- 📧 Implementar envio de emails via SMTP
-- 📊 Expandir relatórios com filtros de período
+### Pendências conhecidas
+- 🔧 `chaves_pix` e `caixas.chave_pix_id` não estão em `banco.py` (tabela existe mas não é criada automaticamente na instalação limpa)
+- ✅ Impressora Elgin i9 (térmica ESC/POS) em `/dev/ttyUSB0` — endpoint `POST /caixa/vendas/{id}/imprimir` escreve bytes ESC/POS direto no dispositivo (negrito, alinhamento, total em tamanho duplo, corte parcial)
+- 📧 Implementar envio de emails via SMTP (configuração já existe)
 - 🔐 Logs de auditoria para movimentações financeiras
+- 📊 Expandir relatórios com filtros de período
 - 📱 PWA para acesso mobile

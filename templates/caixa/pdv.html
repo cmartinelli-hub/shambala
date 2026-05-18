@@ -205,7 +205,13 @@
 {% else %}
 {# ── PDV ativo ── #}
 {% if request.query_params.get('ok') %}
-<div class="pdv-ok">✅ Venda #{{ request.query_params.get('ok') }} registrada com sucesso!</div>
+<div class="pdv-ok" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+    <span>✅ Venda #{{ request.query_params.get('ok') }} registrada com sucesso!</span>
+    <button class="btn btn-primario btn-sm"
+            onclick="window.open('/caixa/vendas/{{ request.query_params.get('ok') }}/comprovante','_blank')">
+        &#x1F5A8; Imprimir Comprovante
+    </button>
+</div>
 {% endif %}
 
 <div class="pdv-wrap">
@@ -442,7 +448,7 @@ function calcTroco() {
 document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
     const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
     if (!total) return;
-    const res = await fetch(`/caixa/pix-qr?valor=${total.toFixed(2)}`);
+    const res = await fetch(`/caixa/pix-qr?valor=${total.toFixed(2)}&caixa_id={{ caixa_sel.id }}`);
     const dados = await res.json();
     const qrInline = document.getElementById('pdv-qr-inline');
     document.getElementById('pdv-qr-img').src = `data:image/png;base64,${dados.qr_base64}`;

@@ -13,6 +13,8 @@ from templates_config import templates
 
 router = APIRouter(prefix="/caixa")
 
+IMPRESSORA_DISPOSITIVO = "/dev/ttyUSB0"
+
 
 def _guard(request: Request):
     atendente = obter_atendente_logado(request)
@@ -135,6 +137,33 @@ async def finalizar_venda(
                  float(item["subtotal"]))
             )
 
+        caixa_row = conn.execute(
+            "SELECT nome FROM caixas WHERE id=%s", (caixa_id,)
+        ).fetchone()
+        centro = conn.execute(
+            "SELECT chave, valor FROM configuracoes_centro"
+        ).fetchall()
+
+    centro_nome = {r["chave"]: r["valor"] for r in centro}.get("centro_nome", "Centro Espírita")
+    venda_dict = {
+        "id": venda_id,
+        "caixa_nome": caixa_row["nome"] if caixa_row else "",
+        "atendente_nome": atendente.get("nome_completo", ""),
+        "total": total,
+        "forma_pagamento": forma_pagamento,
+        "troco": troco,
+        "data_venda": date.today().isoformat(),
+    }
+    itens_dict = [
+        {"nome_produto": i["nome"], "quantidade": i["quantidade"],
+         "preco_unitario": float(i["preco_unitario"]), "subtotal": float(i["subtotal"])}
+        for i in itens
+    ]
+    try:
+        _imprimir_escpos(venda_dict, itens_dict, centro_nome)
+    except Exception:
+        pass  # falha na impressora não bloqueia a venda
+
     # Sinaliza ao segundo monitor que a venda foi concluída
     import asyncio
     asyncio.create_task(_gerenciador_qr.transmitir({"tipo": "confirmado"}))
@@ -148,7 +177,7 @@ async def finalizar_venda(
 # ── API: gerar QR Code PIX ────────────────────────────────────────────────────
 
 @router.get("/pix-qr", response_class=JSONResponse)
-async def gerar_pix_qr(request: Request, valor: str = "0"):
+async def gerar_pix_qr(request: Request, valor: str = "0", caixa_id: int = 0):
     atendente = obter_atendente_logado(request)
     if not atendente:
         return JSONResponse({}, status_code=401)
@@ -156,10 +185,20 @@ async def gerar_pix_qr(request: Request, valor: str = "0"):
     valor_float = float(valor or 0)
 
     with conectar() as conn:
-        row = conn.execute(
-            "SELECT valor FROM configuracoes_smtp WHERE chave = 'smtp_pix_chave'"
-        ).fetchone()
-        chave = row["valor"] if row else ""
+        if caixa_id:
+            row = conn.execute(
+                """SELECT p.chave FROM caixas c
+                   JOIN chaves_pix p ON p.id = c.chave_pix_id
+                   WHERE c.id = %s AND p.ativa = TRUE""",
+                (caixa_id,)
+            ).fetchone()
+        else:
+            row = None
+        if not row:
+            row = conn.execute(
+                "SELECT chave FROM chaves_pix WHERE ativa = TRUE LIMIT 1"
+            ).fetchone()
+        chave = row["chave"] if row else ""
 
     pix_code = _gerar_payload_pix(chave, valor_float, "Shambala")
 
@@ -233,6 +272,48 @@ async def cancelar_venda(request: Request, id: int):
 
     caixa_id = v["caixa_id"] if v else 0
     return RedirectResponse(url=f"/caixa/vendas?caixa_id={caixa_id}", status_code=303)
+
+
+@router.get("/vendas/{id}/comprovante", response_class=HTMLResponse)
+async def comprovante_venda(request: Request, id: int):
+    with conectar() as conn:
+        venda = conn.execute(
+            """SELECT v.*, c.nome AS caixa_nome, a.nome_completo AS atendente_nome
+               FROM vendas_pdv v
+               JOIN caixas c ON c.id = v.caixa_id
+               LEFT JOIN atendentes a ON a.id = v.atendente_id
+               WHERE v.id = %s""",
+            (id,)
+        ).fetchone()
+
+        if not venda:
+            return HTMLResponse("<p>Venda nao encontrada.</p>", status_code=404)
+
+        itens = conn.execute(
+            """SELECT nome_produto, quantidade, preco_unitario, subtotal
+               FROM vendas_pdv_itens
+               WHERE venda_id = %s
+               ORDER BY id""",
+            (id,)
+        ).fetchall()
+
+        centro = conn.execute(
+            "SELECT chave, valor FROM configuracoes_centro"
+        ).fetchall()
+        cfg = {}
+        for r in centro:
+            cfg[r["chave"]] = r["valor"]
+        centro_nome = cfg.get("centro_nome", "Centro Espirita")
+
+    recibo = _gerar_recibo(venda, itens, centro_nome)
+
+    return templates.TemplateResponse("caixa/comprovante.html", {
+        "request": request,
+        "venda": dict(venda),
+        "centro_nome": centro_nome,
+        "itens": [dict(i) for i in itens],
+        "recibo": recibo,
+    })
 
 
 # ── Produtos ──────────────────────────────────────────────────────────────────
@@ -402,12 +483,21 @@ async def listar_caixas(request: Request):
         return redir
 
     with conectar() as conn:
-        caixas = conn.execute("SELECT * FROM caixas ORDER BY nome").fetchall()
+        caixas = conn.execute(
+            """SELECT c.*, p.nome AS pix_nome, p.chave AS pix_chave
+               FROM caixas c
+               LEFT JOIN chaves_pix p ON p.id = c.chave_pix_id
+               ORDER BY c.nome"""
+        ).fetchall()
+        chaves_pix = conn.execute(
+            "SELECT id, nome, chave FROM chaves_pix WHERE ativa = TRUE ORDER BY nome"
+        ).fetchall()
 
     return templates.TemplateResponse("caixa/caixas.html", {
         "request": request,
         "atendente": atendente,
         "caixas": [dict(c) for c in caixas],
+        "chaves_pix": [dict(p) for p in chaves_pix],
     })
 
 
@@ -416,16 +506,30 @@ async def novo_caixa(
     request: Request,
     nome: str = Form(...),
     descricao: str = Form(""),
+    chave_pix_id: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
+    pix_id = int(chave_pix_id) if chave_pix_id else None
     with conectar() as conn:
         conn.execute(
-            "INSERT INTO caixas (nome, descricao) VALUES (%s, %s) ON CONFLICT (nome) DO NOTHING",
-            (nome.strip(), descricao.strip())
+            "INSERT INTO caixas (nome, descricao, chave_pix_id) VALUES (%s, %s, %s) ON CONFLICT (nome) DO NOTHING",
+            (nome.strip(), descricao.strip(), pix_id)
         )
+    return RedirectResponse(url="/caixa/caixas", status_code=303)
+
+
+@router.post("/caixas/{id}/pix")
+async def atualizar_pix_caixa(request: Request, id: int, chave_pix_id: str = Form("")):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    pix_id = int(chave_pix_id) if chave_pix_id else None
+    with conectar() as conn:
+        conn.execute("UPDATE caixas SET chave_pix_id = %s WHERE id = %s", (pix_id, id))
     return RedirectResponse(url="/caixa/caixas", status_code=303)
 
 
@@ -444,6 +548,152 @@ async def toggle_ativo_caixa(request: Request, id: int):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+@router.post("/vendas/{id}/imprimir")
+async def imprimir_venda(request: Request, id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return JSONResponse({"erro": "Não autenticado"}, status_code=401)
+
+    with conectar() as conn:
+        venda = conn.execute(
+            """SELECT v.*, c.nome AS caixa_nome, a.nome_completo AS atendente_nome
+               FROM vendas_pdv v
+               JOIN caixas c ON c.id = v.caixa_id
+               LEFT JOIN atendentes a ON a.id = v.atendente_id
+               WHERE v.id = %s""",
+            (id,)
+        ).fetchone()
+
+        if not venda:
+            return JSONResponse({"erro": "Venda não encontrada"}, status_code=404)
+
+        itens = conn.execute(
+            """SELECT nome_produto, quantidade, preco_unitario, subtotal
+               FROM vendas_pdv_itens WHERE venda_id = %s ORDER BY id""",
+            (id,)
+        ).fetchall()
+
+        centro = conn.execute("SELECT chave, valor FROM configuracoes_centro").fetchall()
+        cfg = {r["chave"]: r["valor"] for r in centro}
+        centro_nome = cfg.get("centro_nome", "Centro Espírita")
+
+    try:
+        _imprimir_escpos(dict(venda), [dict(i) for i in itens], centro_nome)
+        return JSONResponse({"ok": True})
+    except FileNotFoundError:
+        return JSONResponse({"erro": f"Impressora não encontrada em {IMPRESSORA_DISPOSITIVO}"}, status_code=503)
+    except PermissionError:
+        return JSONResponse({"erro": f"Sem permissão para acessar {IMPRESSORA_DISPOSITIVO}"}, status_code=503)
+    except Exception as e:
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
+
+def _imprimir_escpos(venda: dict, itens: list, centro_nome: str):
+    from datetime import datetime
+
+    ESC = b'\x1b'
+    GS  = b'\x1d'
+    LF  = b'\n'
+
+    INIT          = ESC + b'@'
+    ALINHAR_ESQU  = ESC + b'a\x00'
+    ALINHAR_CENT  = ESC + b'a\x01'
+    ALINHAR_DIR   = ESC + b'a\x02'
+    NEGRITO_ON    = ESC + b'E\x01'
+    NEGRITO_OFF   = ESC + b'E\x00'
+    DUPLO_ON      = GS  + b'!\x11'   # largura×2, altura×2
+    DUPLO_OFF     = GS  + b'!\x00'
+    SUBLINHADO_ON = ESC + b'-\x01'
+    SUBLINHADO_OFF= ESC + b'-\x00'
+    CORTAR        = GS  + b'V\x42\x05'  # partial cut + avanço 5mm
+
+    COLS = 42  # colunas na fonte normal (80 mm)
+
+    def txt(s: str) -> bytes:
+        return s.encode('cp860', errors='replace')
+
+    def linha(s: str = '') -> bytes:
+        return txt(s) + LF
+
+    def separador(c: str = '-') -> bytes:
+        return linha(c * COLS)
+
+    now = datetime.now()
+
+    buf = bytearray()
+    buf += INIT
+
+    # ── Cabeçalho ──────────────────────────────────────────────────────────────
+    buf += ALINHAR_CENT
+    buf += NEGRITO_ON
+    buf += linha(centro_nome[:COLS])
+    buf += NEGRITO_OFF
+    buf += LF
+    buf += linha(f"Comanda #{venda['id']}")
+    buf += linha(now.strftime("%d/%m/%Y   %H:%M"))
+    buf += linha(f"Caixa: {venda['caixa_nome']}")
+    if venda.get('atendente_nome'):
+        buf += linha(f"Atend.: {venda['atendente_nome'][:32]}")
+    buf += ALINHAR_ESQU
+    buf += separador()
+
+    # ── Itens ──────────────────────────────────────────────────────────────────
+    # Cabeçalho de coluna
+    buf += NEGRITO_ON
+    buf += linha(f"{'Qtd':<4} {'Produto':<24} {'Total':>12}")
+    buf += NEGRITO_OFF
+    buf += separador()
+
+    for item in itens:
+        nome = item['nome_produto']
+        qtd  = item['quantidade']
+        sub  = _fmt_valor(float(item['subtotal']))
+
+        # Nome longo quebra em segunda linha
+        primeira = nome[:24]
+        resto    = nome[24:]
+        buf += linha(f"{qtd:<4} {primeira:<24} {sub:>12}")
+        while resto:
+            buf += linha(f"{'':5} {resto[:24]}")
+            resto = resto[24:]
+
+    buf += separador()
+
+    # ── Total em destaque ──────────────────────────────────────────────────────
+    buf += ALINHAR_CENT
+    buf += NEGRITO_ON
+    buf += DUPLO_ON
+    buf += linha(f"TOTAL {_fmt_valor(float(venda['total']))}")
+    buf += DUPLO_OFF
+    buf += NEGRITO_OFF
+    buf += LF
+
+    # ── Forma de pagamento ─────────────────────────────────────────────────────
+    buf += ALINHAR_ESQU
+    pgto = "Espécie" if venda['forma_pagamento'] == 'especie' else 'PIX'
+    buf += NEGRITO_ON
+    buf += linha(f"Pagamento: {pgto}")
+    buf += NEGRITO_OFF
+    if venda['forma_pagamento'] == 'especie':
+        troco = float(venda.get('troco') or 0)
+        if troco > 0:
+            recebido = float(venda['total']) + troco
+            buf += linha(f"Recebido:  {_fmt_valor(recebido)}")
+            buf += linha(f"Troco:     {_fmt_valor(troco)}")
+
+    # ── Rodapé ─────────────────────────────────────────────────────────────────
+    buf += separador()
+    buf += ALINHAR_CENT
+    buf += linha("Obrigado pela preferência!")
+    buf += LF
+    buf += LF
+    buf += LF
+    buf += CORTAR
+
+    with open(IMPRESSORA_DISPOSITIVO, 'wb') as f:
+        f.write(bytes(buf))
+
 
 def _fmt_produto(p: dict) -> dict:
     return {
@@ -483,6 +733,58 @@ def _gerar_payload_pix(chave: str, valor: float, descricao: str = "") -> str:
     payload += _tlv("62", _tlv("05", "***"))
     payload += "6304"
     return payload + _crc16(payload)
+
+
+def _gerar_recibo(venda, itens, centro_nome: str) -> str:
+    """Gera texto formatado para impressora de cupom 80 colunas."""
+    from datetime import datetime
+
+    L = 66
+    now = datetime.now()
+    data_str = now.strftime("%d/%m/%Y")
+    hora_str = now.strftime("%H:%M")
+
+    linhas = []
+    linhas.append(centro_nome.center(L))
+    linhas.append("")
+    linhas.append(f"COMPROVANTE DE VENDA #{venda['id']}".center(L))
+    linhas.append(f"Data: {data_str}    Hora: {hora_str}")
+    linhas.append(f"Caixa: {venda['caixa_nome']}")
+    if venda.get("atendente_nome"):
+        linhas.append(f"Atendente: {venda['atendente_nome']}")
+    linhas.append("-" * L)
+    linhas.append(f"{'Qtd':>3}  {'Produto':<36}  {'Pr.Un.':>8}  {'Subtotal':>10}")
+    linhas.append("-" * L)
+
+    for item in itens:
+        nome = item["nome_produto"][:36]
+        qtd = item["quantidade"]
+        pu = _fmt_valor(float(item["preco_unitario"]))
+        sub = _fmt_valor(float(item["subtotal"]))
+        linhas.append(f"{qtd:>3}  {nome:<36}  {pu:>8}  {sub:>10}")
+
+    linhas.append("-" * L)
+    total_str = _fmt_valor(float(venda["total"]))
+    linhas.append(f"TOTAL:".rjust(L - len(total_str) - 1) + " " + total_str)
+    linhas.append("")
+
+    pgto = "Especie" if venda["forma_pagamento"] == "especie" else "PIX"
+    linhas.append(f"Forma de pagamento: {pgto}")
+    if venda["forma_pagamento"] == "especie":
+        recebido = float(venda.get("total", 0)) + float(venda.get("troco", 0))
+        linhas.append(f"Valor recebido: {_fmt_valor(recebido)}")
+        if float(venda.get("troco", 0)) > 0:
+            linhas.append(f"Troco: {_fmt_valor(float(venda['troco']))}")
+    linhas.append("")
+    linhas.append("-" * L)
+    linhas.append("OBRIGADO PELA PREFERENCIA!".center(L))
+    linhas.append("Volte sempre!".center(L))
+
+    return "\n".join(linhas)
+
+
+def _fmt_valor(v: float) -> str:
+    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 _CATEGORIAS = [

@@ -393,6 +393,75 @@ async def testar_backup_pendrive(request: Request):
         return JSONResponse({"erro": msg}, status_code=400)
 
 
+# ── Configuração de Chaves PIX ───────────────────────────────────────────────
+
+_TIPOS_PIX = [
+    ("cpf",       "CPF"),
+    ("cnpj",      "CNPJ"),
+    ("email",     "E-mail"),
+    ("telefone",  "Telefone"),
+    ("aleatoria", "Chave aleatória"),
+]
+
+
+@router.get("/pix", response_class=HTMLResponse)
+async def pagina_pix(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        chaves = conn.execute(
+            "SELECT id, nome, tipo, chave, cidade, ativa FROM chaves_pix ORDER BY ativa DESC, id"
+        ).fetchall()
+    return templates.TemplateResponse("configuracoes/pix.html", {
+        "request": request,
+        "atendente": atendente,
+        "chaves": [dict(r) for r in chaves],
+        "tipos_pix": _TIPOS_PIX,
+    })
+
+
+@router.post("/pix/novo")
+async def nova_chave_pix(
+    request: Request,
+    nome: str = Form(...),
+    tipo: str = Form(...),
+    chave: str = Form(...),
+    cidade: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        conn.execute(
+            "INSERT INTO chaves_pix (nome, tipo, chave, cidade) VALUES (%s, %s, %s, %s)",
+            (nome.strip(), tipo.strip(), chave.strip(), cidade.strip() or None),
+        )
+    return RedirectResponse(url="/configuracoes/pix", status_code=303)
+
+
+@router.post("/pix/{pix_id}/toggle")
+async def toggle_chave_pix(request: Request, pix_id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE chaves_pix SET ativa = NOT ativa WHERE id = %s", (pix_id,)
+        )
+    return RedirectResponse(url="/configuracoes/pix", status_code=303)
+
+
+@router.post("/pix/{pix_id}/remover")
+async def remover_chave_pix(request: Request, pix_id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        conn.execute("DELETE FROM chaves_pix WHERE id = %s", (pix_id,))
+    return RedirectResponse(url="/configuracoes/pix", status_code=303)
+
+
 @router.post("/backup-pendrive/executar")
 async def executar_backup_pendrive(request: Request):
     atendente, redir = _guard(request)

@@ -19,6 +19,15 @@
                 <label>Descrição</label>
                 <input type="text" name="descricao" placeholder="Opcional">
             </div>
+            <div class="campo campo-largo">
+                <label>Chave PIX</label>
+                <select name="chave_pix_id">
+                    <option value="">— Nenhuma —</option>
+                    {% for p in chaves_pix %}
+                    <option value="{{ p.id }}">{{ p.nome }} ({{ p.chave }})</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
         <div class="acoes-form">
             <button type="submit" class="btn btn-primario">Adicionar</button>
@@ -32,6 +41,7 @@
         <tr>
             <th>Nome</th>
             <th>Descrição</th>
+            <th>Chave PIX</th>
             <th>Situação</th>
             <th>Ações</th>
         </tr>
@@ -41,6 +51,19 @@
     <tr style="{% if not c.ativo %}opacity:.5{% endif %}">
         <td><strong>{{ c.nome }}</strong></td>
         <td>{{ c.descricao or '—' }}</td>
+        <td>
+            <form method="post" action="/caixa/caixas/{{ c.id }}/pix" style="margin:0;display:flex;gap:.3rem;align-items:center">
+                <select name="chave_pix_id" style="font-size:.85rem;padding:.2rem .4rem">
+                    <option value="">— Nenhuma —</option>
+                    {% for p in chaves_pix %}
+                    <option value="{{ p.id }}" {% if p.id == c.chave_pix_id %}selected{% endif %}>
+                        {{ p.nome }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-secundario" title="Salvar chave PIX">💾</button>
+            </form>
+        </td>
         <td>
             {% if c.ativo %}
                 <span style="color:#1da851;font-weight:600">Ativo</span>
