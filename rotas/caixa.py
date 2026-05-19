@@ -644,26 +644,30 @@ def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str) -> bytes:
     buf += ALINHAR_ESQU
     buf += separador()
 
-    # ── Itens ──────────────────────────────────────────────────────────────────
-    # Cabeçalho de coluna
-    buf += NEGRITO_ON
-    buf += linha(f"{'Qtd':<4} {'Produto':<24} {'Total':>12}")
-    buf += NEGRITO_OFF
-    buf += separador()
+    # ── Itens em fonte dupla (2×2 = ~21 chars por linha) ─────────────────────
+    COLS2 = 21  # colunas em fonte dupla
 
+    buf += separador()
+    buf += DUPLO_ON
     for item in itens:
-        nome = item['nome_produto']
+        nome = item['nome_produto'].upper()
         qtd  = item['quantidade']
         sub  = _fmt_valor(float(item['subtotal']))
 
-        # Nome longo quebra em segunda linha
-        primeira = nome[:24]
-        resto    = nome[24:]
-        buf += linha(f"{qtd:<4} {primeira:<24} {sub:>12}")
+        # Linha 1: quantidade + nome (truncado se necessário)
+        prefixo = f"{qtd}x "
+        espaco_nome = COLS2 - len(prefixo)
+        primeira = nome[:espaco_nome]
+        resto    = nome[espaco_nome:]
+        buf += linha(prefixo + primeira)
         while resto:
-            buf += linha(f"{'':5} {resto[:24]}")
-            resto = resto[24:]
+            buf += linha(f"   {resto[:COLS2 - 3]}")
+            resto = resto[COLS2 - 3:]
 
+        # Linha 2: subtotal alinhado à direita
+        buf += linha(sub.rjust(COLS2))
+
+    buf += DUPLO_OFF
     buf += separador()
 
     # ── Total em destaque ──────────────────────────────────────────────────────

@@ -1,10 +1,14 @@
 #!/bin/bash
 # Instala o agente de impressão ESC/POS no PC do caixa.
-# Execute como root: sudo bash instalar_agente.sh
+# Execute como root: sudo bash instalar_agente.sh [IP_DO_SERVIDOR]
+#
+# O script baixa agente_impressora.py do servidor Shambala via HTTP.
+# Se não conseguir, coloque o arquivo na mesma pasta e rode de novo.
 
 set -e
 
-SERVIDOR="10.100.0.4"
+SERVIDOR="${1:-192.168.0.2}"
+PORTA="8000"
 DESTINO="/opt/agente_impressora"
 USUARIO="agente-impressora"
 SERVICO="agente-impressora"
@@ -14,9 +18,24 @@ echo "=== Instalando agente de impressão Shambala ==="
 # 1. Criar diretório
 mkdir -p "$DESTINO"
 
-# 2. Copiar o script do servidor
-scp "root@${SERVIDOR}:/opt/shambala/agente_impressora.py" "$DESTINO/"
+# 2. Obter agente_impressora.py
+SCRIPT_LOCAL="$(dirname "$0")/agente_impressora.py"
+if [ -f "$SCRIPT_LOCAL" ]; then
+    echo "Usando agente_impressora.py do diretório atual."
+    cp "$SCRIPT_LOCAL" "$DESTINO/"
+else
+    echo "Baixando agente_impressora.py de http://${SERVIDOR}:${PORTA}/static/agente_impressora.py ..."
+    if ! curl -fsSL "http://${SERVIDOR}:${PORTA}/static/agente_impressora.py" -o "$DESTINO/agente_impressora.py" 2>/dev/null; then
+        echo ""
+        echo "ERRO: Não foi possível baixar o arquivo automaticamente."
+        echo "Copie agente_impressora.py para esta pasta e execute o script novamente:"
+        echo "  cp /caminho/agente_impressora.py $(dirname "$0")/"
+        echo "  sudo bash $0"
+        exit 1
+    fi
+fi
 chmod +x "$DESTINO/agente_impressora.py"
+echo "Arquivo instalado em $DESTINO/agente_impressora.py"
 
 # 3. Criar usuário dedicado (sem login, sem home)
 if ! id "$USUARIO" &>/dev/null; then
@@ -53,4 +72,4 @@ echo ""
 echo "=== Concluído ==="
 systemctl status "$SERVICO" --no-pager
 echo ""
-echo "Teste: curl -X POST http://localhost:9001/imprimir --data-binary '' -v"
+echo "Para testar: curl -s http://localhost:9001/imprimir -X POST | cat"
