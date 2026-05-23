@@ -8,7 +8,14 @@
 </div>
 
 <div class="card-form" style="margin-bottom:1.5rem">
-    <h3 style="margin-bottom:1rem">+ Nova Chave PIX</h3>
+    <h3 style="margin-bottom:.6rem">+ Nova Chave PIX</h3>
+    <p style="font-size:.82rem;color:#666;margin-bottom:1rem;line-height:1.5">
+        Formatos aceitos:
+        <strong>CPF/CNPJ</strong> — apenas dígitos, sem pontos ou traços &nbsp;•&nbsp;
+        <strong>Telefone</strong> — com +55 e DDD, ex: +5524999999999 &nbsp;•&nbsp;
+        <strong>E-mail</strong> — endereço de e-mail completo &nbsp;•&nbsp;
+        <strong>Chave aleatória</strong> — UUID fornecido pelo banco
+    </p>
     <form method="post" action="/configuracoes/pix/novo">
         <div class="grade-form">
             <div class="campo">
@@ -66,6 +73,11 @@
                 </form>
             </td>
             <td>
+                <button type="button" class="btn btn-sm btn-secundario"
+                        style="padding:.15rem .4rem;font-size:.75rem"
+                        onclick="abrirEditar({{ c.id }}, '{{ c.nome|replace("'", "\\'") }}', '{{ c.tipo }}', '{{ c.chave|replace("'", "\\'") }}', '{{ (c.cidade or '')|replace("'", "\\'") }}')">
+                    ✏ Editar
+                </button>
                 <form method="post" action="/configuracoes/pix/{{ c.id }}/remover" style="display:inline"
                       onsubmit="return confirm('Remover chave PIX {{ c.nome }}?')">
                     <button type="submit" class="btn btn-perigo btn-sm" style="padding:.15rem .4rem;font-size:.75rem">🗑️</button>
@@ -78,4 +90,55 @@
 {% else %}
 <p class="dica">Nenhuma chave PIX cadastrada.</p>
 {% endif %}
+
+<!-- Modal de edição -->
+<div id="modal-editar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:10px;padding:1.5rem;width:100%;max-width:480px;margin:1rem">
+        <h3 style="margin-bottom:1rem">Editar Chave PIX</h3>
+        <form id="form-editar" method="post" action="">
+            <label style="display:block;margin-bottom:.25rem;font-size:.9rem">Nome *</label>
+            <input id="edit-nome" type="text" name="nome" required
+                   style="width:100%;padding:.6rem;border:1px solid #ced4da;border-radius:6px;margin-bottom:.8rem;font-size:1rem">
+
+            <label style="display:block;margin-bottom:.25rem;font-size:.9rem">Tipo *</label>
+            <select id="edit-tipo" name="tipo" required
+                    style="width:100%;padding:.6rem;border:1px solid #ced4da;border-radius:6px;margin-bottom:.8rem;font-size:1rem">
+                {% for valor, rotulo in tipos_pix %}
+                <option value="{{ valor }}">{{ rotulo }}</option>
+                {% endfor %}
+            </select>
+
+            <label style="display:block;margin-bottom:.25rem;font-size:.9rem">Chave PIX *</label>
+            <input id="edit-chave" type="text" name="chave" required
+                   style="width:100%;padding:.6rem;border:1px solid #ced4da;border-radius:6px;margin-bottom:.8rem;font-size:1rem">
+
+            <label style="display:block;margin-bottom:.25rem;font-size:.9rem">Cidade</label>
+            <input id="edit-cidade" type="text" name="cidade"
+                   style="width:100%;padding:.6rem;border:1px solid #ced4da;border-radius:6px;margin-bottom:1.2rem;font-size:1rem">
+
+            <div style="display:flex;gap:.8rem;justify-content:flex-end">
+                <button type="button" class="btn btn-secundario" onclick="fecharModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primario">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function abrirEditar(id, nome, tipo, chave, cidade) {
+    document.getElementById('form-editar').action = '/configuracoes/pix/' + id + '/editar';
+    document.getElementById('edit-nome').value = nome;
+    document.getElementById('edit-tipo').value = tipo;
+    document.getElementById('edit-chave').value = chave;
+    document.getElementById('edit-cidade').value = cidade;
+    const m = document.getElementById('modal-editar');
+    m.style.display = 'flex';
+}
+function fecharModal() {
+    document.getElementById('modal-editar').style.display = 'none';
+}
+document.getElementById('modal-editar').addEventListener('click', function(e) {
+    if (e.target === this) fecharModal();
+});
+</script>
 {% endblock %}

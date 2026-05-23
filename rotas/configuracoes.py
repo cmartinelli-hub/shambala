@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Request, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
@@ -395,6 +397,22 @@ async def testar_backup_pendrive(request: Request):
 
 # ── Configuração de Chaves PIX ───────────────────────────────────────────────
 
+def _normalizar_chave_pix(chave: str, tipo: str) -> str:
+    chave = chave.strip()
+    if tipo in ("cpf", "cnpj"):
+        return re.sub(r'\D', '', chave)
+    if tipo == "telefone":
+        digits = re.sub(r'\D', '', chave)
+        if chave.startswith('+'):
+            return '+' + digits
+        if len(digits) <= 11:
+            return '+55' + digits
+        return '+' + digits
+    if tipo == "email":
+        return chave.lower()
+    return chave
+
+
 _TIPOS_PIX = [
     ("cpf",       "CPF"),
     ("cnpj",      "CNPJ"),
@@ -432,10 +450,11 @@ async def nova_chave_pix(
     atendente, redir = _guard(request)
     if redir:
         return redir
+    chave_norm = _normalizar_chave_pix(chave, tipo.strip())
     with conectar() as conn:
         conn.execute(
             "INSERT INTO chaves_pix (nome, tipo, chave, cidade) VALUES (%s, %s, %s, %s)",
-            (nome.strip(), tipo.strip(), chave.strip(), cidade.strip() or None),
+            (nome.strip(), tipo.strip(), chave_norm, cidade.strip() or None),
         )
     return RedirectResponse(url="/configuracoes/pix", status_code=303)
 
@@ -448,6 +467,27 @@ async def toggle_chave_pix(request: Request, pix_id: int):
     with conectar() as conn:
         conn.execute(
             "UPDATE chaves_pix SET ativa = NOT ativa WHERE id = %s", (pix_id,)
+        )
+    return RedirectResponse(url="/configuracoes/pix", status_code=303)
+
+
+@router.post("/pix/{pix_id}/editar")
+async def editar_chave_pix(
+    request: Request,
+    pix_id: int,
+    nome: str = Form(...),
+    tipo: str = Form(...),
+    chave: str = Form(...),
+    cidade: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    chave_norm = _normalizar_chave_pix(chave, tipo.strip())
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE chaves_pix SET nome=%s, tipo=%s, chave=%s, cidade=%s WHERE id=%s",
+            (nome.strip(), tipo.strip(), chave_norm, cidade.strip() or None, pix_id),
         )
     return RedirectResponse(url="/configuracoes/pix", status_code=303)
 

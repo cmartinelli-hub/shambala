@@ -1,5 +1,5 @@
 # Projeto Shambala — Contexto Completo
-*Atualizado em 2026-05-18*
+*Atualizado em 2026-05-18 (sessão 2)*
 
 ## Repositório
 

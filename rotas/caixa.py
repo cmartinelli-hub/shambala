@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import re
 from datetime import date
 
 import qrcode
@@ -160,7 +161,7 @@ async def gerar_pix_qr(request: Request, valor: str = "0", caixa_id: int = 0):
     with conectar() as conn:
         if caixa_id:
             row = conn.execute(
-                """SELECT p.chave FROM caixas c
+                """SELECT p.chave, p.tipo FROM caixas c
                    JOIN chaves_pix p ON p.id = c.chave_pix_id
                    WHERE c.id = %s AND p.ativa = TRUE""",
                 (caixa_id,)
@@ -169,9 +170,11 @@ async def gerar_pix_qr(request: Request, valor: str = "0", caixa_id: int = 0):
             row = None
         if not row:
             row = conn.execute(
-                "SELECT chave FROM chaves_pix WHERE ativa = TRUE LIMIT 1"
+                "SELECT chave, tipo FROM chaves_pix WHERE ativa = TRUE LIMIT 1"
             ).fetchone()
-        chave = row["chave"] if row else ""
+        if not row:
+            return JSONResponse({"erro": "Nenhuma chave PIX ativa configurada"}, status_code=400)
+        chave = _normalizar_chave_pix(row["chave"], row["tipo"])
 
     pix_code = _gerar_payload_pix(chave, valor_float, "Shambala")
 
@@ -731,6 +734,22 @@ def _crc16(data: str) -> str:
             crc = (crc << 1) ^ 0x1021 if crc & 0x8000 else crc << 1
             crc &= 0xFFFF
     return f"{crc:04X}"
+
+
+def _normalizar_chave_pix(chave: str, tipo: str) -> str:
+    chave = chave.strip()
+    if tipo in ("cpf", "cnpj"):
+        return re.sub(r'\D', '', chave)
+    if tipo == "telefone":
+        digits = re.sub(r'\D', '', chave)
+        if chave.startswith('+'):
+            return '+' + digits
+        if len(digits) <= 11:
+            return '+55' + digits
+        return '+' + digits
+    if tipo == "email":
+        return chave.lower()
+    return chave
 
 
 def _gerar_payload_pix(chave: str, valor: float, descricao: str = "") -> str:

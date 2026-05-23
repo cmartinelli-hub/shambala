@@ -186,6 +186,7 @@ def _migrar(conn):
         ("pessoas", "cpf", "TEXT UNIQUE"),
         ("mediuns_dia", "vagas_dia", "INTEGER"),
         ("financeiro_movimentacoes", "caixa_id", "INTEGER REFERENCES caixas(id)"),
+        ("caixas", "chave_pix_id", "INTEGER REFERENCES chaves_pix(id)"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -229,6 +230,19 @@ def _migrar(conn):
             "ALTER TABLE trabalhador_presenca "
             "ADD CONSTRAINT trabalhador_presenca_unique UNIQUE (trabalhador_id, dia_trabalho_id)"
         )
+
+    # Cria tabela chaves_pix se não existir (bancos existentes sem ela)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chaves_pix (
+            id          SERIAL PRIMARY KEY,
+            nome        TEXT NOT NULL,
+            tipo        TEXT NOT NULL,
+            chave       TEXT NOT NULL,
+            cidade      TEXT,
+            ativa       BOOLEAN NOT NULL DEFAULT TRUE,
+            criado_em   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
 
 # ── Criação de tabelas ───────────────────────────────────────────────────────
@@ -341,13 +355,27 @@ def criar_tabelas():
             )
         """)
 
+        # ── Chaves PIX ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS chaves_pix (
+                id          SERIAL PRIMARY KEY,
+                nome        TEXT NOT NULL,
+                tipo        TEXT NOT NULL,
+                chave       TEXT NOT NULL,
+                cidade      TEXT,
+                ativa       BOOLEAN NOT NULL DEFAULT TRUE,
+                criado_em   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # ── Caixas (PDV) ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS caixas (
-                id          SERIAL PRIMARY KEY,
-                nome        TEXT NOT NULL UNIQUE,
-                descricao   TEXT,
-                ativo       INTEGER NOT NULL DEFAULT 1
+                id            SERIAL PRIMARY KEY,
+                nome          TEXT NOT NULL UNIQUE,
+                descricao     TEXT,
+                ativo         INTEGER NOT NULL DEFAULT 1,
+                chave_pix_id  INTEGER REFERENCES chaves_pix(id) ON DELETE SET NULL
             )
         """)
 

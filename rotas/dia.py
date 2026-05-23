@@ -1104,9 +1104,9 @@ async def salvar_fraterno(
     request: Request,
     checkin_id: int,
     medium_id: int = Form(...),
-    sessoes_total: int = Form(6),
+    sessoes_total: int = Form(1),
     frequencia: str = Form("semanal"),
-    sessoes_com_passe: int = Form(3),
+    sessoes_com_passe: int = Form(1),
     data_inicio: str = Form(""),
 ):
     atendente, redir = _guard(request)
