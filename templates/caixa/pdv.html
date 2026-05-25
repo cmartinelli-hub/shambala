@@ -133,8 +133,8 @@
     background: var(--cor-primaria);
     color: #fff;
 }
-.pdv-especie, .pdv-pix { display: none; }
-.pdv-especie.ativo, .pdv-pix.ativo { display: block; }
+.pdv-especie, .pdv-pix, .pdv-fiado { display: none; }
+.pdv-especie.ativo, .pdv-pix.ativo, .pdv-fiado.ativo { display: block; }
 .pdv-input-valor {
     width: 100%; font-size: 1.1rem; padding: .4rem .6rem;
     border: 1px solid var(--cor-borda); border-radius: var(--raio);
@@ -179,12 +179,22 @@
         <span style="background:var(--cor-primaria);color:#fff;padding:.2rem .8rem;border-radius:var(--raio);font-weight:700">
             {{ caixa_sel.nome }}
         </span>
+        {% if movimento %}
+        <span style="background:#1da851;color:#fff;padding:.2rem .8rem;border-radius:var(--raio);font-weight:700;font-size:.85rem">
+            ABERTO
+        </span>
+        {% endif %}
         {% endif %}
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
         <a href="/caixa/vendas{% if caixa_sel %}?caixa_id={{ caixa_sel.id }}{% endif %}" class="btn btn-secundario btn-sm">📋 Vendas do dia</a>
+        {% if movimento %}
+        <a href="/caixa/sangria?caixa_movimento_id={{ movimento.id }}" class="btn btn-secundario btn-sm">💸 Sangria</a>
+        <a href="/caixa/fechar?caixa_movimento_id={{ movimento.id }}" class="btn btn-secundario btn-sm">🔒 Fechar Caixa</a>
+        {% endif %}
         <a href="/caixa/qrcode" target="_blank" class="btn btn-secundario btn-sm">📺 Segundo monitor</a>
         <a href="/caixa/produtos" class="btn btn-secundario btn-sm">🛒 Produtos</a>
+        <a href="/caixa/fiados" class="btn btn-secundario btn-sm">📝 Fiados</a>
     </div>
 </div>
 
@@ -204,18 +214,52 @@
 
 {% else %}
 {# ── PDV ativo ── #}
-{% if request.query_params.get('ok') %}
-<div class="pdv-ok" id="div-ok" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
-    <span id="msg-ok">⏳ Venda #{{ request.query_params.get('ok') }} registrada — imprimindo comanda…</span>
-    <button class="btn btn-secundario btn-sm" id="btn-reimprimir" style="display:none"
-            onclick="imprimirAgente({{ request.query_params.get('ok') }})">
-        &#x1F5A8; Reimprimir
-    </button>
+
+{% if precisa_abrir %}
+{# ── Abertura de caixa obrigatória ── #}
+<div class="card-form" style="max-width:480px;margin:2rem auto;text-align:center">
+    <h3 style="margin-bottom:.5rem">🔓 Caixa Fechado</h3>
+    <p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">
+        O caixa <strong>{{ caixa_sel.nome }}</strong> precisa ser aberto antes de iniciar as operações.
+    </p>
+    <a href="/caixa/abrir?caixa_id={{ caixa_sel.id }}" class="btn btn-primario btn-grande">
+        🔓 Abrir Caixa
+    </a>
+    <br><br>
+    <a href="/caixa/pdv" class="btn btn-secundario">← Outro caixa</a>
 </div>
-{% endif %}
+
+{% else %}
+{# ── PDV funcionando ── #}
+    {% set _venda_id = request.query_params.get('ok') %}
+    {% set _is_fiado = request.query_params.get('fiado') == '1' %}
+    {% if _is_fiado %}
+    <div class="pdv-ok" id="div-ok">
+        <span id="msg-ok">⏳ Venda #{{ _venda_id }} registrada — imprimindo 2 vias…</span>
+    </div>
+    {% elif _venda_id %}
+    <div class="pdv-ok" id="div-ok">
+        <span id="msg-ok">⏳ Venda #{{ _venda_id }} registrada — imprimindo comanda…</span>
+    </div>
+    {% endif %}
+
+    {% set _erro = request.query_params.get('erro') %}
+    {% if _erro == 'fiado_encerrado' %}
+    <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
+        Fiado bloqueado: data de encerramento excedida para este trabalhador.
+    </div>
+    {% elif _erro == 'fiado_excede_limite' %}
+    <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
+        Limite de fiado excedido para este trabalhador. Verifique o relatório de fiados.
+    </div>
+    {% elif _erro == 'trabalhador_nao_encontrado' %}
+    <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
+        Trabalhador não encontrado.
+    </div>
+    {% endif %}
 
 <div class="pdv-wrap">
-    {# ── Coluna esquerda: busca ── #}
+    {# ── Coluna esquerda: busca + atalhos ── #}
     <div>
         <div class="pdv-busca" style="position:relative;margin-bottom:.6rem">
             <input type="text" id="pdv-busca-input"
@@ -223,10 +267,27 @@
                    autocomplete="off">
             <div class="pdv-sugestoes" id="pdv-sugestoes" style="display:none"></div>
         </div>
-        <p style="font-size:.8rem;color:var(--cor-texto-suave)">
+        <p style="font-size:.8rem;color:var(--cor-texto-suave);margin-bottom:.6rem">
             Digite o nome ou aponte o leitor de código de barras para o produto.
             Pressione <kbd>Enter</kbd> com um único resultado para adicionar direto ao carrinho.
         </p>
+
+        {% if atalhos %}
+        <div class="pdv-atalhos-grid" id="pdv-atalhos">
+            {% for a in atalhos %}
+            <div class="pdv-atalho-item" data-produto='{"id":{{a.id}},"nome":"{{a.nome}}","preco_venda":{{a.preco_venda}},"foto":"{{a.foto_produto or ''}}"}'>
+                {% if a.foto_produto %}
+                <div class="pdv-atalho-img-wrap">
+                    <img src="{{ a.foto_produto }}" class="pdv-atalho-img" alt="{{ a.nome }}">
+                </div>
+                {% else %}
+                <div class="pdv-atalho-img-wrap pdv-atalho-placeholder">{{ a.nome[:2]|upper }}</div>
+                {% endif %}
+                <span class="pdv-atalho-nome">{{ a.nome }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 
     {# ── Coluna direita: carrinho + pagamento ── #}
@@ -248,6 +309,8 @@
                 <label for="pgto-especie">💵 Espécie</label>
                 <input type="radio" name="pgto" id="pgto-pix" value="pix">
                 <label for="pgto-pix">📱 PIX</label>
+                <input type="radio" name="pgto" id="pgto-fiado" value="fiado">
+                <label for="pgto-fiado">📝 Fiado</label>
             </div>
 
             <div class="pdv-especie ativo" id="painel-especie">
@@ -267,9 +330,32 @@
                 </div>
             </div>
 
-            <button class="btn btn-primario pdv-btn-finalizar" id="btn-finalizar" disabled>
-                ✅ Finalizar Venda
-            </button>
+            <div class="pdv-fiado" id="painel-fiado">
+                <label for="fiado-busca">Trabalhador (comprador a prazo)</label>
+                <div style="position:relative">
+                    <input type="text" id="fiado-busca" class="pdv-input-valor"
+                           placeholder="Digite o nome do trabalhador…" autocomplete="off">
+                    <div class="pdv-sugestoes" id="fiado-sugestoes" style="display:none"></div>
+                </div>
+                <div id="fiado-selecionado" style="display:none;margin-top:.4rem;
+                     padding:.4rem;background:#e8f5e9;border-radius:var(--raio);
+                     font-size:.9rem;font-weight:600">
+                    <span id="fiado-nome"></span>
+                    <button type="button" id="fiado-limpar" style="margin-left:.5rem;
+                            background:none;border:none;color:#c0392b;cursor:pointer">✕</button>
+                    <div id="fiado-info" style="font-size:.8rem;font-weight:400;margin-top:.3rem"></div>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:.4rem;margin-top:.6rem">
+                <button class="btn btn-primario pdv-btn-finalizar" id="btn-finalizar" disabled style="flex:1">
+                    ✅ Finalizar e Imprimir
+                </button>
+                <button class="btn btn-secundario pdv-btn-finalizar" id="btn-finalizar-sem-impressao" disabled style="flex:1">
+                    📄 Finalizar
+                </button>
+            </div>
+            <input type="hidden" name="imprimir" id="f-imprimir" value="1">
         </div>
     </div>
 </div>
@@ -280,7 +366,10 @@
     <input type="hidden" name="forma_pagamento" id="f-pagamento">
     <input type="hidden" name="valor_recebido" id="f-valor-recebido">
     <input type="hidden" name="itens_json" id="f-itens-json">
+    <input type="hidden" name="trabalhador_id" id="f-trabalhador-id" value="0">
+    <input type="hidden" name="caixa_movimento_id" id="f-caixa-movimento-id" value="{{ movimento.id if movimento else 0 }}">
 </form>
+{% endif %}
 {% endif %}
 {% endblock %}
 
@@ -388,10 +477,31 @@ function renderCarrinho() {
         div.className = 'pdv-item';
         div.innerHTML = `
             <span class="pdv-item-nome">${item.nome}</span>
+            <button class="pdv-qty-btn pdv-qty-minus" data-idx="${idx}" title="Diminuir">−</button>
             <input class="pdv-item-qty" type="number" min="1" value="${item.quantidade}" data-idx="${idx}">
+            <button class="pdv-qty-btn pdv-qty-plus" data-idx="${idx}" title="Aumentar">+</button>
             <span class="pdv-item-sub" id="sub-${idx}">R$ ${fmtVal(item.subtotal)}</span>
             <button class="pdv-item-rm" data-idx="${idx}" title="Remover">✕</button>`;
         el.appendChild(div);
+    });
+
+    function qtdChange(i, delta) {
+        const q = Math.max(1, parseInt(carrinho[i].quantidade) + delta);
+        carrinho[i].quantidade = q;
+        carrinho[i].subtotal = q * carrinho[i].preco_unitario;
+        renderCarrinho();
+    }
+
+    el.querySelectorAll('.pdv-qty-minus').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            qtdChange(parseInt(e.target.dataset.idx), -1);
+        });
+    });
+
+    el.querySelectorAll('.pdv-qty-plus').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            qtdChange(parseInt(e.target.dataset.idx), 1);
+        });
     });
 
     el.querySelectorAll('.pdv-item-qty').forEach(inp => {
@@ -400,8 +510,7 @@ function renderCarrinho() {
             const q = Math.max(1, parseInt(e.target.value) || 1);
             carrinho[i].quantidade = q;
             carrinho[i].subtotal = q * carrinho[i].preco_unitario;
-            document.getElementById(`sub-${i}`).textContent = `R$ ${fmtVal(carrinho[i].subtotal)}`;
-            atualizarTotal();
+            renderCarrinho();
         });
     });
 
@@ -418,15 +527,32 @@ function renderCarrinho() {
 function atualizarTotal() {
     const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
     document.getElementById('pdv-total').textContent = `R$ ${fmtVal(total)}`;
-    document.getElementById('btn-finalizar').disabled = carrinho.length === 0;
+    const vazio = carrinho.length === 0;
+    document.getElementById('btn-finalizar').disabled = vazio;
+    const btn2 = document.getElementById('btn-finalizar-sem-impressao');
+    if (btn2) btn2.disabled = vazio;
     calcTroco();
 }
+
+// ── Atalhos ────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.pdv-atalho-item').forEach(el => {
+    el.addEventListener('click', () => {
+        const data = JSON.parse(el.dataset.produto);
+        adicionarAoCarrinho({
+            id: data.id,
+            nome: data.nome,
+            preco_venda: data.preco_venda,
+        });
+        document.getElementById('pdv-busca-input').focus();
+    });
+});
 
 // ── Pagamento ─────────────────────────────────────────────────────────────────
 document.querySelectorAll('input[name="pgto"]').forEach(r => {
     r.addEventListener('change', () => {
         document.getElementById('painel-especie').classList.toggle('ativo', r.value === 'especie');
         document.getElementById('painel-pix').classList.toggle('ativo', r.value === 'pix');
+        document.getElementById('painel-fiado').classList.toggle('ativo', r.value === 'fiado');
         if (r.value === 'especie') calcTroco();
     });
 });
@@ -457,14 +583,121 @@ document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
 });
 
 // ── Finalizar ─────────────────────────────────────────────────────────────────
-document.getElementById('btn-finalizar').addEventListener('click', () => {
+function submeterVenda(comImpressao) {
     const pgto = document.querySelector('input[name="pgto"]:checked').value;
+    if (pgto === 'fiado') {
+        const trabId = parseInt(document.getElementById('f-trabalhador-id').value) || 0;
+        if (!trabId) {
+            alert('Selecione um trabalhador para a venda fiado.');
+            document.getElementById('fiado-busca').focus();
+            return;
+        }
+        if (_fiadoBloqueado) {
+            alert('Este trabalhador está com fiado BLOQUEADO. Regularize os débitos pendentes primeiro.');
+            return;
+        }
+    }
     document.getElementById('f-pagamento').value = pgto;
     document.getElementById('f-valor-recebido').value =
         pgto === 'especie' ? (document.getElementById('valor-recebido').value || 0) : 0;
     document.getElementById('f-itens-json').value = JSON.stringify(carrinho);
+    document.getElementById('f-imprimir').value = comImpressao ? '1' : '0';
     document.getElementById('form-finalizar').submit();
-});
+}
+
+document.getElementById('btn-finalizar').addEventListener('click', () => submeterVenda(true));
+document.getElementById('btn-finalizar-sem-impressao').addEventListener('click', () => submeterVenda(false));
+
+// ── Fiado: autocomplete de trabalhadores ────────────────────────────────────
+let _fiadoBloqueado = false;
+(function() {
+    const input = document.getElementById('fiado-busca');
+    const sug   = document.getElementById('fiado-sugestoes');
+    const sel   = document.getElementById('fiado-selecionado');
+    const nome  = document.getElementById('fiado-nome');
+    const hId   = document.getElementById('f-trabalhador-id');
+    if (!input) return;
+    let timer = null;
+    let resultados = [];
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (!q) { sug.style.display = 'none'; return; }
+        timer = setTimeout(() => buscar(q), 180);
+    });
+
+    const info  = document.getElementById('fiado-info');
+
+    async function buscar(q) {
+        const res = await fetch(`/caixa/trabalhadores/buscar?q=${encodeURIComponent(q)}`);
+        resultados = await res.json();
+        if (!resultados.length) { sug.style.display = 'none'; return; }
+        sug.innerHTML = resultados.map((t, i) => {
+            let extra = '';
+            if (t.fiado_limite > 0) {
+                extra = ` — disp: R$ ${fmtVal(t.disponivel)} / lim: R$ ${fmtVal(t.fiado_limite)}`;
+            }
+            if (t.fiado_credito > 0) {
+                extra += ` crédito: R$ ${fmtVal(t.fiado_credito)}`;
+            }
+            if (t.fiado_bloqueado) {
+                extra += ' 🔒';
+            }
+            return `<div class="pdv-sugestao-item" data-idx="${i}">
+                <span>${t.nome}${t.cpf ? ' — ' + t.cpf : ''}</span>
+                <span style="font-size:.8rem;color:var(--cor-texto-suave)">${extra.trim()}</span>
+             </div>`;
+        }).join('');
+        sug.style.display = 'block';
+    }
+
+    sug.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('[data-idx]');
+        if (!item) return;
+        const trab = resultados[parseInt(item.dataset.idx)];
+        hId.value = trab.id;
+        nome.textContent = `👤 ${trab.nome}${trab.cpf ? ' — CPF: ' + trab.cpf : ''}`;
+        sel.style.display = '';
+        // Show credit info
+        let infoParts = [];
+        if (trab.fiado_limite > 0) {
+            infoParts.push(`Limite: R$ ${fmtVal(trab.fiado_limite)}`);
+            infoParts.push(`Disponível: R$ ${fmtVal(trab.disponivel)}`);
+        }
+        if (trab.total_pendente > 0) {
+            infoParts.push(`Devendo: R$ ${fmtVal(trab.total_pendente)}`);
+        }
+        if (trab.fiado_credito > 0) {
+            infoParts.push(`Crédito: R$ ${fmtVal(trab.fiado_credito)}`);
+        }
+        if (trab.fiado_bloqueado) {
+            infoParts.push('🔒 BLOQUEADO');
+            sel.style.border = '1px solid #c0392b';
+            sel.style.background = '#f8d7da';
+            _fiadoBloqueado = true;
+        } else {
+            sel.style.border = '';
+            sel.style.background = '#e8f5e9';
+            _fiadoBloqueado = false;
+        }
+        info.textContent = infoParts.join(' | ');
+        input.value = '';
+        sug.style.display = 'none';
+        resultados = [];
+    });
+
+    document.getElementById('fiado-limpar').addEventListener('click', () => {
+        hId.value = 0;
+        sel.style.display = 'none';
+        info.textContent = '';
+        _fiadoBloqueado = false;
+        input.value = '';
+        input.focus();
+    });
+
+    input.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; }, 150));
+})();
 
 // ── Utilitários ───────────────────────────────────────────────────────────────
 function fmtVal(v) {
@@ -475,27 +708,37 @@ function fmtVal(v) {
 // ── Impressão automática via agente local ─────────────────────────────────────
 async function imprimirAgente(vendaId) {
     const msg = document.getElementById('msg-ok');
-    const btn = document.getElementById('btn-reimprimir');
+    const urlParams = new URLSearchParams(window.location.search);
+    const isFiado = urlParams.get('fiado') === '1';
     if (msg) msg.textContent = `⏳ Imprimindo comanda #${vendaId}…`;
     try {
+        // 1ª via: cliente
         const rb = await fetch(`/caixa/vendas/${vendaId}/escpos`);
         if (!rb.ok) throw new Error('Erro ao buscar dados da venda.');
         const bytes = await rb.arrayBuffer();
-        const ra = await fetch('http://localhost:9001/imprimir', {
+        await fetch('http://localhost:9001/imprimir', {
             method: 'POST',
             body: bytes,
             headers: {'Content-Type': 'application/octet-stream'}
         });
-        if (ra.ok) {
-            if (msg) msg.textContent = `✅ Venda #${vendaId} registrada e comanda impressa!`;
-        } else {
-            const j = await ra.json().catch(() => ({}));
-            if (msg) msg.textContent = `✅ Venda #${vendaId} registrada. Erro impressora: ${j.erro || ra.status}`;
+        // 2ª via: caixa (somente para vendas fiado)
+        if (isFiado) {
+            const rb2 = await fetch(`/caixa/vendas/${vendaId}/escpos?via=caixa`);
+            if (rb2.ok) {
+                const bytes2 = await rb2.arrayBuffer();
+                await fetch('http://localhost:9001/imprimir', {
+                    method: 'POST',
+                    body: bytes2,
+                    headers: {'Content-Type': 'application/octet-stream'}
+                });
+            }
         }
+        if (msg) msg.textContent = isFiado
+            ? `✅ Venda #${vendaId} registrada! 2 vias impressas (cliente + caixa).`
+            : `✅ Venda #${vendaId} registrada e comanda impressa!`;
     } catch(e) {
         if (msg) msg.textContent = `✅ Venda #${vendaId} registrada. Agente não respondeu — verifique se está rodando.`;
     }
-    if (btn) btn.style.display = '';
 }
 window.addEventListener('load', () => imprimirAgente({{ request.query_params.get('ok') }}));
 {% endif %}
