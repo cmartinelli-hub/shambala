@@ -198,6 +198,9 @@ def _migrar(conn):
         ("produtos", "foto_produto", "TEXT"),
         ("produtos", "atalho", "INTEGER NOT NULL DEFAULT 0"),
         ("produtos", "quantidade_estoque", "INTEGER NOT NULL DEFAULT 0"),
+        ("produtos", "caixa_id", "INTEGER REFERENCES caixas(id)"),
+        ("caixas", "usa_produtos", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("vendas_pdv", "doacao_valor", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -800,6 +803,15 @@ def criar_tabelas():
                 "INSERT INTO caixas (nome, descricao) VALUES (%s, %s) ON CONFLICT (nome) DO NOTHING",
                 (nome_cx, desc_cx)
             )
+
+        # Caixas sem catálogo de produtos
+        conn.execute("UPDATE caixas SET usa_produtos = FALSE WHERE nome IN ('Geral', 'Bazar')")
+
+        # Todos os produtos existentes sem caixa_id pertencem à Lanchonete
+        conn.execute("""
+            UPDATE produtos SET caixa_id = (SELECT id FROM caixas WHERE nome = 'Lanchonete')
+            WHERE caixa_id IS NULL
+        """)
 
         # Seed: segunda e quarta se ainda não há registros
         existe = conn.execute("SELECT COUNT(*) AS c FROM dias_atendimento").fetchone()["c"]

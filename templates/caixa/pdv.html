@@ -259,7 +259,8 @@
     {% endif %}
 
 <div class="pdv-wrap">
-    {# ── Coluna esquerda: busca + atalhos ── #}
+    {# ── Coluna esquerda ── #}
+    {% if caixa_sel.usa_produtos != False %}
     <div>
         <div class="pdv-busca" style="position:relative;margin-bottom:.6rem">
             <input type="text" id="pdv-busca-input"
@@ -289,6 +290,21 @@
         </div>
         {% endif %}
     </div>
+    {% else %}
+    {# Modo livre — caixas sem catálogo de produtos (Bazar, Geral) #}
+    <div style="background:var(--cor-superficie);border-radius:var(--raio);box-shadow:var(--sombra);padding:1.2rem">
+        <h3 style="margin:0 0 1rem;font-size:1rem">Registrar venda</h3>
+        <label style="font-size:.85rem;font-weight:600;display:block;margin-bottom:.3rem">Valor (R$)</label>
+        <input type="number" id="valor-livre" class="pdv-input-valor"
+               step="0.01" min="0.01" placeholder="0,00" style="margin-bottom:.6rem">
+        <label style="font-size:.85rem;font-weight:600;display:block;margin-bottom:.3rem">Descrição (opcional)</label>
+        <input type="text" id="desc-livre" class="pdv-input-valor"
+               placeholder="Ex: Camiseta azul, doação avulsa…" style="margin-bottom:.8rem">
+        <button type="button" id="btn-add-livre" class="btn btn-primario" style="width:100%">
+            + Adicionar ao carrinho
+        </button>
+    </div>
+    {% endif %}
 
     {# ── Coluna direita: carrinho + pagamento ── #}
     <div class="pdv-carrinho-wrap">
@@ -318,6 +334,12 @@
                 <input type="number" id="valor-recebido" class="pdv-input-valor"
                        step="0.01" min="0" placeholder="0,00">
                 <div class="pdv-troco" id="troco-display"></div>
+                <div id="btn-doacao-wrap" style="display:none;margin-top:.4rem">
+                    <button type="button" id="btn-doacao" class="btn btn-secundario"
+                            style="width:100%;font-size:.85rem">
+                        ❤️ Deixar troco como doação (R$ <span id="doacao-val-display">0,00</span>)
+                    </button>
+                </div>
             </div>
 
             <div class="pdv-pix" id="painel-pix">
@@ -349,10 +371,10 @@
 
             <div style="display:flex;gap:.4rem;margin-top:.6rem">
                 <button class="btn btn-primario pdv-btn-finalizar" id="btn-finalizar" disabled style="flex:1">
-                    ✅ Finalizar e Imprimir
+                    ✅ Finalizar
                 </button>
                 <button class="btn btn-secundario pdv-btn-finalizar" id="btn-finalizar-sem-impressao" disabled style="flex:1">
-                    📄 Finalizar
+                    🖨️ Finalizar e Imprimir
                 </button>
             </div>
             <input type="hidden" name="imprimir" id="f-imprimir" value="1">
@@ -368,6 +390,7 @@
     <input type="hidden" name="itens_json" id="f-itens-json">
     <input type="hidden" name="trabalhador_id" id="f-trabalhador-id" value="0">
     <input type="hidden" name="caixa_movimento_id" id="f-caixa-movimento-id" value="{{ movimento.id if movimento else 0 }}">
+    <input type="hidden" name="doacao_valor" id="f-doacao-valor" value="0">
 </form>
 {% endif %}
 {% endif %}
@@ -378,9 +401,24 @@
 <script>
 const carrinho = [];
 
+// ── Modo livre (Bazar / Geral) ────────────────────────────────────────────────
+const btnAddLivre = document.getElementById('btn-add-livre');
+if (btnAddLivre) {
+    btnAddLivre.addEventListener('click', () => {
+        const val = parseFloat(document.getElementById('valor-livre').value) || 0;
+        if (val <= 0) { alert('Informe um valor maior que zero.'); return; }
+        const desc = document.getElementById('desc-livre').value.trim() || 'Venda';
+        carrinho.push({ produto_id: null, nome: desc, quantidade: 1, preco_unitario: val, subtotal: val });
+        renderCarrinho();
+        document.getElementById('valor-livre').value = '';
+        document.getElementById('desc-livre').value = '';
+    });
+}
+
 // ── Busca de produtos ────────────────────────────────────────────────────────
 (function() {
     const input = document.getElementById('pdv-busca-input');
+    if (!input) return;
     const sug   = document.getElementById('pdv-sugestoes');
     let timer = null;
     let resultados = [];
@@ -563,13 +601,32 @@ function calcTroco() {
     const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
     const recebido = parseFloat(document.getElementById('valor-recebido').value) || 0;
     const el = document.getElementById('troco-display');
-    if (recebido <= 0) { el.textContent = ''; return; }
+    const doacaoWrap = document.getElementById('btn-doacao-wrap');
+    document.getElementById('f-doacao-valor').value = '0';
+    if (recebido <= 0) { el.textContent = ''; doacaoWrap.style.display = 'none'; return; }
     const troco = recebido - total;
     el.textContent = troco >= 0
         ? `Troco: R$ ${fmtVal(troco)}`
         : `⚠ Faltam R$ ${fmtVal(-troco)}`;
     el.style.color = troco >= 0 ? '#1da851' : '#c0392b';
+    if (troco > 0.005) {
+        document.getElementById('doacao-val-display').textContent = fmtVal(troco);
+        doacaoWrap.style.display = 'block';
+    } else {
+        doacaoWrap.style.display = 'none';
+    }
 }
+
+document.getElementById('btn-doacao').addEventListener('click', () => {
+    const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
+    const recebido = parseFloat(document.getElementById('valor-recebido').value) || 0;
+    const troco = recebido - total;
+    if (troco <= 0) return;
+    document.getElementById('f-doacao-valor').value = troco.toFixed(2);
+    document.getElementById('troco-display').textContent = '❤️ Troco doado!';
+    document.getElementById('troco-display').style.color = '#e91e63';
+    document.getElementById('btn-doacao-wrap').style.display = 'none';
+});
 
 document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
     const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
@@ -605,8 +662,8 @@ function submeterVenda(comImpressao) {
     document.getElementById('form-finalizar').submit();
 }
 
-document.getElementById('btn-finalizar').addEventListener('click', () => submeterVenda(true));
-document.getElementById('btn-finalizar-sem-impressao').addEventListener('click', () => submeterVenda(false));
+document.getElementById('btn-finalizar').addEventListener('click', () => submeterVenda(false));
+document.getElementById('btn-finalizar-sem-impressao').addEventListener('click', () => submeterVenda(true));
 
 // ── Fiado: autocomplete de trabalhadores ────────────────────────────────────
 let _fiadoBloqueado = false;

@@ -104,7 +104,8 @@ async def pdv(request: Request, caixa_id: int = 0):
             if caixa_sel:
                 atalhos = conn.execute(
                     """SELECT id, nome, preco_venda, foto_produto
-                       FROM produtos WHERE atalho=1 AND ativo=1 ORDER BY nome"""
+                       FROM produtos WHERE atalho=1 AND ativo=1 AND caixa_id=%s ORDER BY nome""",
+                    (caixa_id,)
                 ).fetchall()
 
     return templates.TemplateResponse("caixa/pdv.html", {
@@ -128,6 +129,7 @@ async def finalizar_venda(
     itens_json: str = Form("[]"),
     trabalhador_id: int = Form(0),
     imprimir: str = Form("1"),
+    doacao_valor: str = Form("0"),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -174,22 +176,25 @@ async def finalizar_venda(
                 return RedirectResponse(url=f"/caixa/pdv?caixa_id={caixa_id}&erro=fiado_excede_limite", status_code=303)
 
     mov_id = caixa_movimento_id if caixa_movimento_id else None
+    doacao = float(doacao_valor or 0)
 
     with conectar() as conn:
         cur = conn.execute(
             """INSERT INTO vendas_pdv
                (caixa_id, data_venda, total, forma_pagamento, troco, status, atendente_id,
-                fiado_trabalhador_id, fiado_credito_usado, caixa_movimento_id)
-               VALUES (%s, %s, %s, %s, %s, 'concluida', %s, %s, %s, %s)
+                fiado_trabalhador_id, fiado_credito_usado, caixa_movimento_id, doacao_valor)
+               VALUES (%s, %s, %s, %s, %s, 'concluida', %s, %s, %s, %s, %s)
                RETURNING id""",
             (caixa_id, date.today().isoformat(), total,
              forma_pagamento, troco, atendente["id"],
              trabalhador_id if trabalhador_id else None,
-             credito_usado, mov_id)
+             credito_usado, mov_id, doacao)
         )
         venda_id = cur.fetchone()["id"]
 
         for item in itens:
+            if not item.get("produto_id"):
+                continue
             conn.execute(
                 """INSERT INTO vendas_pdv_itens
                    (venda_id, produto_id, nome_produto, quantidade, preco_unitario, subtotal)
@@ -218,8 +223,10 @@ async def finalizar_venda(
                 (total, mov_id)
             )
 
-        # Deduz estoque
+        # Deduz estoque (apenas itens com produto real)
         for item in itens:
+            if not item.get("produto_id"):
+                continue
             conn.execute("""
                 UPDATE produtos SET quantidade_estoque = quantidade_estoque - %s
                 WHERE id = %s""",
@@ -236,6 +243,15 @@ async def finalizar_venda(
                 (item["produto_id"], item["quantidade"],
                  item["quantidade"], venda_id, atendente["id"],
                  item["produto_id"])
+            )
+
+        # Registra doação no financeiro
+        if doacao > 0:
+            conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, descricao, caixa_id)
+                   VALUES ('entrada', 'doacao', %s, %s, %s)""",
+                (doacao, f"Doação de troco — venda #{venda_id}", caixa_id)
             )
 
     # Sinaliza ao segundo monitor que a venda foi concluída
@@ -1135,6 +1151,17 @@ async def salvar_sangria(
             (valor_dec, caixa_movimento_id)
         )
 
+        mov_data = conn.execute(
+            "SELECT caixa_id FROM caixa_movimentos WHERE id=%s", (caixa_movimento_id,)
+        ).fetchone()
+        if mov_data:
+            conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, descricao, caixa_id)
+                   VALUES ('saida', 'sangria', %s, %s, %s)""",
+                (valor_dec, motivo.strip() or "Sangria de caixa", mov_data["caixa_id"])
+            )
+
     return RedirectResponse(url=f"/caixa/sangria/{sangria_id}/comprovante", status_code=303)
 
 
@@ -1305,6 +1332,19 @@ async def fechar_caixa(
                WHERE id = %s""",
             (saldo_final, atendente["id"], observacao.strip(), caixa_movimento_id)
         )
+
+        caixa_info = conn.execute("SELECT nome FROM caixas WHERE id=%s", (mov["caixa_id"],)).fetchone()
+        caixa_nome = caixa_info["nome"] if caixa_info else f"#{mov['caixa_id']}"
+
+        if float(mov["total_vendas"]) > 0:
+            conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, descricao, caixa_id)
+                   VALUES ('entrada', 'venda_pdv', %s, %s, %s)""",
+                (float(mov["total_vendas"]),
+                 f"Vendas {caixa_nome} — fechamento #{caixa_movimento_id}",
+                 mov["caixa_id"])
+            )
 
     return RedirectResponse(url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}", status_code=303)
 
