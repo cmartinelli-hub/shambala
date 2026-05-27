@@ -18,8 +18,25 @@
     <button type="submit" class="btn btn-secundario btn-sm">Filtrar</button>
 </form>
 
-<div style="margin-bottom:1rem;font-size:1.1rem;font-weight:700;color:var(--cor-primaria)">
-    Total do dia: R$ {{ "%.2f"|format(total_dia) }}
+{# Totais por forma de pagamento #}
+<div style="display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1.2rem;align-items:stretch">
+    <div style="background:var(--cor-superficie);border-radius:var(--raio);box-shadow:var(--sombra);padding:.7rem 1.1rem;min-width:130px">
+        <div style="font-size:.75rem;color:var(--cor-texto-suave);margin-bottom:.2rem">Total do dia</div>
+        <div style="font-size:1.2rem;font-weight:900;color:var(--cor-primaria)">R$ {{ "%.2f"|format(total_dia) }}</div>
+        <div style="font-size:.75rem;color:var(--cor-texto-suave)">{{ vendas|selectattr('status','eq','concluida')|list|length }} vendas</div>
+    </div>
+    {% for p in por_pgto %}
+    <div style="background:var(--cor-superficie);border-radius:var(--raio);box-shadow:var(--sombra);padding:.7rem 1.1rem;min-width:130px">
+        <div style="font-size:.75rem;color:var(--cor-texto-suave);margin-bottom:.2rem">
+            {% if p.forma_pagamento == 'especie' %}💵 Espécie
+            {% elif p.forma_pagamento == 'pix' %}📱 PIX
+            {% elif p.forma_pagamento == 'fiado' %}📝 Fiado
+            {% else %}{{ p.forma_pagamento }}{% endif %}
+        </div>
+        <div style="font-size:1.1rem;font-weight:700">R$ {{ "%.2f"|format(p.total) }}</div>
+        <div style="font-size:.75rem;color:var(--cor-texto-suave)">{{ p.qtd }} venda{{ 's' if p.qtd != 1 }}</div>
+    </div>
+    {% endfor %}
 </div>
 
 {% if vendas %}
@@ -42,7 +59,12 @@
     <tr style="{% if v.status == 'cancelada' %}opacity:.45;text-decoration:line-through{% endif %}">
         <td>{{ v.id }}</td>
         <td>{{ v.caixa_nome }}</td>
-        <td>{{ '💵 Espécie' if v.forma_pagamento == 'especie' else '📱 PIX' }}</td>
+        <td>
+            {% if v.forma_pagamento == 'especie' %}💵 Espécie
+            {% elif v.forma_pagamento == 'pix' %}📱 PIX
+            {% elif v.forma_pagamento == 'fiado' %}📝 Fiado
+            {% else %}{{ v.forma_pagamento }}{% endif %}
+        </td>
         <td><strong>R$ {{ "%.2f"|format(v.total) }}</strong></td>
         <td>{% if v.troco > 0 %}R$ {{ "%.2f"|format(v.troco) }}{% else %}—{% endif %}</td>
         <td>{{ v.atendente_nome or '—' }}</td>

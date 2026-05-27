@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block titulo %}Registrar Perda{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>⚠ Registrar Perda de Estoque</h2>
+    <a href="/caixa/estoque" class="btn btn-secundario">← Estoque</a>
+</div>
+
+{% set _erro = request.query_params.get('erro') %}
+{% if _erro == 'qtde_invalida' %}
+<div class="erro">Quantidade deve ser maior que zero.</div>
+{% elif _erro == 'sem_estoque' %}
+<div class="erro">Quantidade de perda superior ao estoque disponível.</div>
+{% endif %}
+
+<div class="card-form" style="max-width:500px">
+    <form method="post" action="/caixa/estoque/perda">
+        <div class="grade-form">
+            <div class="campo campo-largo">
+                <label>Produto *</label>
+                <select name="produto_id" id="select-produto" required>
+                    <option value="">— Selecione —</option>
+                    {% for p in produtos %}
+                    <option value="{{ p.id }}"
+                            data-estoque="{{ p.quantidade_estoque }}"
+                            {% if request.query_params.get('produto_id')|string == p.id|string %}selected{% endif %}>
+                        {{ p.nome }} ({{ p.quantidade_estoque }} un)
+                    </option>
+                    {% endfor %}
+                </select>
+                <div id="estoque-atual" style="margin-top:.3rem;font-size:.85rem;color:var(--cor-texto-suave)"></div>
+            </div>
+
+            <div class="campo">
+                <label>Quantidade perdida *</label>
+                <input type="number" name="quantidade" min="1" required
+                       value="1" style="font-size:1.1rem;font-weight:700">
+            </div>
+
+            <div class="campo campo-largo">
+                <label>Motivo *</label>
+                <input type="text" name="motivo" required
+                       placeholder="Ex: Vencimento, avaria, furto, quebra…">
+            </div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-grande" style="background:#c0392b;color:#fff">Registrar Perda</button>
+            <a href="/caixa/estoque" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('select-produto').addEventListener('change', function() {
+    const opt = this.options[this.selectedIndex];
+    const el = document.getElementById('estoque-atual');
+    if (opt && opt.value) {
+        const qtd = opt.dataset.estoque || '0';
+        el.textContent = `Estoque atual: ${qtd} un`;
+        el.style.color = parseInt(qtd) <= 0 ? '#c0392b' : '#1da851';
+    } else {
+        el.textContent = '';
+    }
+});
+document.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('select-produto');
+    if (sel.value) sel.dispatchEvent(new Event('change'));
+});
+</script>
+{% endblock %}

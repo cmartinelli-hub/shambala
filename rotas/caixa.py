@@ -347,6 +347,19 @@ async def listar_vendas(request: Request, caixa_id: int = 0, data: str = ""):
 
         total_dia = sum(float(v["total"]) for v in vendas if v["status"] == "concluida")
 
+        pgto_params: list = [data_ref]
+        pgto_filtros = ["v.data_venda = %s", "v.status = 'concluida'"]
+        if caixa_id:
+            pgto_filtros.append("v.caixa_id = %s")
+            pgto_params.append(caixa_id)
+        por_pgto = conn.execute(
+            f"""SELECT forma_pagamento, COUNT(*) AS qtd, COALESCE(SUM(total),0) AS total
+                FROM vendas_pdv v
+                WHERE {' AND '.join(pgto_filtros)}
+                GROUP BY forma_pagamento ORDER BY total DESC""",
+            pgto_params
+        ).fetchall()
+
     return templates.TemplateResponse("caixa/vendas.html", {
         "request": request,
         "atendente": atendente,
@@ -355,6 +368,7 @@ async def listar_vendas(request: Request, caixa_id: int = 0, data: str = ""):
         "caixa_id": caixa_id,
         "data_ref": data_ref,
         "total_dia": total_dia,
+        "por_pgto": [dict(p) for p in por_pgto],
     })
 
 
@@ -771,6 +785,58 @@ async def registrar_entrada(
                (produto_id, tipo, quantidade, saldo_anterior, saldo_posterior, motivo, atendente_id)
                VALUES (%s, 'entrada', %s, %s, %s, %s, %s)""",
             (produto_id, quantidade, saldo_ant, saldo_novo, motivo.strip(), atendente["id"])
+        )
+
+    return RedirectResponse(url="/caixa/estoque", status_code=303)
+
+
+@router.get("/estoque/perda", response_class=HTMLResponse)
+async def form_estoque_perda(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        produtos = conn.execute(
+            "SELECT id, nome, quantidade_estoque FROM produtos WHERE ativo=1 ORDER BY nome"
+        ).fetchall()
+    return templates.TemplateResponse("caixa/estoque_perda.html", {
+        "request": request,
+        "atendente": atendente,
+        "produtos": [dict(p) for p in produtos],
+    })
+
+
+@router.post("/estoque/perda")
+async def registrar_perda(
+    request: Request,
+    produto_id: int = Form(...),
+    quantidade: int = Form(...),
+    motivo: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    if quantidade <= 0:
+        return RedirectResponse(url="/caixa/estoque/perda?erro=qtde_invalida", status_code=303)
+
+    with conectar() as conn:
+        ant = conn.execute(
+            "SELECT quantidade_estoque FROM produtos WHERE id = %s", (produto_id,)
+        ).fetchone()
+        saldo_ant = int(ant["quantidade_estoque"]) if ant else 0
+        saldo_novo = max(0, saldo_ant - quantidade)
+
+        conn.execute(
+            "UPDATE produtos SET quantidade_estoque = %s WHERE id = %s",
+            (saldo_novo, produto_id)
+        )
+        conn.execute(
+            """INSERT INTO estoque_movimentos
+               (produto_id, tipo, quantidade, saldo_anterior, saldo_posterior, motivo, atendente_id)
+               VALUES (%s, 'saida', %s, %s, %s, %s, %s)""",
+            (produto_id, quantidade, saldo_ant, saldo_novo,
+             f"Perda: {motivo.strip()}" if motivo.strip() else "Perda", atendente["id"])
         )
 
     return RedirectResponse(url="/caixa/estoque", status_code=303)
@@ -1405,109 +1471,116 @@ async def exportar_pdf_fechamento(request: Request, mov_id: int):
             (mov_id,)
         ).fetchall()
 
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+
     styles = getSampleStyleSheet()
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            topMargin=12*mm, bottomMargin=12*mm,
+                            leftMargin=15*mm, rightMargin=15*mm)
+
+    s8  = ParagraphStyle("s8",  parent=styles["Normal"], fontSize=8,  leading=10)
+    s9b = ParagraphStyle("s9b", parent=styles["Normal"], fontSize=9,  leading=11, fontName="Helvetica-Bold")
+    s10b= ParagraphStyle("s10b",parent=styles["Normal"], fontSize=10, leading=12, fontName="Helvetica-Bold")
+
+    TS_HEADER = ("BACKGROUND", (0,0),(-1,0), colors.HexColor("#1a5fa8"))
+    TS_WHITE  = ("TEXTCOLOR",  (0,0),(-1,0), colors.white)
+    TS_HBOLD  = ("FONTNAME",   (0,0),(-1,0), "Helvetica-Bold")
+    TS_GRID   = ("GRID", (0,0),(-1,-1), 0.4, colors.grey)
+    TS_PAD    = [("BOTTOMPADDING",(0,0),(-1,-1),3),("TOPPADDING",(0,0),(-1,-1),3)]
+    TS_FS8    = ("FONTSIZE",(0,0),(-1,-1),8)
+    TS_ARIGHT = ("ALIGN",(1,0),(-1,-1),"RIGHT")
+
+    def mini_table(data, widths, bold_last=False):
+        t = Table(data, colWidths=widths)
+        style = [TS_HEADER, TS_WHITE, TS_HBOLD, TS_GRID, TS_FS8, TS_ARIGHT] + TS_PAD
+        if bold_last:
+            style.append(("FONTNAME",(0,-1),(-1,-1),"Helvetica-Bold"))
+        t.setStyle(TableStyle(style))
+        return t
+
+    W = doc.width
     elems = []
 
-    # Título
-    elems.append(Paragraph(f"<b>{centro_nome}</b>", styles["Title"]))
-    elems.append(Paragraph("Relatório de Fechamento de Caixa", styles["Heading2"]))
-    elems.append(Spacer(1, 12))
+    # Cabeçalho
+    elems.append(Paragraph(f"<b>{centro_nome} — Fechamento de Caixa</b>", s10b))
+    elems.append(Spacer(1, 4))
 
-    # Dados do movimento
-    cab_data = [
+    # Info do movimento em 2 colunas lado a lado
+    left = [
         ["Caixa:", mov["caixa_nome"]],
-        ["Abertura:", mov["data_abertura"][:19] if mov.get("data_abertura") else "-"],
-        ["Fechamento:", mov.get("data_fechamento", "-")[:19] if mov.get("data_fechamento") else "-"],
-        ["Atendente (abertura):", mov.get("atendente_abertura_nome") or "-"],
-        ["Atendente (fechamento):", mov.get("atendente_fechamento_nome") or "-"],
+        ["Abertura:", (mov["data_abertura"] or "-")[:19]],
+        ["Fechamento:", (mov.get("data_fechamento") or "-")[:19]],
+    ]
+    right = [
+        ["Atendente abertura:", mov.get("atendente_abertura_nome") or "-"],
+        ["Atendente fechamento:", mov.get("atendente_fechamento_nome") or "-"],
         ["Status:", "FECHADO" if mov["status"] == "fechado" else "ABERTO"],
     ]
-    t = Table(cab_data, colWidths=[140, 300])
-    t.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    elems.append(t)
-    elems.append(Spacer(1, 16))
-
-    # Resumo financeiro
-    saldo_esperado = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
-    resumo_data = [
-        ["Descrição", "Valor (R$)"],
-        ["Saldo Inicial", f"{float(mov['saldo_inicial']):.2f}"],
-        ["Total de Vendas", f"{float(mov['total_vendas']):.2f}"],
-        ["Total de Sangrias", f"({float(mov['total_sangrias']):.2f})"],
-        ["Saldo Esperado", f"{saldo_esperado:.2f}"],
-    ]
-    if mov.get("saldo_final") is not None:
-        resumo_data.append(["Saldo Final (informado)", f"{float(mov['saldo_final']):.2f}"])
-    t = Table(resumo_data, colWidths=[300, 140])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a5fa8")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    elems.append(Paragraph("<b>Resumo Financeiro</b>", styles["Heading3"]))
-    elems.append(Spacer(1, 6))
-    elems.append(t)
-    elems.append(Spacer(1, 16))
-
-    # Vendas por forma de pagamento
-    if pgto:
-        mapa = {"especie": "Espécie", "pix": "PIX", "fiado": "Fiado"}
-        pgto_data = [["Forma de Pagamento", "Qtd", "Total (R$)"]]
-        for p in pgto:
-            nome = mapa.get(p["forma_pagamento"], p["forma_pagamento"])
-            pgto_data.append([nome, str(p["qtd"]), f"{float(p['total']):.2f}"])
-        t = Table(pgto_data, colWidths=[230, 80, 130])
+    tl = Table(left,  colWidths=[W*0.18, W*0.32])
+    tr = Table(right, colWidths=[W*0.22, W*0.28])
+    for t in (tl, tr):
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a5fa8")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),
+            ("FONTSIZE",(0,0),(-1,-1),8),
+            ("BOTTOMPADDING",(0,0),(-1,-1),2),
+            ("TOPPADDING",(0,0),(-1,-1),2),
         ]))
-        elems.append(Paragraph("<b>Vendas por Forma de Pagamento</b>", styles["Heading3"]))
-        elems.append(Spacer(1, 6))
-        elems.append(t)
-        elems.append(Spacer(1, 16))
+    elems.append(Table([[tl, tr]], colWidths=[W*0.5, W*0.5]))
+    elems.append(Spacer(1, 6))
+
+    # Resumo + Pgto lado a lado
+    saldo_esp = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
+    res_data = [["Descrição","R$"],
+                ["Saldo inicial", f"{float(mov['saldo_inicial']):.2f}"],
+                ["Total vendas",  f"{float(mov['total_vendas']):.2f}"],
+                ["Total sangrias",f"({float(mov['total_sangrias']):.2f})"],
+                ["Saldo esperado",f"{saldo_esp:.2f}"]]
+    if mov.get("saldo_final") is not None:
+        res_data.append(["Saldo final", f"{float(mov['saldo_final']):.2f}"])
+    t_res = mini_table(res_data, [W*0.28, W*0.12], bold_last=True)
+
+    mapa_pgto = {"especie":"Espécie","pix":"PIX","fiado":"Fiado"}
+    if pgto:
+        pg_data = [["Pagamento","Qtd","R$"]]
+        for p in pgto:
+            pg_data.append([mapa_pgto.get(p["forma_pagamento"], p["forma_pagamento"]),
+                            str(p["qtd"]), f"{float(p['total']):.2f}"])
+        t_pg = mini_table(pg_data, [W*0.22, W*0.08, W*0.10])
+        elems.append(Table([[t_res, "", t_pg]], colWidths=[W*0.42, W*0.06, W*0.52]))
+    else:
+        elems.append(t_res)
+    elems.append(Spacer(1, 6))
 
     # Produtos vendidos
     if produtos:
-        prod_data = [["Produto", "Qtd", "Total (R$)"]]
+        prod_data = [["Produto","Qtd","R$"]]
         for p in produtos:
-            prod_data.append([p["nome_produto"], str(p["qtd"]), f"{float(p['total']):.2f}"])
-        t = Table(prod_data, colWidths=[310, 60, 130])
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a5fa8")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ]))
-        elems.append(Paragraph("<b>Produtos Vendidos</b>", styles["Heading3"]))
+            prod_data.append([p["nome_produto"], str(int(p["qtd"])), f"{float(p['total']):.2f}"])
+        elems.append(Paragraph("<b>Produtos Vendidos</b>", s9b))
+        elems.append(Spacer(1, 3))
+        elems.append(mini_table(prod_data, [W*0.65, W*0.12, W*0.23]))
         elems.append(Spacer(1, 6))
-        elems.append(t)
-        elems.append(Spacer(1, 16))
+
+    # Sangrias
+    if sangrias:
+        sang_data = [["Data","Valor","Motivo","Recebedor"]]
+        for s in sangrias:
+            sang_data.append([
+                (s.get("data_hora") or "")[:16],
+                f"{float(s['valor']):.2f}",
+                s.get("motivo") or "-",
+                s.get("recebedor_nome") or "-",
+            ])
+        elems.append(Paragraph("<b>Sangrias</b>", s9b))
+        elems.append(Spacer(1, 3))
+        elems.append(mini_table(sang_data, [W*0.20, W*0.12, W*0.35, W*0.33]))
+        elems.append(Spacer(1, 6))
 
     # Observação
     if mov.get("observacao_fechamento"):
-        elems.append(Paragraph(f"<b>Observação:</b> {mov['observacao_fechamento']}", styles["Normal"]))
+        elems.append(Paragraph(f"<b>Obs:</b> {mov['observacao_fechamento']}", s8))
 
     doc.build(elems)
     buf.seek(0)

@@ -7,38 +7,37 @@
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <a href="/caixa/produtos" class="btn btn-secundario btn-sm">← Produtos</a>
         <a href="/caixa/estoque/entrada" class="btn btn-primario btn-sm">➕ Entrada</a>
+        <a href="/caixa/estoque/perda" class="btn btn-sm" style="background:#c0392b;color:#fff">⚠ Perda</a>
     </div>
 </div>
 
 {% if produtos %}
-<div class="estoque-grid">
+<div style="overflow-x:auto">
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Produto</th>
+            <th style="text-align:center">Estoque</th>
+            <th style="text-align:right">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
     {% for p in produtos %}
     {% set qtd = p.quantidade_estoque|default(0) %}
-    {% if qtd <= 0 %}
-        {% set classe_qtd = 'estoque-baixo' %}
-    {% elif qtd <= 5 %}
-        {% set classe_qtd = 'estoque-medio' %}
-    {% else %}
-        {% set classe_qtd = 'estoque-alto' %}
-    {% endif %}
-    <div class="estoque-card">
-        <div class="estoque-card-img">
-            {% if p.foto_produto %}
-            <img src="{{ p.foto_produto }}" alt="{{ p.nome }}">
-            {% else %}
-            <div class="estoque-card-placeholder">{{ p.nome[:2]|upper }}</div>
-            {% endif %}
-        </div>
-        <div class="estoque-card-info">
-            <div class="estoque-card-nome">{{ p.nome }}</div>
-            <div class="estoque-card-qtd {{ classe_qtd }}">{{ qtd }} un</div>
-        </div>
-        <div class="estoque-card-acoes">
+    <tr>
+        <td>{{ p.nome }}</td>
+        <td style="text-align:center;font-weight:700;color:{% if qtd <= 0 %}#c0392b{% elif qtd <= 5 %}#e67e22{% else %}#1da851{% endif %}">
+            {{ qtd }} un
+        </td>
+        <td style="text-align:right;white-space:nowrap">
             <a href="/caixa/estoque/entrada?produto_id={{ p.id }}" class="btn btn-primario btn-sm">Entrada</a>
+            <a href="/caixa/estoque/perda?produto_id={{ p.id }}" class="btn btn-sm" style="background:#c0392b;color:#fff">Perda</a>
             <button class="btn btn-secundario btn-sm" onclick="verMov({{ p.id }})">Histórico</button>
-        </div>
-    </div>
+        </td>
+    </tr>
     {% endfor %}
+    </tbody>
+</table>
 </div>
 {% else %}
 <p style="color:var(--cor-texto-suave)">Nenhum produto cadastrado.</p>
@@ -81,11 +80,12 @@ async function verMov(produtoId) {
         let html = '<table class="tabela" style="font-size:.85rem"><thead><tr>' +
             '<th>Tipo</th><th>Qtd</th><th>Saldo Ant.</th><th>Saldo Nov.</th><th>Motivo</th><th>Atendente</th><th>Data</th>' +
             '</tr></thead><tbody>';
-        const tipoMap = {'entrada': 'Entrada', 'saida': 'Saída', 'ajuste': 'Ajuste'};
+        const tipoMap = {'entrada': 'Entrada', 'saida': 'Saída', 'ajuste': 'Ajuste', 'perda': 'Perda'};
         data.movimentos.forEach(m => {
+            const isEntrada = m.tipo === 'entrada';
             html += `<tr>
                 <td>${tipoMap[m.tipo] || m.tipo}</td>
-                <td style="font-weight:700;color:${m.tipo === 'entrada' ? '#1da851' : '#c0392b'}">${m.quantidade}</td>
+                <td style="font-weight:700;color:${isEntrada ? '#1da851' : '#c0392b'}">${m.quantidade}</td>
                 <td>${m.saldo_anterior}</td>
                 <td>${m.saldo_posterior}</td>
                 <td>${m.motivo || '—'}</td>
