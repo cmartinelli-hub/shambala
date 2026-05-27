@@ -123,6 +123,28 @@
     <div class="rodape">
         Obrigado pela preferencia!
     </div>
+
+    {% if trabalhador %}
+    <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #000;text-align:center">
+        <div style="font-size:9pt;font-weight:bold;color:#b8860b">⚠ FIADO</div>
+        <div style="font-size:8pt">{{ trabalhador.nome_completo }}</div>
+        {% if trabalhador.cpf %}
+        <div style="font-size:7pt">CPF: {{ trabalhador.cpf }}</div>
+        {% endif %}
+        {% if venda.fiado_credito_usado and venda.fiado_credito_usado > 0 %}
+        <div style="font-size:7pt;margin-top:2px;color:#1da851">Crédito utilizado: R$ {{ "%.2f"|format(venda.fiado_credito_usado) }}</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if via_caixa and trabalhador %}
+    <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #000">
+        <div style="font-size:9pt;font-weight:bold;text-align:center">VIA DO CAIXA</div>
+        <div style="font-size:8pt;margin-top:8px">Assinatura do Devedor:</div>
+        <div style="border-bottom:1px dashed #000;margin-top:16px;height:24px"></div>
+        <div style="font-size:7pt;margin-top:4px;text-align:center">{{ trabalhador.nome_completo }}</div>
+    </div>
+    {% endif %}
 </div>
 
 <div class="botoes">

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block titulo %}Controle de Estoque{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>📦 Controle de Estoque</h2>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a href="/caixa/produtos" class="btn btn-secundario btn-sm">← Produtos</a>
+        <a href="/caixa/estoque/entrada" class="btn btn-primario btn-sm">➕ Entrada</a>
+    </div>
+</div>
+
+{% if produtos %}
+<div class="estoque-grid">
+    {% for p in produtos %}
+    {% set qtd = p.quantidade_estoque|default(0) %}
+    {% if qtd <= 0 %}
+        {% set classe_qtd = 'estoque-baixo' %}
+    {% elif qtd <= 5 %}
+        {% set classe_qtd = 'estoque-medio' %}
+    {% else %}
+        {% set classe_qtd = 'estoque-alto' %}
+    {% endif %}
+    <div class="estoque-card">
+        <div class="estoque-card-img">
+            {% if p.foto_produto %}
+            <img src="{{ p.foto_produto }}" alt="{{ p.nome }}">
+            {% else %}
+            <div class="estoque-card-placeholder">{{ p.nome[:2]|upper }}</div>
+            {% endif %}
+        </div>
+        <div class="estoque-card-info">
+            <div class="estoque-card-nome">{{ p.nome }}</div>
+            <div class="estoque-card-qtd {{ classe_qtd }}">{{ qtd }} un</div>
+        </div>
+        <div class="estoque-card-acoes">
+            <a href="/caixa/estoque/entrada?produto_id={{ p.id }}" class="btn btn-primario btn-sm">Entrada</a>
+            <button class="btn btn-secundario btn-sm" onclick="verMov({{ p.id }})">Histórico</button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p style="color:var(--cor-texto-suave)">Nenhum produto cadastrado.</p>
+{% endif %}
+
+<!-- Modal de histórico -->
+<div id="modal-mov" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:999;justify-content:center;align-items:center">
+    <div style="background:#fff;border-radius:var(--raio);padding:1.5rem;max-width:600px;width:90%;max-height:80vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+            <h3 id="modal-titulo" style="margin:0">Movimentações</h3>
+            <button onclick="fecharModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer">✕</button>
+        </div>
+        <div id="modal-corpo">
+            <p style="color:var(--cor-texto-suave)">Carregando…</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function verMov(produtoId) {
+    const modal = document.getElementById('modal-mov');
+    const titulo = document.getElementById('modal-titulo');
+    const corpo = document.getElementById('modal-corpo');
+    modal.style.display = 'flex';
+    titulo.textContent = 'Carregando…';
+    corpo.innerHTML = '<p style="color:var(--cor-texto-suave)">Carregando…</p>';
+
+    try {
+        const res = await fetch(`/caixa/estoque/${produtoId}/mov`);
+        const data = await res.json();
+        titulo.textContent = data.produto_nome + ` — ${data.quantidade_atual} un`;
+
+        if (!data.movimentos || !data.movimentos.length) {
+            corpo.innerHTML = '<p style="color:var(--cor-texto-suave)">Nenhuma movimentação registrada.</p>';
+            return;
+        }
+
+        let html = '<table class="tabela" style="font-size:.85rem"><thead><tr>' +
+            '<th>Tipo</th><th>Qtd</th><th>Saldo Ant.</th><th>Saldo Nov.</th><th>Motivo</th><th>Atendente</th><th>Data</th>' +
+            '</tr></thead><tbody>';
+        const tipoMap = {'entrada': 'Entrada', 'saida': 'Saída', 'ajuste': 'Ajuste'};
+        data.movimentos.forEach(m => {
+            html += `<tr>
+                <td>${tipoMap[m.tipo] || m.tipo}</td>
+                <td style="font-weight:700;color:${m.tipo === 'entrada' ? '#1da851' : '#c0392b'}">${m.quantidade}</td>
+                <td>${m.saldo_anterior}</td>
+                <td>${m.saldo_posterior}</td>
+                <td>${m.motivo || '—'}</td>
+                <td>${m.atendente_nome || '—'}</td>
+                <td style="font-size:.8rem">${(m.created_at || '').substring(0, 16)}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        corpo.innerHTML = html;
+    } catch (e) {
+        corpo.innerHTML = '<p style="color:#c0392b">Erro ao carregar movimentações.</p>';
+    }
+}
+
+function fecharModal() {
+    document.getElementById('modal-mov').style.display = 'none';
+}
+</script>
+{% endblock %}

@@ -142,6 +142,8 @@ async def salvar_novo(
     valor_mensalidade: str = Form("0"),
     dia_vencimento: str = Form("10"),
     foto: UploadFile = None,
+    fiado_limite: str = Form("0"),
+    fiado_data_encerramento: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -153,14 +155,16 @@ async def salvar_novo(
                 """INSERT INTO trabalhadores
                    (nome_completo, cpf, rg, data_nascimento, telefone, email,
                     cep, logradouro, numero, complemento, bairro, cidade, uf,
-                    valor_mensalidade, dia_vencimento)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    valor_mensalidade, dia_vencimento,
+                    fiado_limite, fiado_data_encerramento)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    RETURNING id""",
                 (nome_completo.strip(), cpf.strip() or None, rg.strip() or None, dn,
                  telefone.strip(), email.strip().lower(),
                  cep.strip(), logradouro.strip(), numero.strip(), complemento.strip(),
                  bairro.strip(), cidade.strip(), uf.strip(),
-                 float(valor_mensalidade or 0), int(dia_vencimento or 10)),
+                 float(valor_mensalidade or 0), int(dia_vencimento or 10),
+                 float(fiado_limite or 0), fiado_data_encerramento.strip() or None),
             )
             trab_id = cur.fetchone()["id"]
 
@@ -224,6 +228,8 @@ async def salvar_editar(
     dia_vencimento: str = Form("10"),
     remover_foto: str = Form(""),
     foto: UploadFile = None,
+    fiado_limite: str = Form("0"),
+    fiado_data_encerramento: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -261,14 +267,17 @@ async def salvar_editar(
                    cep=%s, logradouro=%s, numero=%s, complemento=%s,
                    bairro=%s, cidade=%s, uf=%s,
                    valor_mensalidade=%s, dia_vencimento=%s,
-                   foto_trabalhador=%s
+                   foto_trabalhador=%s,
+                   fiado_limite=%s, fiado_data_encerramento=%s
                    WHERE id=%s""",
                 (nome_completo.strip(), cpf.strip() or None, rg.strip() or None, dn,
                  telefone.strip(), email.strip().lower(),
                  cep.strip(), logradouro.strip(), numero.strip(), complemento.strip(),
                  bairro.strip(), cidade.strip(), uf.strip(),
                  float(valor_mensalidade or 0), int(dia_vencimento or 10),
-                 foto_existente, id),
+                 foto_existente,
+                 float(fiado_limite or 0), fiado_data_encerramento.strip() or None,
+                 id),
             )
         except Exception:
             with conectar() as conn2:

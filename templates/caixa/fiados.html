@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block titulo %}Fiados — Devedores{% endblock %}
+
+{% block estilos %}
+<style>
+.credito-form { display:none; margin-top:.5rem; }
+.credito-form.ativo { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+.progress-bar { height:6px; background:#ddd; border-radius:3px; margin-top:.3rem; overflow:hidden; }
+.progress-fill { height:100%; background:#c0392b; border-radius:3px; transition:width .2s; }
+</style>
+{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+        <h2 style="margin:0">Fiados — Devedores</h2>
+        {% if fiados %}
+        <span style="background:#c0392b;color:#fff;padding:.2rem .8rem;border-radius:var(--raio);font-weight:700;font-size:.9rem">
+            {{ fiados|length }} pendente{{ 's' if fiados|length != 1 else '' }}
+        </span>
+        {% endif %}
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <a href="/caixa/pdv" class="btn btn-primario btn-sm">← Voltar ao PDV</a>
+        <a href="/caixa/vendas" class="btn btn-secundario btn-sm">📋 Vendas do dia</a>
+    </div>
+</div>
+
+{% if not fiados %}
+<div class="card-form" style="text-align:center;padding:2rem">
+    <p style="font-size:1.1rem;color:var(--cor-texto-suave)">Nenhum fiado pendente.</p>
+</div>
+{% else %}
+{% for tid, grupo in agrupado.items() %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:.8rem;gap:.5rem">
+        <div>
+            <h3 style="margin:0;font-size:1.1rem">👤 {{ grupo.trabalhador_nome }}</h3>
+            {% if grupo.trabalhador_cpf %}
+            <span style="font-size:.85rem;color:var(--cor-texto-suave)">CPF: {{ grupo.trabalhador_cpf }}</span>
+            {% endif %}
+            <div style="font-size:.85rem;margin-top:.3rem;display:flex;gap:.6rem;flex-wrap:wrap">
+                {% if grupo.fiado_limite > 0 %}
+                <span>Limite: R$ {{ "%.2f"|format(grupo.fiado_limite) }}</span>
+                {% endif %}
+                {% if grupo.fiado_credito > 0 %}
+                <span style="color:#1da851;font-weight:600">Crédito: R$ {{ "%.2f"|format(grupo.fiado_credito) }}</span>
+                {% endif %}
+                {% if grupo.fiado_data_encerramento %}
+                <span>Venc: {{ grupo.fiado_data_encerramento|data_br }}</span>
+                {% endif %}
+            </div>
+            {% if grupo.fiado_limite > 0 %}
+            {% set _pct = (grupo.total / grupo.fiado_limite * 100)|round %}
+            <div class="progress-bar" style="max-width:300px">
+                <div class="progress-fill" style="width:{{ _pct if _pct <= 100 else 100 }}%;
+                    {% if _pct > 90 %}background:#c0392b{% elif _pct > 70 %}background:#e67e22{% else %}background:#1da851{% endif %}">
+                </div>
+            </div>
+            <div style="font-size:.75rem;color:var(--cor-texto-suave)">
+                {{ "%.1f"|format(_pct) }}% do limite utilizado
+            </div>
+            {% endif %}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.3rem">
+            <div style="font-size:1.3rem;font-weight:900;color:#c0392b">
+                Total: R$ {{ "%.2f"|format(grupo.total) }}
+            </div>
+            <button class="btn btn-sm btn-secundario" onclick="toggleCredito({{ tid }})">➕ Adicionar Crédito</button>
+        </div>
+    </div>
+
+    <div class="credito-form" id="credito-form-{{ tid }}">
+        <form method="post" action="/caixa/fiados/credito/{{ tid }}" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+            <input type="number" name="valor" step="0.01" min="0.01" placeholder="Valor (R$)" required
+                   style="width:100px;padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
+            <input type="text" name="descricao" placeholder="Descrição (opcional)"
+                   style="flex:1;min-width:120px;padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
+            <button class="btn btn-sm btn-primario" type="submit">💾 Salvar</button>
+            <button class="btn btn-sm btn-secundario" type="button" onclick="toggleCredito({{ tid }})">Cancelar</button>
+        </form>
+    </div>
+
+    <table class="tabela" style="margin-top:.5rem">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Data</th>
+                <th>Valor</th>
+                <th>Crédito usado</th>
+                <th>Caixa</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in grupo.vendas %}
+            <tr>
+                <td>{{ v.id }}</td>
+                <td>{{ v.data_venda|data_br }}</td>
+                <td>R$ {{ "%.2f"|format(v.total) }}</td>
+                <td>{% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}R$ {{ "%.2f"|format(v.fiado_credito_usado) }}{% else %}—{% endif %}</td>
+                <td>{{ v.caixa_nome }}</td>
+                <td style="display:flex;gap:.4rem;flex-wrap:wrap">
+                    <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return confirm('Confirmar recebimento do fiado #{{ v.id }}?')">
+                        <button class="btn btn-sm btn-primario">💰 Receber</button>
+                    </form>
+                    <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
+{% endif %}
+
+<script>
+function toggleCredito(tid) {
+    const el = document.getElementById('credito-form-' + tid);
+    el.classList.toggle('ativo');
+}
+</script>
+{% endblock %}

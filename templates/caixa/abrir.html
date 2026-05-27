@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block titulo %}Abrir Caixa{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+        <h2 style="margin:0">Abrir Caixa — {{ caixa.nome }}</h2>
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <a href="/caixa/pdv" class="btn btn-secundario btn-sm">← Voltar</a>
+    </div>
+</div>
+
+<div class="card-form" style="max-width:480px">
+    <form method="post" action="/caixa/abrir">
+        <input type="hidden" name="caixa_id" value="{{ caixa.id }}">
+
+        <div style="margin-bottom:1rem">
+            <label style="font-weight:600;display:block;margin-bottom:.4rem">Caixa</label>
+            <div style="padding:.5rem;background:var(--cor-fundo);border-radius:var(--raio);font-size:1rem">
+                {{ caixa.nome }}
+                {% if caixa.descricao %}
+                <span style="font-size:.85rem;color:var(--cor-texto-suave)">— {{ caixa.descricao }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div style="margin-bottom:1rem">
+            <label style="font-weight:600;display:block;margin-bottom:.4rem">Atendente</label>
+            <div style="padding:.5rem;background:var(--cor-fundo);border-radius:var(--raio)">
+                {{ atendente.nome_completo }}
+            </div>
+        </div>
+
+        <div style="margin-bottom:1.5rem">
+            <label for="saldo_inicial" style="font-weight:600;display:block;margin-bottom:.4rem">
+                Valor inicial em caixa (R$)
+            </label>
+            <input type="number" id="saldo_inicial" name="saldo_inicial"
+                   step="0.01" min="0" value="0"
+                   class="form-input" style="font-size:1.2rem;width:100%"
+                   autofocus>
+        </div>
+
+        <button type="submit" class="btn btn-primario btn-grande" style="width:100%">
+            🔓 Abrir Caixa
+        </button>
+    </form>
+</div>
+{% endblock %}

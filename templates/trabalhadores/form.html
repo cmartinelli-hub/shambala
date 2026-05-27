@@ -169,6 +169,20 @@
                        class="form-input">
             </div>
         </div>
+        <div class="form-grid" style="margin-top:1rem;border-top:1px solid var(--cor-borda);padding-top:1rem">
+            <div class="form-campo">
+                <label for="fiado_limite">Limite de crédito fiado (R$) <span style="font-size:.8rem;color:var(--cor-texto-suave)">0 = sem limite</span></label>
+                <input type="number" id="fiado_limite" name="fiado_limite" step="0.01" min="0"
+                       value="{{ registro.fiado_limite if registro.fiado_limite else '0' }}"
+                       class="form-input">
+            </div>
+            <div class="form-campo">
+                <label for="fiado_data_encerramento">Data de encerramento do fiado</label>
+                <input type="date" id="fiado_data_encerramento" name="fiado_data_encerramento"
+                       value="{{ registro.fiado_data_encerramento if registro.fiado_data_encerramento else '' }}"
+                       class="form-input">
+            </div>
+        </div>
     </div>
 
     <!-- Botões de ação -->

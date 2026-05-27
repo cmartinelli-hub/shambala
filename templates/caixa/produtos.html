@@ -5,6 +5,7 @@
 <div class="cabecalho-secao">
     <h2>Produtos</h2>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a href="/caixa/estoque" class="btn btn-secundario btn-sm">📦 Estoque</a>
         <a href="/caixa/caixas" class="btn btn-secundario btn-sm">🗂️ Caixas</a>
         <a href="/caixa/produtos/novo" class="btn btn-primario btn-sm">+ Produto</a>
     </div>
@@ -22,12 +23,15 @@
 <table class="tabela">
     <thead>
         <tr>
+            <th style="width:44px">Foto</th>
             <th>Nome</th>
             <th>Categoria</th>
             <th>Cód. Barras</th>
             <th>Custo</th>
             <th>Venda</th>
             <th>Margem</th>
+            <th>Estoque</th>
+            <th>Atalho</th>
             <th>Situação</th>
             <th>Ações</th>
         </tr>
@@ -36,6 +40,13 @@
     {% for p in produtos %}
     {% set margem = ((p.preco_venda - p.preco_custo) / p.preco_custo * 100) if p.preco_custo > 0 else 0 %}
     <tr style="{% if not p.ativo %}opacity:.5{% endif %}">
+        <td>
+            {% if p.foto_produto %}
+            <img src="{{ p.foto_produto }}" style="width:40px;height:40px;border-radius:4px;object-fit:cover">
+            {% else %}
+            <div style="width:40px;height:40px;border-radius:4px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:1rem">📷</div>
+            {% endif %}
+        </td>
         <td><strong>{{ p.nome }}</strong></td>
         <td>
             {% for val, label in categorias %}
@@ -47,6 +58,15 @@
         <td><strong>R$ {{ "%.2f"|format(p.preco_venda) }}</strong></td>
         <td style="color:{% if margem >= 0 %}#1da851{% else %}#c0392b{% endif %}">
             {{ "%.0f"|format(margem) }}%
+        </td>
+        <td style="text-align:center;font-weight:700;font-size:.9rem">
+            {% set estoque = p.quantidade_estoque|default(0) %}
+            <span style="color:{% if estoque <= 0 %}#c0392b{% elif estoque <= 5 %}#d68910{% else %}#1da851{% endif %}">
+                {{ estoque }}
+            </span>
+        </td>
+        <td style="text-align:center">
+            {% if p.atalho %}<span style="font-size:1.1rem">⭐</span>{% endif %}
         </td>
         <td>
             {% if p.ativo %}

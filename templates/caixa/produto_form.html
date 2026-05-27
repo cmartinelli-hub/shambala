@@ -8,7 +8,29 @@
 </div>
 
 <div class="card-form">
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
+        <!-- Foto compacta -->
+        <div class="foto-compacta">
+            <label class="foto-compacta-btn">
+                {% if produto and produto.foto_produto %}
+                <img src="{{ produto.foto_produto }}" class="foto-compacta-thumb" id="foto-preview">
+                {% else %}
+                <div class="foto-compacta-placeholder" id="foto-placeholder">📷</div>
+                <img src="" class="foto-compacta-thumb" id="foto-preview" style="display:none">
+                {% endif %}
+                <input type="file" name="foto" accept="image/*" id="foto-input" style="display:none">
+                <span class="foto-compacta-texto" id="foto-texto">
+                    {{ 'Trocar foto' if produto and produto.foto_produto else 'Adicionar foto' }}
+                </span>
+            </label>
+            {% if produto and produto.foto_produto %}
+            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto">✕</button>
+            {% endif %}
+            <button type="button" class="foto-compacta-remover" id="btn-remover-foto-hidden"
+                    style="display:none" title="Remover foto">✕</button>
+        </div>
+        <input type="hidden" name="remover_foto" id="remover-foto" value="">
+
         <div class="grade-form">
             <div class="campo campo-largo">
                 <label>Nome *</label>
@@ -59,6 +81,18 @@
             </div>
 
             <div class="campo">
+                <label>Atalho no PDV</label>
+                <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0">
+                    <input type="checkbox" name="atalho" id="campo-atalho" value="1"
+                           {% if produto and produto.atalho %}checked{% endif %}
+                           style="width:1.2rem;height:1.2rem;accent-color:var(--cor-primaria)">
+                    <label for="campo-atalho" style="font-size:.9rem;font-weight:400;margin:0">
+                        Transformar em atalho (aparece no PDV)
+                    </label>
+                </div>
+            </div>
+
+            <div class="campo">
                 <label>Situação</label>
                 <select name="ativo">
                     <option value="1" {% if not produto or produto.ativo %}selected{% endif %}>Ativo</option>
@@ -99,6 +133,47 @@
     document.getElementById('campo-barras').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); venda.focus(); }
     });
+
+    // ── Preview de foto ─────────────────────────────────────────────────────
+    const fotoInput = document.getElementById('foto-input');
+    const fotoPreview = document.getElementById('foto-preview');
+    const fotoPlaceholder = document.getElementById('foto-placeholder');
+    const fotoTexto = document.getElementById('foto-texto');
+    const btnRemover = document.getElementById('btn-remover-foto');
+    const btnRemoverHidden = document.getElementById('btn-remover-foto-hidden');
+    const removerFoto = document.getElementById('remover-foto');
+
+    if (fotoInput) {
+        fotoInput.addEventListener('change', () => {
+            const file = fotoInput.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                fotoPreview.src = e.target.result;
+                fotoPreview.style.display = '';
+                if (fotoPlaceholder) fotoPlaceholder.style.display = 'none';
+                fotoTexto.textContent = 'Trocar foto';
+                if (btnRemoverHidden) btnRemoverHidden.style.display = '';
+                if (btnRemover) btnRemover.style.display = 'none';
+                removerFoto.value = '';
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    const btnRemoverFoto = btnRemover || btnRemoverHidden;
+    if (btnRemoverFoto) {
+        btnRemoverFoto.addEventListener('click', () => {
+            fotoPreview.src = '';
+            fotoPreview.style.display = 'none';
+            if (fotoPlaceholder) fotoPlaceholder.style.display = '';
+            fotoTexto.textContent = 'Adicionar foto';
+            removerFoto.value = '1';
+            fotoInput.value = '';
+            if (btnRemover) btnRemover.style.display = 'none';
+            if (btnRemoverHidden) btnRemoverHidden.style.display = 'none';
+        });
+    }
 })();
 </script>
 {% endblock %}

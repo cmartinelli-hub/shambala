@@ -4345,3 +4345,186 @@ td.acoes { white-space: nowrap; text-align: right; }
         grid-template-columns: 1fr;
     }
 }
+
+
+/* ── PDV: Grid de atalhos (6 colunas) ── */
+.pdv-atalhos-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: .4rem;
+    margin-bottom: 1rem;
+}
+.pdv-atalho-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: .25rem;
+    padding: .5rem .3rem;
+    background: var(--cor-superficie);
+    border: 2px solid var(--cor-borda);
+    border-radius: var(--raio);
+    cursor: pointer;
+    transition: all .15s;
+    text-align: center;
+    min-height: 110px;
+}
+.pdv-atalho-item:hover {
+    border-color: var(--cor-primaria);
+    background: #f0f7ff;
+    transform: translateY(-2px);
+    box-shadow: var(--sombra);
+}
+.pdv-atalho-img-wrap {
+    width: 64px;
+    height: 64px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--cor-borda);
+    flex-shrink: 0;
+}
+.pdv-atalho-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.pdv-atalho-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cor-primaria);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.2rem;
+}
+.pdv-atalho-nome {
+    font-size: .7rem;
+    font-weight: 600;
+    line-height: 1.15;
+    color: var(--cor-texto);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 100%;
+    word-break: break-word;
+}
+@media (max-width: 900px) {
+    .pdv-atalhos-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 600px) {
+    .pdv-atalhos-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ── PDV: Carrinho com botões +/− ── */
+.pdv-item {
+    display: grid;
+    grid-template-columns: 1fr 32px 44px 32px auto auto;
+    align-items: center;
+    gap: .3rem;
+    padding: .4rem .6rem;
+    border-bottom: 1px solid var(--cor-borda);
+    font-size: .85rem;
+}
+.pdv-qty-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--cor-borda);
+    background: var(--cor-fundo);
+    color: var(--cor-texto);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+    transition: all .15s;
+}
+.pdv-qty-btn:hover {
+    background: var(--cor-primaria);
+    color: #fff;
+    border-color: var(--cor-primaria);
+}
+.pdv-item-qty {
+    width: 38px;
+    text-align: center;
+    border: 1px solid var(--cor-borda);
+    border-radius: 4px;
+    padding: .1rem .2rem;
+    font-size: .85rem;
+    background: var(--cor-fundo);
+    color: var(--cor-texto);
+}
+
+/* ── Estoque ── */
+.estoque-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: .75rem;
+}
+.estoque-card {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .85rem 1rem;
+    background: var(--cor-superficie);
+    border-radius: var(--raio);
+    box-shadow: var(--sombra);
+    border-left: 4px solid var(--cor-primaria);
+    transition: all .2s;
+}
+.estoque-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+}
+.estoque-card-img {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.estoque-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.estoque-card-placeholder {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    background: var(--cor-primaria);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+}
+.estoque-card-info {
+    flex: 1;
+    min-width: 0;
+}
+.estoque-card-nome {
+    font-weight: 600;
+    font-size: .9rem;
+    margin-bottom: .2rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.estoque-card-qtd {
+    font-size: .85rem;
+    font-weight: 700;
+}
+.estoque-card-acoes {
+    display: flex;
+    gap: .3rem;
+    flex-shrink: 0;
+}
+.estoque-baixo { color: #c0392b; }
+.estoque-medio { color: #d68910; }
+.estoque-alto  { color: #1da851; }

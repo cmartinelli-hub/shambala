@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block titulo %}Fiados por Trabalhador — Financeiro{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+        <h2 style="margin:0">Fiados por Trabalhador</h2>
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <a href="/financeiro" class="btn btn-primario btn-sm">← Financeiro</a>
+        <a href="/caixa/fiados" class="btn btn-secundario btn-sm">📝 Fiados pendentes</a>
+    </div>
+</div>
+
+<!-- Seletor de trabalhador -->
+<div class="card-form" style="margin-bottom:1.5rem">
+    <form method="get" action="/financeiro/fiados" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <label for="trabalhador_id" style="font-weight:600">Trabalhador:</label>
+        <select name="trabalhador_id" id="trabalhador_id" style="flex:1;min-width:200px;padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.9rem">
+            <option value="">Selecione um trabalhador…</option>
+            {% for t in trabalhadores %}
+            <option value="{{ t.id }}" {% if trabalhador_sel and trabalhador_sel.id == t.id %}selected{% endif %}>
+                {{ t.nome_completo }}{% if t.cpf %} — {{ t.cpf }}{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primario">Filtrar</button>
+    </form>
+</div>
+
+{% if trabalhador_sel %}
+<!-- Cards de resumo -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;margin-bottom:1.5rem">
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Total Gasto</div>
+        <div style="font-size:1.4rem;font-weight:900;color:var(--cor-primaria)">R$ {{ "%.2f"|format(total_gasto) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Pago</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#1da851">R$ {{ "%.2f"|format(total_pago) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Pendente</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#c0392b">R$ {{ "%.2f"|format(total_pendente) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Crédito</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#1da851">R$ {{ "%.2f"|format(trabalhador_sel.fiado_credito) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Limite</div>
+        <div style="font-size:1.4rem;font-weight:900{% if trabalhador_sel.fiado_limite > 0 %};color:#e67e22{% endif %}">
+            {% if trabalhador_sel.fiado_limite > 0 %}
+                R$ {{ "%.2f"|format(trabalhador_sel.fiado_limite) }}
+            {% else %}
+                Ilimitado
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Dados do trabalhador -->
+<div class="card-form" style="margin-bottom:1.5rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+        <div>
+            <h3 style="margin:0;font-size:1.1rem">👤 {{ trabalhador_sel.nome_completo }}</h3>
+            {% if trabalhador_sel.cpf %}
+            <span style="font-size:.85rem;color:var(--cor-texto-suave)">CPF: {{ trabalhador_sel.cpf }}</span>
+            {% endif %}
+            {% if trabalhador_sel.fiado_data_encerramento %}
+            <span style="font-size:.85rem;color:var(--cor-texto-suave);margin-left:1rem">
+                Data encerramento: {{ trabalhador_sel.fiado_data_encerramento|data_br }}
+            </span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Tabela de vendas fiado -->
+{% if vendas %}
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Data</th>
+            <th>Valor</th>
+            <th>Crédito usado</th>
+            <th>Caixa</th>
+            <th>Status</th>
+            <th>Data pagamento</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for v in vendas %}
+        <tr>
+            <td>{{ v.id }}</td>
+            <td>{{ v.data_venda|data_br }}</td>
+            <td>R$ {{ "%.2f"|format(v.total) }}</td>
+            <td>{% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}R$ {{ "%.2f"|format(v.fiado_credito_usado) }}{% else %}—{% endif %}</td>
+            <td>{{ v.caixa_nome }}</td>
+            <td>
+                {% if v.fiado_pago %}
+                <span style="color:#1da851;font-weight:600">Pago</span>
+                {% else %}
+                <span style="color:#c0392b;font-weight:600">Pendente</span>
+                {% endif %}
+            </td>
+            <td>{% if v.fiado_data_pagamento %}{{ v.fiado_data_pagamento|data_br }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:var(--cor-texto-suave);text-align:center;padding:2rem">Nenhuma venda fiado encontrada para este trabalhador.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

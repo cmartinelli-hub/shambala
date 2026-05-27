@@ -481,3 +481,66 @@ async def relatorios_financeiro(
         "tipo": tipo,
         "categoria": categoria,
     })
+
+
+# ── Relatório de Fiados por Trabalhador ─────────────────────────────────────
+
+@router.get("/fiados", response_class=HTMLResponse)
+async def relatorio_fiados(request: Request, trabalhador_id: int = 0):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        # Lista todos os trabalhadores com fiado
+        trabalhadores = conn.execute(
+            """SELECT id, nome_completo, cpf,
+                      fiado_limite, fiado_credito, fiado_data_encerramento
+               FROM trabalhadores
+               WHERE ativo = 1
+               ORDER BY nome_completo"""
+        ).fetchall()
+
+        vendas = []
+        trab_sel = None
+        total_gasto = 0.0
+        total_pago = 0.0
+        total_pendente = 0.0
+
+        if trabalhador_id:
+            trab_sel = conn.execute(
+                """SELECT id, nome_completo, cpf, fiado_limite,
+                          fiado_credito, fiado_data_encerramento
+                   FROM trabalhadores WHERE id = %s""",
+                (trabalhador_id,)
+            ).fetchone()
+
+            if trab_sel:
+                vendas = conn.execute(
+                    """SELECT v.*, c.nome AS caixa_nome
+                       FROM vendas_pdv v
+                       JOIN caixas c ON c.id = v.caixa_id
+                       WHERE v.fiado_trabalhador_id = %s
+                         AND v.forma_pagamento = 'fiado'
+                       ORDER BY v.data_venda DESC, v.id DESC""",
+                    (trabalhador_id,)
+                ).fetchall()
+
+                for v in vendas:
+                    v_total = float(v["total"])
+                    total_gasto += v_total
+                    if v["fiado_pago"]:
+                        total_pago += v_total
+                    else:
+                        total_pendente += v_total
+
+    return templates.TemplateResponse("financeiro/fiado_trabalhador.html", {
+        "request": request,
+        "atendente": atendente,
+        "trabalhadores": [dict(t) for t in trabalhadores],
+        "trabalhador_sel": dict(trab_sel) if trab_sel else None,
+        "vendas": [dict(v) for v in vendas],
+        "total_gasto": total_gasto,
+        "total_pago": total_pago,
+        "total_pendente": total_pendente,
+    })

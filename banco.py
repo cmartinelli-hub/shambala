@@ -187,6 +187,17 @@ def _migrar(conn):
         ("mediuns_dia", "vagas_dia", "INTEGER"),
         ("financeiro_movimentacoes", "caixa_id", "INTEGER REFERENCES caixas(id)"),
         ("caixas", "chave_pix_id", "INTEGER REFERENCES chaves_pix(id)"),
+        ("vendas_pdv", "fiado_trabalhador_id", "INTEGER REFERENCES trabalhadores(id)"),
+        ("vendas_pdv", "fiado_pago", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("vendas_pdv", "fiado_data_pagamento", "TEXT"),
+        ("trabalhadores", "fiado_limite", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
+        ("trabalhadores", "fiado_data_encerramento", "DATE"),
+        ("trabalhadores", "fiado_credito", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
+        ("vendas_pdv", "fiado_credito_usado", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
+        ("vendas_pdv", "caixa_movimento_id", "INTEGER REFERENCES caixa_movimentos(id)"),
+        ("produtos", "foto_produto", "TEXT"),
+        ("produtos", "atalho", "INTEGER NOT NULL DEFAULT 0"),
+        ("produtos", "quantidade_estoque", "INTEGER NOT NULL DEFAULT 0"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -243,6 +254,10 @@ def _migrar(conn):
             criado_em   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Índices para consultas de fiado
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_trab ON vendas_pdv(fiado_trabalhador_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_pendentes ON vendas_pdv(fiado_trabalhador_id) WHERE forma_pagamento = 'fiado' AND fiado_pago = FALSE")
 
 
 # ── Criação de tabelas ───────────────────────────────────────────────────────
@@ -416,6 +431,65 @@ def criar_tabelas():
                 quantidade      INTEGER NOT NULL DEFAULT 1,
                 preco_unitario  NUMERIC(10,2) NOT NULL,
                 subtotal        NUMERIC(10,2) NOT NULL
+            )
+        """)
+
+        # ── Movimentações de crédito fiado ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fiado_credito_mov (
+                id              SERIAL PRIMARY KEY,
+                trabalhador_id  INTEGER NOT NULL REFERENCES trabalhadores(id),
+                tipo            TEXT NOT NULL CHECK (tipo IN ('credito','debito')),
+                valor           NUMERIC(10,2) NOT NULL,
+                descricao       TEXT,
+                created_at      TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text
+            )
+        """)
+
+        # ── Movimentos de caixa (abertura/fechamento) ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS caixa_movimentos (
+                id                      SERIAL PRIMARY KEY,
+                caixa_id                INTEGER NOT NULL REFERENCES caixas(id),
+                data_abertura           TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text,
+                data_fechamento         TEXT,
+                saldo_inicial           NUMERIC(10,2) NOT NULL DEFAULT 0,
+                saldo_final             NUMERIC(10,2),
+                total_vendas            NUMERIC(10,2) DEFAULT 0,
+                total_sangrias          NUMERIC(10,2) DEFAULT 0,
+                status                  TEXT NOT NULL DEFAULT 'aberto',
+                atendente_id_abertura   INTEGER REFERENCES atendentes(id),
+                atendente_id_fechamento INTEGER REFERENCES atendentes(id),
+                observacao_fechamento   TEXT
+            )
+        """)
+
+        # ── Sangrias (retirada de dinheiro do caixa) ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS caixa_sangrias (
+                id                  SERIAL PRIMARY KEY,
+                caixa_movimento_id  INTEGER NOT NULL REFERENCES caixa_movimentos(id),
+                valor               NUMERIC(10,2) NOT NULL,
+                motivo              TEXT NOT NULL DEFAULT '',
+                data_hora           TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text,
+                atendente_id        INTEGER REFERENCES atendentes(id),
+                recebedor_nome      TEXT NOT NULL DEFAULT ''
+            )
+        """)
+
+        # ── Movimentações de estoque ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS estoque_movimentos (
+                id              SERIAL PRIMARY KEY,
+                produto_id      INTEGER NOT NULL REFERENCES produtos(id),
+                tipo            TEXT NOT NULL CHECK (tipo IN ('entrada','saida','ajuste')),
+                quantidade      INTEGER NOT NULL,
+                saldo_anterior  INTEGER NOT NULL DEFAULT 0,
+                saldo_posterior INTEGER NOT NULL DEFAULT 0,
+                motivo          TEXT,
+                referencia_id   INTEGER,
+                atendente_id    INTEGER REFERENCES atendentes(id),
+                created_at      TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text
             )
         """)
 
@@ -648,6 +722,8 @@ def criar_tabelas():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_doacao_itens_doacao ON doacao_itens(doacao_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_doacao_itens_tipo ON doacao_itens(tipo_doacao_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tipos_doacao_ativo ON tipos_doacao(ativo)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_caixa_movimentos_caixa_status ON caixa_movimentos(caixa_id, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_caixa_sangrias_movimento ON caixa_sangrias(caixa_movimento_id)")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trabalhador_dias (
@@ -710,6 +786,8 @@ def criar_tabelas():
         """)
 
         _migrar(conn)
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_caixa_movimento ON vendas_pdv(caixa_movimento_id)")
 
         # Seed: caixas padrão
         for nome_cx, desc_cx in [

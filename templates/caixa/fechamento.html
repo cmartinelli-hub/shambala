@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block titulo %}Fechamento de Caixa{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+        <h2 style="margin:0">Fechamento — {{ movimento.caixa_nome }}</h2>
+        {% if movimento.status == 'fechado' %}
+        <span style="background:#c0392b;color:#fff;padding:.2rem .8rem;border-radius:var(--raio);font-weight:700;font-size:.85rem">
+            CAIXA FECHADO
+        </span>
+        {% else %}
+        <span style="background:#1da851;color:#fff;padding:.2rem .8rem;border-radius:var(--raio);font-weight:700;font-size:.85rem">
+            ABERTO
+        </span>
+        {% endif %}
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <a href="/caixa/pdv?caixa_id={{ movimento.caixa_id }}" class="btn btn-secundario btn-sm">← PDV</a>
+        {% if movimento.status == 'fechado' %}
+        <a href="/caixa/fechar/{{ movimento.id }}/pdf" class="btn btn-primario btn-sm">📄 Exportar PDF</a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Cards de resumo -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;margin-bottom:1.5rem">
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Saldo Inicial</div>
+        <div style="font-size:1.4rem;font-weight:900;color:var(--cor-primaria)">R$ {{ "%.2f"|format(movimento.saldo_inicial) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Total Vendas</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#1da851">R$ {{ "%.2f"|format(movimento.total_vendas) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Total Sangrias</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#c0392b">R$ {{ "%.2f"|format(movimento.total_sangrias) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Saldo Esperado</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#e67e22">R$ {{ "%.2f"|format(saldo_esperado) }}</div>
+    </div>
+</div>
+
+<!-- Informações do movimento -->
+<div class="card-form" style="margin-bottom:1.5rem">
+    <table style="width:100%;font-size:.9rem">
+        <tr>
+            <td style="padding:.3rem .5rem;font-weight:600;width:160px">Caixa</td>
+            <td>{{ movimento.caixa_nome }}</td>
+        </tr>
+        <tr>
+            <td style="padding:.3rem .5rem;font-weight:600">Abertura</td>
+            <td>{{ movimento.data_abertura[:19] }}</td>
+        </tr>
+        <tr>
+            <td style="padding:.3rem .5rem;font-weight:600">Fechamento</td>
+            <td>{% if movimento.data_fechamento %}{{ movimento.data_fechamento[:19] }}{% else %}—{% endif %}</td>
+        </tr>
+        <tr>
+            <td style="padding:.3rem .5rem;font-weight:600">Atendente (abertura)</td>
+            <td>{{ movimento.atendente_abertura_nome or '—' }}</td>
+        </tr>
+        <tr>
+            <td style="padding:.3rem .5rem;font-weight:600">Atendente (fechamento)</td>
+            <td>{{ movimento.atendente_fechamento_nome or '—' }}</td>
+        </tr>
+        {% if movimento.observacao_fechamento %}
+        <tr>
+            <td style="padding:.3rem .5rem;font-weight:600">Observação</td>
+            <td>{{ movimento.observacao_fechamento }}</td>
+        </tr>
+        {% endif %}
+    </table>
+</div>
+
+<!-- Vendas por forma de pagamento -->
+{% if pgto_agrupado %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin:0 0 .8rem;font-size:1rem">Por Forma de Pagamento</h3>
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>Forma de Pagamento</th>
+                <th>Qtd</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% set mapa_pgto = {'especie': 'Espécie', 'pix': 'PIX', 'fiado': 'Fiado'} %}
+            {% for p in pgto_agrupado %}
+            <tr>
+                <td>{{ mapa_pgto.get(p.forma_pagamento, p.forma_pagamento) }}</td>
+                <td>{{ p.qtd }}</td>
+                <td>R$ {{ "%.2f"|format(p.total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Produtos vendidos -->
+{% if produtos %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin:0 0 .8rem;font-size:1rem">Produtos Vendidos</h3>
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>Produto</th>
+                <th>Qtd</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in produtos %}
+            <tr>
+                <td>{{ p.nome_produto }}</td>
+                <td>{{ p.qtd }}</td>
+                <td>R$ {{ "%.2f"|format(p.total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Vendas realizadas -->
+{% if vendas %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin:0 0 .8rem;font-size:1rem">Vendas Realizadas</h3>
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Data</th>
+                <th>Pagamento</th>
+                <th>Total</th>
+                <th>Atendente</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% set mapa_pgto2 = {'especie': '💵 Espécie', 'pix': '📱 PIX', 'fiado': '📝 Fiado'} %}
+            {% for v in vendas %}
+            <tr>
+                <td>{{ v.id }}</td>
+                <td>{{ v.data_venda|data_br }}</td>
+                <td>{{ mapa_pgto2.get(v.forma_pagamento, v.forma_pagamento) }}</td>
+                <td>R$ {{ "%.2f"|format(v.total) }}</td>
+                <td>{{ v.atendente_nome or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Sangrias -->
+{% if sangrias %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin:0 0 .8rem;font-size:1rem">Sangrias</h3>
+    <table class="tabela">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Valor</th>
+                <th>Motivo</th>
+                <th>Retirado por</th>
+                <th>Atendente</th>
+                <th>Data/Hora</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in sangrias %}
+            <tr>
+                <td>{{ s.id }}</td>
+                <td style="color:#c0392b;font-weight:600">R$ {{ "%.2f"|format(s.valor) }}</td>
+                <td>{{ s.motivo or '—' }}</td>
+                <td>{{ s.recebedor_nome or '—' }}</td>
+                <td>{{ s.atendente_nome or '—' }}</td>
+                <td>{{ s.data_hora[:19] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if movimento.status == 'aberto' %}
+<div class="card-form" style="text-align:center;border:2px solid #c0392b">
+    <p style="font-size:1rem;margin-bottom:1rem;font-weight:600">
+        🔒 Confira os valores acima antes de fechar o caixa.
+    </p>
+    <form method="post" action="/caixa/fechar" onsubmit="return confirm('Tem certeza que deseja fechar o caixa? Esta ação não pode ser desfeita.')">
+        <input type="hidden" name="caixa_movimento_id" value="{{ movimento.id }}">
+        <div style="margin-bottom:1rem;max-width:400px;margin-left:auto;margin-right:auto">
+            <label for="observacao" style="font-weight:600;display:block;margin-bottom:.3rem;font-size:.9rem">Observação (opcional)</label>
+            <input type="text" id="observacao" name="observacao" class="form-input"
+                   placeholder="Ex: Caixa fechado, tudo ok..." style="width:100%">
+        </div>
+        <button type="submit" class="btn btn-perigo btn-grande">🔒 Fechar Caixa</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}
