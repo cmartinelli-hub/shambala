@@ -1483,8 +1483,6 @@ async def exportar_pdf_fechamento(request: Request, mov_id: int):
 
 def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str,
                          trabalhador: dict = None, via_caixa: bool = False) -> bytes:
-    from datetime import datetime
-
     ESC = b'\x1b'
     GS  = b'\x1d'
     LF  = b'\n'
@@ -1512,49 +1510,30 @@ def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str,
     def separador(c: str = '-') -> bytes:
         return linha(c * COLS)
 
-    now = datetime.now()
-
     buf = bytearray()
     buf += INIT
-
-    # ── Cabeçalho ──────────────────────────────────────────────────────────────
-    buf += ALINHAR_CENT
-    buf += NEGRITO_ON
-    buf += linha(centro_nome[:COLS])
-    buf += NEGRITO_OFF
-    buf += LF
-    buf += linha(f"Comanda #{venda['id']}")
-    buf += linha(now.strftime("%d/%m/%Y   %H:%M"))
-    buf += linha(f"Caixa: {venda['caixa_nome']}")
-    if venda.get('atendente_nome'):
-        buf += linha(f"Atend.: {venda['atendente_nome'][:32]}")
     buf += ALINHAR_ESQU
-    buf += separador()
 
-    # ── Itens em fonte dupla (2×2 = ~21 chars por linha) ─────────────────────
-    COLS2 = 21  # colunas em fonte dupla
-
+    # ── Itens ─────────────────────────────────────────────────────────────────
     buf += separador()
-    buf += DUPLO_ON
+    buf += NEGRITO_ON
     for item in itens:
         nome = item['nome_produto'].upper()
         qtd  = item['quantidade']
         sub  = _fmt_valor(float(item['subtotal']))
 
-        # Linha 1: quantidade + nome (truncado se necessário)
         prefixo = f"{qtd}x "
-        espaco_nome = COLS2 - len(prefixo)
+        espaco_nome = COLS - len(prefixo)
         primeira = nome[:espaco_nome]
         resto    = nome[espaco_nome:]
         buf += linha(prefixo + primeira)
         while resto:
-            buf += linha(f"   {resto[:COLS2 - 3]}")
-            resto = resto[COLS2 - 3:]
+            buf += linha(f"   {resto[:COLS - 3]}")
+            resto = resto[COLS - 3:]
 
-        # Linha 2: subtotal alinhado à direita
-        buf += linha(sub.rjust(COLS2))
+        buf += linha(sub.rjust(COLS))
 
-    buf += DUPLO_OFF
+    buf += NEGRITO_OFF
     buf += separador()
 
     # ── Total em destaque ──────────────────────────────────────────────────────
@@ -1603,11 +1582,6 @@ def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str,
             buf += LF
         buf += separador()
 
-    # ── Rodapé ─────────────────────────────────────────────────────────────────
-    buf += ALINHAR_CENT
-    buf += linha("Obrigado pela preferência!")
-    buf += LF
-    buf += LF
     buf += LF
     buf += CORTAR
 
