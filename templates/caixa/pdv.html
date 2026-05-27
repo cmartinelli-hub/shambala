@@ -325,8 +325,10 @@
                 <label for="pgto-especie">💵 Espécie</label>
                 <input type="radio" name="pgto" id="pgto-pix" value="pix">
                 <label for="pgto-pix">📱 PIX</label>
+                {% if caixa_sel.usa_produtos != False %}
                 <input type="radio" name="pgto" id="pgto-fiado" value="fiado">
                 <label for="pgto-fiado">📝 Fiado</label>
+                {% endif %}
             </div>
 
             <div class="pdv-especie ativo" id="painel-especie">

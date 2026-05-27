@@ -825,8 +825,14 @@ async def registrar_perda(
             "SELECT quantidade_estoque FROM produtos WHERE id = %s", (produto_id,)
         ).fetchone()
         saldo_ant = int(ant["quantidade_estoque"]) if ant else 0
-        saldo_novo = max(0, saldo_ant - quantidade)
 
+        if quantidade > saldo_ant:
+            return RedirectResponse(
+                url=f"/caixa/estoque/perda?erro=sem_estoque&produto_id={produto_id}",
+                status_code=303
+            )
+
+        saldo_novo = saldo_ant - quantidade
         conn.execute(
             "UPDATE produtos SET quantidade_estoque = %s WHERE id = %s",
             (saldo_novo, produto_id)
