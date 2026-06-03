@@ -251,8 +251,24 @@ async def baixar_mensalidade(
             """UPDATE financeiro_movimentacoes SET status = 'pago', pix_copiadecola = %s WHERE id = %s""",
             (pix.strip(), mov_id),
         )
+        row = conn.execute(
+            "SELECT data_movimentacao, valor FROM financeiro_movimentacoes WHERE id = %s", (mov_id,)
+        ).fetchone()
+        mes_str = str(row["data_movimentacao"])[:7] if row else ""
 
-    return RedirectResponse(url="/financeiro/mensalidades", status_code=303)
+        # Atualiza o caixa aberto mais recente com o valor da mensalidade
+        if row and float(row["valor"]) > 0:
+            mov_caixa = conn.execute(
+                "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if mov_caixa:
+                conn.execute(
+                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
+                    (float(row["valor"]), mov_caixa["id"])
+                )
+
+    mes_param = f"&mes={mes_str}" if mes_str else ""
+    return RedirectResponse(url=f"/financeiro/mensalidades?pago={mov_id}{mes_param}", status_code=303)
 
 
 # ── PIX Estático ──────────────────────────────────────────────────────────────

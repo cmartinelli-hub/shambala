@@ -5,9 +5,18 @@
 <div class="cabecalho-secao">
     <h2>Mensalidades</h2>
     <div style="display:flex; gap:0.5rem">
-        <a href="/financeiro" class="btn btn-secundario">← Voltar</a>
+        <a href="/caixa/pdv" class="btn btn-secundario">← PDV</a>
+        <a href="/financeiro" class="btn btn-secundario">← Financeiro</a>
     </div>
 </div>
+
+{% set _pago_id = request.query_params.get('pago') %}
+{% if _pago_id %}
+<div id="div-ok" style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
+    <span id="msg-ok">⏳ Mensalidade registrada — imprimindo 2 vias…</span>
+</div>
+{% endif %}
 
 <!-- Filtro mês -->
 <form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:center">
@@ -46,20 +55,26 @@
                     <span style="color:#ff4444;font-weight:600;font-size:0.8rem"> (Vencido)</span>
                 {% endif %}
             </td>
-            <td style="display:flex; gap:0.3rem">
+            <td style="display:flex; gap:0.3rem; flex-wrap:wrap">
                 {% if not item.mov_id %}
                 <form method="post" action="/financeiro/mensalidades/gerar" style="display:inline">
                     <input type="hidden" name="trabalhador_id" value="{{ item.trabalhador.id }}">
                     <input type="hidden" name="mes_ref" value="{{ mes_ref }}">
-                    <button type="submit" class="btn btn-primario" style="padding:0.25rem 0.6rem; font-size:0.85rem">Gerar</button>
+                    <button type="submit" class="btn btn-secundario" style="padding:0.25rem 0.6rem; font-size:0.85rem">Gerar</button>
                 </form>
                 {% endif %}
                 {% if item.mov_id and item.mov_status != 'pago' %}
-                <form method="post" action="/financeiro/mensalidades/{{ item.mov_id }}/baixar" style="display:inline">
+                <form method="post" action="/financeiro/mensalidades/{{ item.mov_id }}/baixar" style="display:inline"
+                      onsubmit="return confirm('Confirmar pagamento de mensalidade?')">
                     <input type="hidden" name="pix" value="">
-                    <button type="submit" class="btn btn-primario" style="padding:0.25rem 0.6rem; font-size:0.85rem"
-                            onclick="return confirm('Marcar como pago?')">Baixar</button>
+                    <button type="submit" class="btn btn-primario" style="padding:0.25rem 0.6rem; font-size:0.85rem">
+                        💰 Receber
+                    </button>
                 </form>
+                {% endif %}
+                {% if item.mov_id and item.mov_status == 'pago' %}
+                <button class="btn btn-secundario" style="padding:0.25rem 0.6rem; font-size:0.85rem"
+                        onclick="reimprimir({{ item.mov_id }})">🖨 Reimprimir</button>
                 {% endif %}
             </td>
         </tr>
@@ -70,4 +85,43 @@
 {% else %}
 <p style="color:var(--cor-texto-suave)">Nenhum trabalhador com mensalidade configurada.</p>
 {% endif %}
+
+<script>
+{% if _pago_id %}
+async function imprimirMensalidade(movId) {
+    const msg = document.getElementById('msg-ok');
+    try {
+        const rb = await fetch(`/caixa/mensalidades/${movId}/escpos`);
+        if (!rb.ok) throw new Error('Erro ao buscar bytes');
+        const bytes = await rb.arrayBuffer();
+        await fetch('http://localhost:9001/imprimir', {
+            method: 'POST',
+            body: bytes,
+            headers: { 'Content-Type': 'application/octet-stream' }
+        });
+        if (msg) msg.textContent = '✅ Mensalidade registrada! 2 vias impressas (trabalhador + caixa).';
+    } catch(e) {
+        if (msg) msg.textContent = '✅ Mensalidade registrada. Agente não respondeu — verifique se está rodando.';
+    }
+}
+window.addEventListener('load', () => imprimirMensalidade({{ _pago_id }}));
+{% endif %}
+
+async function reimprimir(movId) {
+    try {
+        const rb = await fetch(`/caixa/mensalidades/${movId}/escpos`);
+        if (!rb.ok) { alert('Erro ao buscar recibo.'); return; }
+        const bytes = await rb.arrayBuffer();
+        const r = await fetch('http://localhost:9001/imprimir', {
+            method: 'POST',
+            body: bytes,
+            headers: { 'Content-Type': 'application/octet-stream' }
+        });
+        if (!r.ok) throw new Error();
+        alert('Impresso!');
+    } catch(e) {
+        alert('Agente de impressão não respondeu. Verifique se está rodando.');
+    }
+}
+</script>
 {% endblock %}

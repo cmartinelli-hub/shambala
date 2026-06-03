@@ -54,7 +54,10 @@
     box-shadow: var(--sombra);
     display: flex;
     flex-direction: column;
-    min-height: 500px;
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 90px);
+    overflow: hidden;
 }
 .pdv-carrinho-titulo {
     background: var(--cor-primaria);
@@ -63,11 +66,12 @@
     font-weight: 700;
     border-radius: var(--raio) var(--raio) 0 0;
     font-size: 1rem;
+    flex-shrink: 0;
 }
 .pdv-carrinho-itens {
-    flex: 1;
     overflow-y: auto;
-    max-height: 320px;
+    max-height: 220px;
+    flex-shrink: 0;
 }
 .pdv-item {
     display: grid;
@@ -118,7 +122,7 @@
     font-weight: 900;
 }
 .pdv-total-val { color: var(--cor-primaria); }
-.pdv-pagamento { padding: .8rem 1rem; border-top: 1px solid var(--cor-borda); }
+.pdv-pagamento { padding: .8rem 1rem; border-top: 1px solid var(--cor-borda); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .pdv-pagamento label { font-weight: 600; display: block; margin-bottom: .4rem; font-size: .85rem; }
 .pdv-radio-group { display: flex; gap: .5rem; margin-bottom: .6rem; }
 .pdv-radio-group label {
@@ -146,8 +150,14 @@
     color: #1da851; min-height: 1.4em;
 }
 .pdv-btn-finalizar {
-    width: 100%; margin-top: .6rem; padding: .7rem;
+    width: 100%; padding: .7rem;
     font-size: 1rem; font-weight: 700;
+}
+.pdv-btn-area {
+    flex-shrink: 0;
+    padding: .5rem 1rem .8rem;
+    border-top: 1px solid var(--cor-borda);
+    background: var(--cor-superficie);
 }
 .pdv-btn-pix {
     width: 100%; margin-bottom: .6rem; padding: .5rem;
@@ -157,7 +167,7 @@
     text-align: center; margin: .4rem 0;
     display: none;
 }
-.pdv-qr-inline img { max-width: 180px; border-radius: 4px; }
+.pdv-qr-inline img { max-width: 140px; border-radius: 4px; }
 .pdv-qr-code {
     font-size: .65rem; word-break: break-all;
     color: var(--cor-texto-suave); margin-top: .3rem;
@@ -195,6 +205,7 @@
         <a href="/caixa/qrcode" target="_blank" class="btn btn-secundario btn-sm">📺 Segundo monitor</a>
         <a href="/caixa/produtos" class="btn btn-secundario btn-sm">🛒 Produtos</a>
         <a href="/caixa/fiados" class="btn btn-secundario btn-sm">📝 Fiados</a>
+        <a href="/financeiro/mensalidades" class="btn btn-secundario btn-sm">🗓 Mensalidades</a>
     </div>
 </div>
 
@@ -345,10 +356,21 @@
             </div>
 
             <div class="pdv-pix" id="painel-pix">
+                <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+                    <label style="font-size:.85rem;font-weight:600;white-space:nowrap">❤️ Doação (R$)</label>
+                    <input type="number" id="pix-doacao" class="pdv-input-valor"
+                           step="0.01" min="0" placeholder="0,00"
+                           style="width:100px;font-size:.95rem">
+                </div>
                 <button class="btn btn-secundario pdv-btn-pix" id="btn-gerar-pix" type="button">
                     📱 Gerar QR Code PIX
                 </button>
                 <div class="pdv-qr-inline" id="pdv-qr-inline">
+                    <div id="pix-breakdown" style="display:none;font-size:.78rem;color:var(--cor-texto-suave);margin-bottom:.3rem">
+                        Compras: R$ <span id="pix-sub"></span> &nbsp;+&nbsp;
+                        Doação: R$ <span id="pix-don"></span> &nbsp;=&nbsp;
+                        <strong>Total: R$ <span id="pix-tot"></span></strong>
+                    </div>
                     <img id="pdv-qr-img" src="" alt="QR Code PIX">
                     <div class="pdv-qr-code" id="pdv-qr-code"></div>
                 </div>
@@ -371,15 +393,16 @@
                 </div>
             </div>
 
-            <div style="display:flex;gap:.4rem;margin-top:.6rem">
-                <button class="btn btn-primario pdv-btn-finalizar" id="btn-finalizar" disabled style="flex:1">
+        </div>
+        <div class="pdv-btn-area">
+            <div style="display:flex;gap:.4rem">
+                <button class="btn btn-secundario pdv-btn-finalizar" id="btn-finalizar" disabled style="flex:1">
                     ✅ Finalizar
                 </button>
-                <button class="btn btn-secundario pdv-btn-finalizar" id="btn-finalizar-sem-impressao" disabled style="flex:1">
+                <button class="btn btn-primario pdv-btn-finalizar" id="btn-finalizar-sem-impressao" disabled style="flex:1">
                     🖨️ Finalizar e Imprimir
                 </button>
             </div>
-            <input type="hidden" name="imprimir" id="f-imprimir" value="1">
         </div>
     </div>
 </div>
@@ -393,6 +416,7 @@
     <input type="hidden" name="trabalhador_id" id="f-trabalhador-id" value="0">
     <input type="hidden" name="caixa_movimento_id" id="f-caixa-movimento-id" value="{{ movimento.id if movimento else 0 }}">
     <input type="hidden" name="doacao_valor" id="f-doacao-valor" value="0">
+    <input type="hidden" name="imprimir" id="f-imprimir" value="1">
 </form>
 {% endif %}
 {% endif %}
@@ -633,12 +657,36 @@ document.getElementById('btn-doacao').addEventListener('click', () => {
 document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
     const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
     if (!total) return;
-    const res = await fetch(`/caixa/pix-qr?valor=${total.toFixed(2)}&caixa_id={{ caixa_sel.id }}`);
+    const doacao = Math.max(0, parseFloat(document.getElementById('pix-doacao').value) || 0);
+    const totalPix = parseFloat((total + doacao).toFixed(2));
+    const res = await fetch(`/caixa/pix-qr?valor=${totalPix.toFixed(2)}&caixa_id={{ caixa_sel.id }}`);
     const dados = await res.json();
     const qrInline = document.getElementById('pdv-qr-inline');
     document.getElementById('pdv-qr-img').src = `data:image/png;base64,${dados.qr_base64}`;
     document.getElementById('pdv-qr-code').textContent = dados.pix_code;
     qrInline.style.display = 'block';
+    // Mostra breakdown se houver doação
+    const breakdown = document.getElementById('pix-breakdown');
+    if (doacao > 0) {
+        document.getElementById('pix-sub').textContent = fmtVal(total);
+        document.getElementById('pix-don').textContent = fmtVal(doacao);
+        document.getElementById('pix-tot').textContent = fmtVal(totalPix);
+        breakdown.style.display = 'block';
+    } else {
+        breakdown.style.display = 'none';
+    }
+    // Marca o valor de doação gerado para uso no submit
+    document.getElementById('pdv-qr-inline').dataset.doacao = doacao.toFixed(2);
+});
+
+// Oculta QR se o valor de doação mudar após geração (força regeneração)
+document.getElementById('pix-doacao').addEventListener('input', () => {
+    const qrInline = document.getElementById('pdv-qr-inline');
+    if (qrInline.style.display !== 'none') {
+        qrInline.style.display = 'none';
+        document.getElementById('pix-breakdown').style.display = 'none';
+        qrInline.dataset.doacao = '0';
+    }
 });
 
 // ── Finalizar ─────────────────────────────────────────────────────────────────
@@ -659,6 +707,10 @@ function submeterVenda(comImpressao) {
     document.getElementById('f-pagamento').value = pgto;
     document.getElementById('f-valor-recebido').value =
         pgto === 'especie' ? (document.getElementById('valor-recebido').value || 0) : 0;
+    if (pgto === 'pix') {
+        const doacao = parseFloat(document.getElementById('pdv-qr-inline').dataset.doacao || '0') || 0;
+        document.getElementById('f-doacao-valor').value = doacao.toFixed(2);
+    }
     document.getElementById('f-itens-json').value = JSON.stringify(carrinho);
     document.getElementById('f-imprimir').value = comImpressao ? '1' : '0';
     document.getElementById('form-finalizar').submit();
@@ -766,6 +818,7 @@ function fmtVal(v) {
 {% if request.query_params.get('ok') %}
 // ── Impressão automática via agente local ─────────────────────────────────────
 async function imprimirAgente(vendaId) {
+    if (!vendaId) return;
     const msg = document.getElementById('msg-ok');
     const urlParams = new URLSearchParams(window.location.search);
     const isFiado = urlParams.get('fiado') === '1';

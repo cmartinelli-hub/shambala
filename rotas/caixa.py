@@ -245,14 +245,19 @@ async def finalizar_venda(
                  item["produto_id"])
             )
 
-        # Registra doação no financeiro
+        # Registra doação no financeiro e inclui no total do caixa
         if doacao > 0:
             conn.execute(
                 """INSERT INTO financeiro_movimentacoes
                    (tipo, categoria, valor, descricao, caixa_id)
                    VALUES ('entrada', 'doacao', %s, %s, %s)""",
-                (doacao, f"Doação de troco — venda #{venda_id}", caixa_id)
+                (doacao, f"Doação via {'PIX' if forma_pagamento == 'pix' else 'troco'} — venda #{venda_id}", caixa_id)
             )
+            if mov_id:
+                conn.execute(
+                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
+                    (doacao, mov_id)
+                )
 
     # Sinaliza ao segundo monitor que a venda foi concluída
     import asyncio
@@ -597,6 +602,29 @@ async def salvar_novo_produto(
                 )
 
     return RedirectResponse(url="/caixa/produtos", status_code=303)
+
+
+@router.get("/produtos/tabela-precos", response_class=HTMLResponse)
+async def tabela_precos(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        produtos = conn.execute(
+            """SELECT nome, preco_venda FROM produtos
+               WHERE ativo = 1 ORDER BY nome""",
+        ).fetchall()
+        centro = conn.execute(
+            "SELECT chave, valor FROM configuracoes_centro"
+        ).fetchall()
+        centro_nome = {r["chave"]: r["valor"] for r in centro}.get("centro_nome", "Centro Espírita")
+
+    return templates.TemplateResponse("caixa/tabela_precos.html", {
+        "request": request,
+        "produtos": [dict(p) for p in produtos],
+        "centro_nome": centro_nome,
+    })
 
 
 @router.get("/produtos/{id}/editar", response_class=HTMLResponse)
@@ -1044,7 +1072,7 @@ async def listar_fiados(request: Request):
             agrupado[tid]["fiado_credito"] = float(f_dict.get("fiado_credito") or 0)
             agrupado[tid]["fiado_data_encerramento"] = f_dict.get("fiado_data_encerramento")
             agrupado[tid]["vendas"].append(f_dict)
-            agrupado[tid]["total"] += float(f_dict["total"])
+            agrupado[tid]["total"] += float(f_dict["total"]) - float(f_dict.get("fiado_credito_usado") or 0)
 
     return templates.TemplateResponse("caixa/fiados.html", {
         "request": request,
@@ -1054,6 +1082,23 @@ async def listar_fiados(request: Request):
     })
 
 
+def _contabilizar_recebimento(conn, valor: float, descricao: str):
+    """Insere em financeiro_movimentacoes e atualiza o caixa aberto mais recente."""
+    conn.execute(
+        """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao)
+           VALUES ('entrada', 'recebimento_fiado', %s, %s)""",
+        (valor, descricao)
+    )
+    mov = conn.execute(
+        "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if mov:
+        conn.execute(
+            "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
+            (valor, mov["id"])
+        )
+
+
 @router.post("/fiados/{venda_id}/pagar")
 async def pagar_fiado(request: Request, venda_id: int):
     atendente, redir = _guard(request)
@@ -1061,6 +1106,11 @@ async def pagar_fiado(request: Request, venda_id: int):
         return redir
 
     with conectar() as conn:
+        venda = conn.execute(
+            "SELECT total, fiado_credito_usado FROM vendas_pdv WHERE id = %s",
+            (venda_id,)
+        ).fetchone()
+
         conn.execute(
             """UPDATE vendas_pdv
                SET fiado_pago = TRUE,
@@ -1068,6 +1118,96 @@ async def pagar_fiado(request: Request, venda_id: int):
                WHERE id = %s AND forma_pagamento = 'fiado'""",
             (date.today().isoformat(), venda_id)
         )
+
+        if venda:
+            valor_pago = round(float(venda["total"]) - float(venda["fiado_credito_usado"] or 0), 2)
+            if valor_pago > 0:
+                _contabilizar_recebimento(conn, valor_pago, f"Recebimento fiado — venda #{venda_id}")
+
+    return RedirectResponse(url="/caixa/fiados", status_code=303)
+
+
+@router.post("/fiados/{trabalhador_id}/pagar-divida")
+async def pagar_divida_fiado(
+    request: Request,
+    trabalhador_id: int,
+    valor: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        vendas = conn.execute(
+            """SELECT id, total, fiado_credito_usado
+               FROM vendas_pdv
+               WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE
+               ORDER BY data_venda ASC, id ASC""",
+            (trabalhador_id,)
+        ).fetchall()
+
+        if not vendas:
+            return RedirectResponse(url="/caixa/fiados", status_code=303)
+
+        total_divida = round(sum(
+            float(v["total"]) - float(v["fiado_credito_usado"] or 0)
+            for v in vendas
+        ), 2)
+
+        try:
+            valor_dec = round(float(valor.strip().replace(",", ".")), 2)
+        except (ValueError, AttributeError):
+            valor_dec = total_divida
+
+        if valor_dec <= 0:
+            return RedirectResponse(url="/caixa/fiados", status_code=303)
+
+        hoje = date.today().isoformat()
+
+        if valor_dec >= total_divida:
+            conn.execute(
+                """UPDATE vendas_pdv
+                   SET fiado_pago = TRUE, fiado_data_pagamento = %s
+                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE""",
+                (hoje, trabalhador_id)
+            )
+            valor_efetivo = total_divida
+        else:
+            # FIFO: quita as compras mais antigas primeiro
+            restante = valor_dec
+            for v in vendas:
+                devido = round(float(v["total"]) - float(v["fiado_credito_usado"] or 0), 2)
+                if restante >= devido:
+                    conn.execute(
+                        """UPDATE vendas_pdv
+                           SET fiado_pago = TRUE, fiado_data_pagamento = %s
+                           WHERE id = %s""",
+                        (hoje, v["id"])
+                    )
+                    restante = round(restante - devido, 2)
+                    if restante < 0.01:
+                        break
+                else:
+                    break
+
+            # Sobra que não cobre a próxima compra vai para crédito
+            if restante >= 0.01:
+                conn.execute(
+                    "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
+                    (restante, trabalhador_id)
+                )
+                conn.execute(
+                    """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
+                       VALUES (%s, 'credito', %s, 'Saldo de pagamento parcial de fiado')""",
+                    (trabalhador_id, restante)
+                )
+            valor_efetivo = valor_dec  # cash total received, including any converted to credit
+
+        trab = conn.execute(
+            "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trabalhador_id,)
+        ).fetchone()
+        nome = trab["nome_completo"] if trab else f"#{trabalhador_id}"
+        _contabilizar_recebimento(conn, valor_efetivo, f"Recebimento fiado — {nome}")
 
     return RedirectResponse(url="/caixa/fiados", status_code=303)
 
@@ -1289,6 +1429,32 @@ async def escpos_sangria(request: Request, sangria_id: int):
         centro_nome = cfg.get("centro_nome", "Centro Espírita")
 
     dados = _gerar_bytes_escpos_sangria(dict(sangria), centro_nome)
+    return Response(content=dados, media_type="application/octet-stream")
+
+
+@router.get("/mensalidades/{mov_id}/escpos")
+async def escpos_mensalidade(request: Request, mov_id: int):
+    from fastapi.responses import Response
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return JSONResponse({}, status_code=401)
+
+    with conectar() as conn:
+        mov = conn.execute(
+            """SELECT fm.*, t.nome_completo, t.cpf
+               FROM financeiro_movimentacoes fm
+               JOIN trabalhadores t ON t.id = fm.trabalhador_id
+               WHERE fm.id = %s AND fm.categoria = 'mensalidade'""",
+            (mov_id,)
+        ).fetchone()
+        if not mov:
+            return JSONResponse({"erro": "Movimentação não encontrada"}, status_code=404)
+
+        centro = conn.execute("SELECT chave, valor FROM configuracoes_centro").fetchall()
+        centro_nome = {r["chave"]: r["valor"] for r in centro}.get("centro_nome", "Centro Espírita")
+
+    trabalhador = {"nome_completo": mov["nome_completo"], "cpf": mov["cpf"]}
+    dados = _gerar_bytes_escpos_mensalidade(dict(mov), trabalhador, centro_nome)
     return Response(content=dados, media_type="application/octet-stream")
 
 
@@ -1633,34 +1799,33 @@ def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str,
     buf += INIT
     buf += ALINHAR_ESQU
 
-    # ── Itens ─────────────────────────────────────────────────────────────────
+    # ── Itens em destaque (fonte dupla) ───────────────────────────────────────
+    COLS_D = COLS // 2  # 21 colunas efetivas em fonte 2×2
     buf += separador()
-    buf += NEGRITO_ON
+    buf += DUPLO_ON
     for item in itens:
         nome = item['nome_produto'].upper()
         qtd  = item['quantidade']
         sub  = _fmt_valor(float(item['subtotal']))
 
         prefixo = f"{qtd}x "
-        espaco_nome = COLS - len(prefixo)
+        espaco_nome = COLS_D - len(prefixo)
         primeira = nome[:espaco_nome]
         resto    = nome[espaco_nome:]
         buf += linha(prefixo + primeira)
         while resto:
-            buf += linha(f"   {resto[:COLS - 3]}")
-            resto = resto[COLS - 3:]
+            buf += linha(f"   {resto[:COLS_D - 3]}")
+            resto = resto[COLS_D - 3:]
 
-        buf += linha(sub.rjust(COLS))
+        buf += linha(sub.rjust(COLS_D))
 
-    buf += NEGRITO_OFF
+    buf += DUPLO_OFF
     buf += separador()
 
-    # ── Total em destaque ──────────────────────────────────────────────────────
+    # ── Total em negrito (fonte normal) ───────────────────────────────────────
     buf += ALINHAR_CENT
     buf += NEGRITO_ON
-    buf += DUPLO_ON
     buf += linha(f"TOTAL {_fmt_valor(float(venda['total']))}")
-    buf += DUPLO_OFF
     buf += NEGRITO_OFF
     buf += LF
 
@@ -1802,6 +1967,104 @@ def _gerar_bytes_escpos_sangria(sangria: dict, centro_nome: str) -> bytes:
             if atendente_nome:
                 buf += linha(f"Caixa: {atendente_nome[:36]}")
             buf += separador()
+
+    buf += LF
+    buf += CORTAR
+    return bytes(buf)
+
+
+def _gerar_bytes_escpos_mensalidade(mov: dict, trabalhador: dict, centro_nome: str) -> bytes:
+    """Gera bytes ESC/POS para recibo de mensalidade em 2 vias (trabalhador + caixa)."""
+    ESC = b'\x1b'
+    GS  = b'\x1d'
+    LF  = b'\n'
+
+    INIT          = ESC + b'@'
+    ALINHAR_ESQU  = ESC + b'a\x00'
+    ALINHAR_CENT  = ESC + b'a\x01'
+    NEGRITO_ON    = ESC + b'E\x01'
+    NEGRITO_OFF   = ESC + b'E\x00'
+    DUPLO_ON      = GS  + b'!\x11'
+    DUPLO_OFF     = GS  + b'!\x00'
+    CORTAR        = GS  + b'V\x42\x05'
+
+    COLS = 42
+
+    MESES_PT = ["", "JAN", "FEV", "MAR", "ABR", "MAI", "JUN",
+                "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
+
+    def txt(s: str) -> bytes:
+        return s.encode('cp860', errors='replace')
+
+    def linha(s: str = '') -> bytes:
+        return txt(s) + LF
+
+    def separador(c: str = '-') -> bytes:
+        return linha(c * COLS)
+
+    valor = float(mov["valor"])
+    data_str = str(mov.get("data_movimentacao") or "")[:10]
+    try:
+        ano, mes_n, dia = data_str.split("-")
+        mes_ext = f"{MESES_PT[int(mes_n)]}/{ano}"
+        data_fmt = f"{dia}/{mes_n}/{ano}"
+    except Exception:
+        mes_ext = data_str[:7]
+        data_fmt = data_str
+
+    nome = (trabalhador.get("nome_completo") or "").upper()
+    cpf  = trabalhador.get("cpf") or ""
+
+    buf = bytearray()
+    buf += INIT
+
+    for via in [1, 2]:
+        if via == 2:
+            buf += CORTAR
+            buf += INIT
+
+        buf += ALINHAR_CENT
+        buf += NEGRITO_ON
+        buf += linha(centro_nome[:COLS])
+        buf += NEGRITO_OFF
+        buf += linha("RECIBO DE MENSALIDADE")
+        buf += LF
+
+        buf += ALINHAR_CENT
+        buf += DUPLO_ON
+        buf += linha(f"R$ {_fmt_valor(valor)}")
+        buf += DUPLO_OFF
+        buf += LF
+
+        buf += ALINHAR_ESQU
+        buf += separador()
+        buf += NEGRITO_ON
+        buf += linha(nome[:COLS])
+        buf += NEGRITO_OFF
+        if cpf:
+            buf += linha(f"CPF: {cpf}")
+        buf += linha(f"Referencia: {mes_ext}")
+        buf += linha(f"Data pgto:  {data_fmt}")
+        buf += separador()
+        buf += LF
+
+        buf += ALINHAR_CENT
+        buf += NEGRITO_ON
+        if via == 1:
+            buf += linha("1a VIA - TRABALHADOR")
+            buf += NEGRITO_OFF
+            buf += linha("Assinatura do Caixa:")
+            buf += LF * 2
+            buf += ALINHAR_ESQU
+            buf += linha("_" * 36)
+        else:
+            buf += linha("2a VIA - CAIXA")
+            buf += NEGRITO_OFF
+            buf += linha("Assinatura do Trabalhador:")
+            buf += LF * 2
+            buf += ALINHAR_ESQU
+            buf += linha("_" * 36)
+        buf += separador()
 
     buf += LF
     buf += CORTAR

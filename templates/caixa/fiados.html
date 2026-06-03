@@ -5,6 +5,12 @@
 <style>
 .credito-form { display:none; margin-top:.5rem; }
 .credito-form.ativo { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+.pagar-form { display:none; margin-top:.6rem; }
+.pagar-form.ativo { display:block; }
+.pagar-panel {
+    background: #fff8e1; border: 1px solid #f9a825;
+    border-radius: var(--raio); padding: .8rem 1rem; margin-top:.6rem;
+}
 .progress-bar { height:6px; background:#ddd; border-radius:3px; margin-top:.3rem; overflow:hidden; }
 .progress-fill { height:100%; background:#c0392b; border-radius:3px; transition:width .2s; }
 </style>
@@ -64,12 +70,43 @@
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.3rem">
             <div style="font-size:1.3rem;font-weight:900;color:#c0392b">
-                Total: R$ {{ "%.2f"|format(grupo.total) }}
+                Dívida: R$ {{ "%.2f"|format(grupo.total) }}
             </div>
-            <button class="btn btn-sm btn-secundario" onclick="toggleCredito({{ tid }})">➕ Adicionar Crédito</button>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
+                <button class="btn btn-sm btn-primario" onclick="togglePagar({{ tid }}, {{ grupo.total }})">💰 Receber Pagamento</button>
+                <button class="btn btn-sm btn-secundario" onclick="toggleCredito({{ tid }})">➕ Crédito</button>
+            </div>
         </div>
     </div>
 
+    {# ── Painel de pagamento ── #}
+    <div class="pagar-form" id="pagar-form-{{ tid }}">
+        <div class="pagar-panel">
+            <form method="post" action="/caixa/fiados/{{ tid }}/pagar-divida"
+                  onsubmit="return validarPagamento(this, {{ grupo.total }})">
+                <div style="font-weight:700;margin-bottom:.6rem;font-size:.95rem">
+                    💰 Receber pagamento de {{ grupo.trabalhador_nome }}
+                </div>
+                <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+                    <label style="font-size:.85rem;font-weight:600;white-space:nowrap">Valor recebido (R$)</label>
+                    <input type="number" name="valor" id="valor-pagar-{{ tid }}"
+                           step="0.01" min="0.01" required
+                           value="{{ "%.2f"|format(grupo.total) }}"
+                           style="width:120px;padding:.35rem .5rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:1rem;font-weight:700">
+                    <button class="btn btn-primario" type="submit" style="padding:.35rem .9rem">✅ Confirmar</button>
+                    <button class="btn btn-secundario" type="button"
+                            onclick="togglePagar({{ tid }}, 0)" style="padding:.35rem .7rem">Cancelar</button>
+                </div>
+                <div style="font-size:.78rem;color:#7a5c00;margin-top:.4rem">
+                    Dívida total: R$ {{ "%.2f"|format(grupo.total) }} —
+                    pagamento parcial quita as compras mais antigas primeiro;
+                    eventual sobra vira crédito para próximas compras.
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Painel de crédito ── #}
     <div class="credito-form" id="credito-form-{{ tid }}">
         <form method="post" action="/caixa/fiados/credito/{{ tid }}" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
             <input type="number" name="valor" step="0.01" min="0.01" placeholder="Valor (R$)" required
@@ -81,43 +118,76 @@
         </form>
     </div>
 
-    <table class="tabela" style="margin-top:.5rem">
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Data</th>
-                <th>Valor</th>
-                <th>Crédito usado</th>
-                <th>Caixa</th>
-                <th>Ações</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for v in grupo.vendas %}
-            <tr>
-                <td>{{ v.id }}</td>
-                <td>{{ v.data_venda|data_br }}</td>
-                <td>R$ {{ "%.2f"|format(v.total) }}</td>
-                <td>{% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}R$ {{ "%.2f"|format(v.fiado_credito_usado) }}{% else %}—{% endif %}</td>
-                <td>{{ v.caixa_nome }}</td>
-                <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-                    <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return confirm('Confirmar recebimento do fiado #{{ v.id }}?')">
-                        <button class="btn btn-sm btn-primario">💰 Receber</button>
-                    </form>
-                    <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    {# ── Tabela de compras ── #}
+    <details style="margin-top:.8rem">
+        <summary style="cursor:pointer;font-size:.85rem;color:var(--cor-texto-suave);user-select:none">
+            {{ grupo.vendas|length }} compra{{ 's' if grupo.vendas|length != 1 else '' }} pendente{{ 's' if grupo.vendas|length != 1 else '' }} — clique para ver detalhes
+        </summary>
+        <table class="tabela" style="margin-top:.5rem">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Data</th>
+                    <th>Valor</th>
+                    <th>Crédito usado</th>
+                    <th>A pagar</th>
+                    <th>Caixa</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in grupo.vendas %}
+                {% set _devido = v.total - (v.fiado_credito_usado or 0) %}
+                <tr>
+                    <td>{{ v.id }}</td>
+                    <td>{{ v.data_venda|data_br }}</td>
+                    <td>R$ {{ "%.2f"|format(v.total) }}</td>
+                    <td>{% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}R$ {{ "%.2f"|format(v.fiado_credito_usado) }}{% else %}—{% endif %}</td>
+                    <td style="font-weight:700;color:#c0392b">R$ {{ "%.2f"|format(_devido) }}</td>
+                    <td>{{ v.caixa_nome }}</td>
+                    <td style="display:flex;gap:.4rem;flex-wrap:wrap">
+                        <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return confirm('Quitar apenas a compra #{{ v.id }} (R$ {{ "%.2f"|format(_devido) }})?')">
+                            <button class="btn btn-sm btn-secundario">💰 Quitar esta</button>
+                        </form>
+                        <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </details>
 </div>
 {% endfor %}
 {% endif %}
 
 <script>
+function togglePagar(tid, total) {
+    const el = document.getElementById('pagar-form-' + tid);
+    el.classList.toggle('ativo');
+    if (el.classList.contains('ativo') && total > 0) {
+        document.getElementById('valor-pagar-' + tid).focus();
+    }
+    // Fecha o painel de crédito se estiver aberto
+    document.getElementById('credito-form-' + tid).classList.remove('ativo');
+}
+
 function toggleCredito(tid) {
     const el = document.getElementById('credito-form-' + tid);
     el.classList.toggle('ativo');
+    document.getElementById('pagar-form-' + tid).classList.remove('ativo');
+}
+
+function validarPagamento(form, total) {
+    const val = parseFloat(form.valor.value);
+    if (!val || val <= 0) return false;
+    if (val < total) {
+        return confirm(
+            `Pagamento parcial: R$ ${val.toFixed(2)} de R$ ${total.toFixed(2)}.\n` +
+            `As compras mais antigas serão quitadas primeiro.\n` +
+            `Eventuais centavos que não cobrirem a próxima compra viram crédito.\n\nConfirmar?`
+        );
+    }
+    return true;
 }
 </script>
 {% endblock %}
