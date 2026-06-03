@@ -131,11 +131,96 @@
                 <div class="ficha-plano-progresso" style="width: {{ (p.sessoes_realizadas / p.sessoes_total * 100)|int }}%"></div>
             </div>
             {% endif %}
+            {% if p.status == 'ativo' %}
+            <div style="display:flex;gap:.4rem;margin-top:.6rem">
+                <button type="button" class="btn btn-secundario"
+                        style="flex:1;font-size:.8rem;padding:.3rem .5rem"
+                        onclick="abrirEdicaoPlano({{ p.id }}, {{ p.sessoes_total }}, {{ p.sessoes_realizadas }}, '{{ p.frequencia }}', {{ p.sessoes_com_passe }}, '{{ p.data_inicio }}')">
+                    ✏️ Editar
+                </button>
+                <form method="post"
+                      action="/cadastros/pessoas/{{ pessoa.id }}/planos/{{ p.id }}/alta"
+                      style="flex:1"
+                      onsubmit="return confirm('Confirmar alta de {{ pessoa.nome_completo }}?\n\nOs agendamentos pendentes serão cancelados.')">
+                    <button type="submit" class="btn btn-primario"
+                            style="width:100%;font-size:.8rem;padding:.3rem .5rem">
+                        ✅ Dar Alta
+                    </button>
+                </form>
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
 </div>
 {% endif %}
+
+<!-- Modal edição de plano -->
+<div id="modal-plano" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:var(--raio);padding:1.5rem;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.2)">
+        <h3 style="margin:0 0 1rem">✏️ Editar Plano de Tratamento</h3>
+        <form id="form-editar-plano" method="post">
+            <div class="campo">
+                <label>Data de início</label>
+                <input type="date" name="data_inicio" id="ep-data-inicio"
+                       style="width:100%;padding:.45rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+                <div class="campo">
+                    <label>Total de sessões</label>
+                    <input type="number" name="sessoes_total" id="ep-total" min="1" required
+                           style="width:100%;padding:.45rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                </div>
+                <div class="campo">
+                    <label>Sessões realizadas</label>
+                    <input type="number" name="sessoes_realizadas" id="ep-realizadas" min="0" required
+                           style="width:100%;padding:.45rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+                <div class="campo">
+                    <label>Frequência</label>
+                    <select name="frequencia" id="ep-frequencia"
+                            style="width:100%;padding:.45rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                        <option value="semanal">Semanal</option>
+                        <option value="quinzenal">Quinzenal</option>
+                        <option value="mensal">Mensal</option>
+                    </select>
+                </div>
+                <div class="campo">
+                    <label>Sessões c/ passe</label>
+                    <input type="number" name="sessoes_com_passe" id="ep-passe" min="0" required
+                           style="width:100%;padding:.45rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                </div>
+            </div>
+            <div style="display:flex;gap:.5rem;margin-top:1rem">
+                <button type="button" onclick="fecharModalPlano()"
+                        class="btn btn-secundario" style="flex:1">Cancelar</button>
+                <button type="submit" class="btn btn-primario" style="flex:1">💾 Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function abrirEdicaoPlano(id, total, realizadas, freq, passe, dataInicio) {
+    const base = '/cadastros/pessoas/{{ pessoa.id }}/planos/';
+    document.getElementById('form-editar-plano').action = base + id + '/editar';
+    document.getElementById('ep-total').value       = total;
+    document.getElementById('ep-realizadas').value  = realizadas;
+    document.getElementById('ep-frequencia').value  = freq;
+    document.getElementById('ep-passe').value        = passe;
+    document.getElementById('ep-data-inicio').value = dataInicio;
+    const modal = document.getElementById('modal-plano');
+    modal.style.display = 'flex';
+}
+function fecharModalPlano() {
+    document.getElementById('modal-plano').style.display = 'none';
+}
+document.getElementById('modal-plano').addEventListener('click', function(e) {
+    if (e.target === this) fecharModalPlano();
+});
+</script>
 
 <!-- Histórico de atendimentos -->
 <div class="ficha-secao">

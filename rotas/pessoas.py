@@ -475,6 +475,67 @@ async def ficha_pessoa(request: Request, id: int):
     })
 
 
+# ── Planos de tratamento (ações da ficha) ───────────────────────────────────
+
+@router.post("/{pessoa_id}/planos/{plano_id}/editar")
+async def editar_plano(
+    request: Request,
+    pessoa_id: int,
+    plano_id: int,
+    sessoes_total: int = Form(...),
+    sessoes_realizadas: int = Form(...),
+    frequencia: str = Form("semanal"),
+    sessoes_com_passe: int = Form(3),
+    data_inicio: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        row = conn.execute(
+            """SELECT 1 FROM planos_tratamento pt
+               JOIN plano_pessoas pp ON pp.plano_id = pt.id
+               WHERE pt.id = %s AND pp.pessoa_id = %s""",
+            (plano_id, pessoa_id)
+        ).fetchone()
+        if not row:
+            return RedirectResponse(url=f"/cadastros/pessoas/{pessoa_id}", status_code=303)
+        campos = {"sessoes_total": sessoes_total, "sessoes_realizadas": sessoes_realizadas,
+                  "frequencia": frequencia, "sessoes_com_passe": sessoes_com_passe}
+        if data_inicio:
+            campos["data_inicio"] = data_inicio
+        sets = ", ".join(f"{k} = %s" for k in campos)
+        conn.execute(
+            f"UPDATE planos_tratamento SET {sets} WHERE id = %s",
+            (*campos.values(), plano_id)
+        )
+    return RedirectResponse(url=f"/cadastros/pessoas/{pessoa_id}", status_code=303)
+
+
+@router.post("/{pessoa_id}/planos/{plano_id}/alta")
+async def alta_plano(request: Request, pessoa_id: int, plano_id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        row = conn.execute(
+            """SELECT 1 FROM planos_tratamento pt
+               JOIN plano_pessoas pp ON pp.plano_id = pt.id
+               WHERE pt.id = %s AND pp.pessoa_id = %s""",
+            (plano_id, pessoa_id)
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE planos_tratamento SET status='alta', concluido=1 WHERE id=%s",
+                (plano_id,)
+            )
+            conn.execute(
+                "UPDATE agendamentos SET status='cancelado' WHERE plano_id=%s AND status='agendado'",
+                (plano_id,)
+            )
+    return RedirectResponse(url=f"/cadastros/pessoas/{pessoa_id}", status_code=303)
+
+
 # ── Exclusão ────────────────────────────────────────────────────────────────
 
 @router.post("/{id}/remover", response_class=HTMLResponse)
