@@ -144,7 +144,18 @@ async def pagina_menu(request: Request):
     atendente = obter_atendente_logado(request)
     if not atendente:
         return RedirectResponse(url="/login", status_code=303)
-    return templates.TemplateResponse("menu.html", {"request": request, "atendente": atendente, "e_admin": e_admin(request)})
+    is_admin = e_admin(request)
+    permissoes = {}
+    if not is_admin:
+        from rotas.permissoes import usuario_pode
+        for mod in ["cadastros.trabalhadores", "cadastros.mediuns"]:
+            permissoes[mod] = usuario_pode(atendente["id"], mod)
+    return templates.TemplateResponse("menu.html", {
+        "request": request,
+        "atendente": atendente,
+        "e_admin": is_admin,
+        "permissoes": permissoes,
+    })
 
 
 @router.get("/", response_class=HTMLResponse)

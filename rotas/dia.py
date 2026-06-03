@@ -19,10 +19,26 @@ _ORDEM_PRIORIDADE = """(
 ) DESC, c.hora_checkin ASC"""
 
 
+_MODULO_DIA = [
+    ("/dia/dashboard", "dia.dashboard"),
+    ("/dia/passe", "dia.passe"),
+    ("/dia/acolhimento", "dia.acolhimento"),
+    ("/dia/reiki", "dia.reiki"),
+    ("/dia/atendimento", "dia.atendimento"),
+    ("/dia/mediuns", "dia.atendimento"),
+    ("/dia/fraterno", "dia.fraterno"),
+]
+
+
 def _guard(request: Request):
+    from rotas.permissoes import usuario_pode
     atendente = obter_atendente_logado(request)
     if not atendente:
         return None, RedirectResponse(url="/login", status_code=303)
+    path = request.url.path
+    modulo = next((m for p, m in _MODULO_DIA if path.startswith(p)), "dia.painel")
+    if not usuario_pode(atendente["id"], modulo):
+        return None, HTMLResponse(status_code=403, content="Acesso negado.")
     return atendente, None
 
 

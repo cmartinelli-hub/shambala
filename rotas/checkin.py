@@ -10,9 +10,12 @@ router = APIRouter(prefix="/dia/checkin")
 
 
 def _guard(request: Request):
+    from rotas.permissoes import usuario_pode
     atendente = obter_atendente_logado(request)
     if not atendente:
         return None, RedirectResponse(url="/login", status_code=303)
+    if not usuario_pode(atendente["id"], "dia.checkin"):
+        return None, HTMLResponse(status_code=403, content="Acesso negado.")
     return atendente, None
 
 

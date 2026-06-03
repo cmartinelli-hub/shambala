@@ -47,29 +47,34 @@ def _guard(request: Request):
     atendente = obter_atendente_logado(request)
     if not atendente:
         return None, RedirectResponse(url="/login", status_code=303)
-
-    with conectar() as conn:
-        grupo = conn.execute(
-            """SELECT a.grupo_id, g.nome as nome_grupo
-               FROM atendentes a
-               LEFT JOIN grupos g ON g.id = a.grupo_id
-               WHERE a.id = %s""",
-            (atendente["id"],)
-        ).fetchone()
-
-        # Admin (grupo_id=1) tem acesso total; demais precisam de permissão
-        if grupo and grupo["grupo_id"] is not None and grupo["grupo_id"] != 1:
-            pode = conn.execute(
-                "SELECT ler FROM grupos_permissoes WHERE grupo_id = %s AND modulo = %s",
-                (grupo["grupo_id"], "cadastros.permissoes")
-            ).fetchone()
-            if not pode or not pode["ler"]:
-                return None, HTMLResponse(status_code=403, content="Acesso negado.")
-
+    if not usuario_pode(atendente["id"], "cadastros.permissoes"):
+        return None, HTMLResponse(status_code=403, content="Acesso negado.")
     return atendente, None
 
 
 _ACOES_VALIDAS = {"ler", "escrever", "apagar"}
+
+_SQL_USUARIO_PODE = {
+    "ler":      "SELECT 1 FROM usuarios_grupos ug JOIN grupos_permissoes gp ON gp.grupo_id = ug.grupo_id WHERE ug.usuario_id = %s AND gp.modulo = %s AND gp.ler = TRUE",
+    "escrever": "SELECT 1 FROM usuarios_grupos ug JOIN grupos_permissoes gp ON gp.grupo_id = ug.grupo_id WHERE ug.usuario_id = %s AND gp.modulo = %s AND gp.escrever = TRUE",
+    "apagar":   "SELECT 1 FROM usuarios_grupos ug JOIN grupos_permissoes gp ON gp.grupo_id = ug.grupo_id WHERE ug.usuario_id = %s AND gp.modulo = %s AND gp.apagar = TRUE",
+}
+
+
+def usuario_pode(usuario_id: int, modulo: str, acao: str = "ler") -> bool:
+    """Verifica se o usuário tem permissão via qualquer grupo ao qual pertence.
+
+    Membros do grupo Admin (id=1) têm acesso total sem entrada em grupos_permissoes.
+    """
+    if acao not in _ACOES_VALIDAS:
+        return False
+    with conectar() as conn:
+        if conn.execute(
+            "SELECT 1 FROM usuarios_grupos WHERE usuario_id = %s AND grupo_id = 1",
+            (usuario_id,)
+        ).fetchone():
+            return True
+        return conn.execute(_SQL_USUARIO_PODE[acao], (usuario_id, modulo)).fetchone() is not None
 
 
 def pode_acessar(grupo_id: int, modulo: str, acao: str = "ler") -> bool:

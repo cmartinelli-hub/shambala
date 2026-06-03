@@ -81,5 +81,24 @@
         </a>
     </div>
 </div>
+{% elif permissoes.get('cadastros.trabalhadores') or permissoes.get('cadastros.mediuns') %}
+<!-- Cadastros com permissão explícita -->
+<div class="menu-secao-admin">
+    <h2 class="menu-secao-titulo">Cadastros</h2>
+    <div class="menu-grid">
+        {% if permissoes.get('cadastros.trabalhadores') %}
+        <a href="/cadastros/trabalhadores" class="menu-card menu-card-admin">
+            <span class="menu-card-icon menu-card-icon-img"><img src="/static/medium.svg" alt="Trabalhadores"></span>
+            <span class="menu-card-label">Trabalhadores</span>
+        </a>
+        {% endif %}
+        {% if permissoes.get('cadastros.mediuns') %}
+        <a href="/cadastros/mediuns" class="menu-card menu-card-admin">
+            <span class="menu-card-icon menu-card-icon-img"><img src="/static/medium.svg" alt="Médiuns"></span>
+            <span class="menu-card-label">Médiuns</span>
+        </a>
+        {% endif %}
+    </div>
+</div>
 {% endif %}
 {% endblock %}
