@@ -6,7 +6,7 @@
 <div class="cabecalho-secao">
     <div>
         <h1>Trabalhadores</h1>
-        <p class="subtitulo">{{ trabalhadores|length }} trabalhador{{ 'es' if trabalhadores|length != 1 }} cadastrado{{ 's' if trabalhadores|length != 1 }}</p>
+        <p class="subtitulo" id="contador">{{ trabalhadores|length }} trabalhador{{ 'es' if trabalhadores|length != 1 }} cadastrado{{ 's' if trabalhadores|length != 1 }}</p>
     </div>
     <div class="acoes-cabecalho">
         <a href="/cadastros/trabalhadores/novo" class="btn btn-primario">➕ Novo trabalhador</a>
@@ -14,7 +14,20 @@
 </div>
 
 {% if trabalhadores %}
-<div class="trabalhadores-grid">
+<div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+    <input type="search" id="busca" placeholder="🔍 Buscar por nome, telefone ou e-mail…"
+           oninput="filtrar()"
+           style="flex:1;min-width:200px;padding:.5rem .75rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.95rem">
+    <select id="filtro-status" onchange="filtrar()"
+            style="padding:.5rem .75rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.95rem">
+        <option value="todos">Todos</option>
+        <option value="ativo">Somente ativos</option>
+        <option value="inativo">Somente inativos</option>
+    </select>
+</div>
+<p id="sem-resultado" style="display:none;color:var(--cor-texto-suave);margin:.5rem 0">Nenhum trabalhador encontrado.</p>
+
+<div class="trabalhadores-grid" id="grid">
     {% for t in trabalhadores %}
     <div class="trabalhador-card {% if not t.ativo %}trabalhador-inativo{% endif %}">
         <div class="trabalhador-header">
@@ -63,4 +76,31 @@
     <p>Clique em "+ Novo trabalhador" para começar.</p>
 </div>
 {% endif %}
+
+<script>
+function filtrar() {
+    const q     = document.getElementById('busca').value.toLowerCase().trim();
+    const st    = document.getElementById('filtro-status').value;
+    const cards = document.querySelectorAll('#grid .trabalhador-card');
+    let vis = 0;
+    cards.forEach(card => {
+        const nome  = (card.querySelector('.trabalhador-nome')?.textContent || '').toLowerCase();
+        const tel   = (card.querySelector('.trabalhador-telefone')?.textContent || '').toLowerCase();
+        const email = (card.querySelector('.trabalhador-email')?.textContent || '').toLowerCase();
+        const ativo = !card.classList.contains('trabalhador-inativo');
+        const matchTexto = !q || nome.includes(q) || tel.includes(q) || email.includes(q);
+        const matchStatus = st === 'todos' || (st === 'ativo' && ativo) || (st === 'inativo' && !ativo);
+        const mostrar = matchTexto && matchStatus;
+        card.style.display = mostrar ? '' : 'none';
+        if (mostrar) vis++;
+    });
+    const total = cards.length;
+    document.getElementById('contador').textContent =
+        vis === total
+            ? `${total} trabalhador${total !== 1 ? 'es' : ''} cadastrado${total !== 1 ? 's' : ''}`
+            : `${vis} de ${total} trabalhador${total !== 1 ? 'es' : ''}`;
+    document.getElementById('sem-resultado').style.display = vis === 0 ? '' : 'none';
+}
+document.getElementById('busca')?.focus();
+</script>
 {% endblock %}
