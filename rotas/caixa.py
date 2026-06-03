@@ -627,6 +627,70 @@ async def tabela_precos(request: Request):
     })
 
 
+@router.get("/doacao", response_class=HTMLResponse)
+async def form_doacao(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        mov = conn.execute(
+            "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    return templates.TemplateResponse("caixa/doacao.html", {
+        "request": request,
+        "atendente": atendente,
+        "caixa_aberto": bool(mov),
+    })
+
+
+@router.post("/doacao", response_class=HTMLResponse)
+async def registrar_doacao(
+    request: Request,
+    forma: str = Form("especie"),
+    valor: str = Form(""),
+    descricao: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    try:
+        valor_dec = round(float(valor.strip().replace(",", ".")), 2)
+    except (ValueError, AttributeError):
+        valor_dec = 0.0
+
+    if valor_dec <= 0:
+        with conectar() as conn:
+            mov = conn.execute(
+                "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        return templates.TemplateResponse("caixa/doacao.html", {
+            "request": request,
+            "atendente": atendente,
+            "caixa_aberto": bool(mov),
+            "erro": "Informe um valor válido maior que zero.",
+            "forma_pre": forma,
+        })
+
+    desc = descricao.strip() or f"Doação avulsa via {'PIX' if forma == 'pix' else 'Dinheiro'}"
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao)
+               VALUES ('entrada', 'doacao', %s, %s)""",
+            (valor_dec, desc)
+        )
+        mov = conn.execute(
+            "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if mov:
+            conn.execute(
+                "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
+                (valor_dec, mov["id"])
+            )
+
+    return RedirectResponse(url=f"/caixa/doacao?ok=1&valor={valor_dec:.2f}&forma={forma}", status_code=303)
+
+
 @router.get("/produtos/{id}/editar", response_class=HTMLResponse)
 async def form_editar_produto(request: Request, id: int):
     atendente, redir = _guard(request)

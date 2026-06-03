@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block conteudo %}
+
+<div class="cabecalho-secao">
+    <h2>❤️ Registrar Doação</h2>
+    <a href="/caixa/pdv" class="btn btn-secundario">← PDV</a>
+</div>
+
+{% set ok = request.query_params.get('ok') %}
+{% if ok %}
+{% set val = request.query_params.get('valor', '0') %}
+{% set frm = request.query_params.get('forma', 'especie') %}
+<div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
+     padding:.8rem 1.2rem;color:#155724;font-weight:600;margin-bottom:1.2rem">
+    ✅ Doação de R$ {{ val }} via {{ 'PIX' if frm == 'pix' else 'Dinheiro' }} registrada com sucesso!
+</div>
+{% endif %}
+
+{% if erro is defined and erro %}
+<div style="background:#f8d7da;border:1px solid #f5c6cb;border-radius:var(--raio);
+     padding:.8rem 1.2rem;color:#721c24;margin-bottom:1rem">
+    {{ erro }}
+</div>
+{% endif %}
+
+{% if not caixa_aberto %}
+<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:var(--raio);
+     padding:.8rem 1.2rem;color:#856404;margin-bottom:1rem">
+    ⚠️ Nenhum caixa aberto — a doação será registrada no financeiro mas não somará ao caixa.
+</div>
+{% endif %}
+
+<div class="card-form" style="max-width:480px">
+
+    <!-- Toggle forma -->
+    <div style="display:flex;gap:.5rem;margin-bottom:1.2rem">
+        <button type="button" id="btn-especie" onclick="setForma('especie')"
+                class="btn btn-primario" style="flex:1">💵 Dinheiro</button>
+        <button type="button" id="btn-pix" onclick="setForma('pix')"
+                class="btn btn-secundario" style="flex:1">📱 PIX</button>
+    </div>
+
+    <!-- Formulário dinheiro -->
+    <form id="form-especie" method="post" action="/caixa/doacao">
+        <input type="hidden" name="forma" value="especie">
+        <div class="campo">
+            <label>Valor recebido (R$)</label>
+            <input type="number" name="valor" id="val-especie" step="0.01" min="0.01"
+                   placeholder="0,00" class="pdv-input-valor" style="font-size:1.4rem"
+                   required autofocus>
+        </div>
+        <div class="campo">
+            <label>Descrição <span style="font-weight:400;color:var(--cor-texto-suave)">(opcional)</span></label>
+            <input type="text" name="descricao" placeholder="Ex: Doação de fulano"
+                   style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+        </div>
+        <button type="submit" class="btn btn-primario" style="width:100%;margin-top:.8rem;font-size:1rem">
+            💵 Registrar Doação em Dinheiro
+        </button>
+    </form>
+
+    <!-- Formulário PIX -->
+    <div id="form-pix" style="display:none">
+        <div class="campo">
+            <label>Valor da doação (R$)</label>
+            <input type="number" id="val-pix" step="0.01" min="0.01"
+                   placeholder="0,00" class="pdv-input-valor" style="font-size:1.4rem"
+                   oninput="resetQR()">
+        </div>
+        <div class="campo">
+            <label>Descrição <span style="font-weight:400;color:var(--cor-texto-suave)">(opcional)</span></label>
+            <input type="text" id="desc-pix" placeholder="Ex: Doação de fulano"
+                   style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+        </div>
+
+        <button type="button" id="btn-gerar-qr" onclick="gerarQR()"
+                class="btn btn-secundario" style="width:100%;margin-bottom:.8rem">
+            📱 Gerar QR Code PIX
+        </button>
+
+        <div id="qr-area" style="display:none;text-align:center;margin-bottom:1rem">
+            <img id="qr-img" src="" alt="QR Code" style="max-width:220px;border:1px solid var(--cor-borda);border-radius:var(--raio);padding:.4rem">
+            <div id="pix-code" style="font-size:.7rem;word-break:break-all;color:var(--cor-texto-suave);
+                 margin-top:.4rem;cursor:pointer" title="Clique para copiar" onclick="copiarPix()"></div>
+            <div id="pix-copiado" style="display:none;font-size:.8rem;color:#1da851;margin-top:.2rem">✅ Copiado!</div>
+        </div>
+
+        <form id="form-pix-submit" method="post" action="/caixa/doacao" style="display:none">
+            <input type="hidden" name="forma" value="pix">
+            <input type="hidden" name="valor" id="f-val-pix">
+            <input type="hidden" name="descricao" id="f-desc-pix">
+            <button type="submit" class="btn btn-primario" style="width:100%;font-size:1rem">
+                ✅ Confirmar Recebimento via PIX
+            </button>
+        </form>
+    </div>
+
+</div>
+
+<script>
+{% set forma_pre = forma_pre if forma_pre is defined else 'especie' %}
+const formaInicial = '{{ forma_pre }}';
+
+function setForma(f) {
+    document.getElementById('form-especie').style.display = f === 'especie' ? '' : 'none';
+    document.getElementById('form-pix').style.display    = f === 'pix'     ? '' : 'none';
+    document.getElementById('btn-especie').className = 'btn ' + (f === 'especie' ? 'btn-primario' : 'btn-secundario');
+    document.getElementById('btn-pix').className     = 'btn ' + (f === 'pix'     ? 'btn-primario' : 'btn-secundario');
+    document.getElementById('btn-especie').style.flex = '1';
+    document.getElementById('btn-pix').style.flex = '1';
+}
+
+function resetQR() {
+    document.getElementById('qr-area').style.display = 'none';
+    document.getElementById('form-pix-submit').style.display = 'none';
+}
+
+async function gerarQR() {
+    const val = parseFloat(document.getElementById('val-pix').value || '0');
+    if (!val || val <= 0) { alert('Informe um valor válido.'); return; }
+
+    const btn = document.getElementById('btn-gerar-qr');
+    btn.disabled = true;
+    btn.textContent = '⏳ Gerando…';
+
+    try {
+        const r = await fetch(`/caixa/pix-qr?valor=${val.toFixed(2)}`);
+        if (!r.ok) throw new Error('Erro ao gerar PIX');
+        const d = await r.json();
+
+        document.getElementById('qr-img').src = 'data:image/png;base64,' + d.qr_base64;
+        document.getElementById('pix-code').textContent = d.pix_code;
+        document.getElementById('qr-area').style.display = '';
+
+        document.getElementById('f-val-pix').value  = val.toFixed(2);
+        document.getElementById('f-desc-pix').value = document.getElementById('desc-pix').value;
+        document.getElementById('form-pix-submit').style.display = '';
+    } catch(e) {
+        alert('Não foi possível gerar o QR Code. Verifique se há chave PIX configurada.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📱 Gerar QR Code PIX';
+    }
+}
+
+function copiarPix() {
+    const code = document.getElementById('pix-code').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        const el = document.getElementById('pix-copiado');
+        el.style.display = '';
+        setTimeout(() => el.style.display = 'none', 2000);
+    });
+}
+
+setForma(formaInicial);
+</script>
+{% endblock %}
