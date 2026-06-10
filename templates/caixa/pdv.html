@@ -57,7 +57,6 @@
     position: sticky;
     top: 1rem;
     max-height: calc(100vh - 90px);
-    overflow: hidden;
 }
 .pdv-carrinho-titulo {
     background: var(--cor-primaria);
@@ -167,7 +166,7 @@
     text-align: center; margin: .4rem 0;
     display: none;
 }
-.pdv-qr-inline img { max-width: 140px; border-radius: 4px; }
+.pdv-qr-inline img { max-width: 70px; border-radius: 4px; }
 .pdv-qr-code {
     font-size: .65rem; word-break: break-all;
     color: var(--cor-texto-suave); margin-top: .3rem;
@@ -208,6 +207,35 @@
         <a href="/financeiro/mensalidades" class="btn btn-secundario btn-sm">🗓 Mensalidades</a>
         <a href="/caixa/doacao" class="btn btn-secundario btn-sm">❤️ Doação</a>
     </div>
+
+{% if caixa_sel %}
+{% set _venda_id = request.query_params.get('ok') %}
+{% set _is_fiado = request.query_params.get('fiado') == '1' %}
+{% if _is_fiado %}
+<div class="pdv-ok" id="div-ok">
+    <span id="msg-ok">⏳ Venda #{{ _venda_id }} registrada — imprimindo 2 vias…</span>
+</div>
+{% elif _venda_id %}
+<div class="pdv-ok" id="div-ok">
+    <span id="msg-ok">⏳ Venda #{{ _venda_id }} registrada — imprimindo comanda…</span>
+</div>
+{% endif %}
+
+{% set _erro = request.query_params.get('erro') %}
+{% if _erro == 'fiado_encerrado' %}
+<div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
+    Fiado bloqueado: data de encerramento excedida para este trabalhador.
+</div>
+{% elif _erro == 'fiado_excede_limite' %}
+<div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
+    Limite de fiado excedido para este trabalhador. Verifique o relatório de fiados.
+</div>
+{% elif _erro == 'trabalhador_nao_encontrado' %}
+<div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
+    Trabalhador não encontrado.
+</div>
+{% endif %}
+{% endif %}
 </div>
 
 {% if not caixa_sel %}
@@ -243,32 +271,6 @@
 
 {% else %}
 {# ── PDV funcionando ── #}
-    {% set _venda_id = request.query_params.get('ok') %}
-    {% set _is_fiado = request.query_params.get('fiado') == '1' %}
-    {% if _is_fiado %}
-    <div class="pdv-ok" id="div-ok">
-        <span id="msg-ok">⏳ Venda #{{ _venda_id }} registrada — imprimindo 2 vias…</span>
-    </div>
-    {% elif _venda_id %}
-    <div class="pdv-ok" id="div-ok">
-        <span id="msg-ok">⏳ Venda #{{ _venda_id }} registrada — imprimindo comanda…</span>
-    </div>
-    {% endif %}
-
-    {% set _erro = request.query_params.get('erro') %}
-    {% if _erro == 'fiado_encerrado' %}
-    <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
-        Fiado bloqueado: data de encerramento excedida para este trabalhador.
-    </div>
-    {% elif _erro == 'fiado_excede_limite' %}
-    <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
-        Limite de fiado excedido para este trabalhador. Verifique o relatório de fiados.
-    </div>
-    {% elif _erro == 'trabalhador_nao_encontrado' %}
-    <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
-        Trabalhador não encontrado.
-    </div>
-    {% endif %}
 
 <div class="pdv-wrap">
     {# ── Coluna esquerda ── #}
@@ -823,6 +825,7 @@ async function imprimirAgente(vendaId) {
     const msg = document.getElementById('msg-ok');
     const urlParams = new URLSearchParams(window.location.search);
     const isFiado = urlParams.get('fiado') === '1';
+    const caixaId = urlParams.get('caixa_id') || '';
     if (msg) msg.textContent = `⏳ Imprimindo comanda #${vendaId}…`;
     try {
         // 1ª via: cliente
@@ -851,6 +854,13 @@ async function imprimirAgente(vendaId) {
             : `✅ Venda #${vendaId} registrada e comanda impressa!`;
     } catch(e) {
         if (msg) msg.textContent = `✅ Venda #${vendaId} registrada. Agente não respondeu — verifique se está rodando.`;
+    }
+    // Remove query params da URL para evitar re-impressão ao pressionar F5
+    if (window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('ok');
+        url.searchParams.delete('fiado');
+        window.history.replaceState({}, '', url.toString());
     }
 }
 window.addEventListener('load', () => imprimirAgente({{ request.query_params.get('ok') }}));

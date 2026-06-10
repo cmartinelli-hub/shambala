@@ -634,7 +634,7 @@ async def form_doacao(request: Request):
         return redir
     with conectar() as conn:
         mov = conn.execute(
-            "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+            "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
         ).fetchone()
     return templates.TemplateResponse("caixa/doacao.html", {
         "request": request,
@@ -662,7 +662,7 @@ async def registrar_doacao(
     if valor_dec <= 0:
         with conectar() as conn:
             mov = conn.execute(
-                "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+                "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
             ).fetchone()
         return templates.TemplateResponse("caixa/doacao.html", {
             "request": request,
@@ -675,12 +675,12 @@ async def registrar_doacao(
     desc = descricao.strip() or f"Doação avulsa via {'PIX' if forma == 'pix' else 'Dinheiro'}"
     with conectar() as conn:
         conn.execute(
-            """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao)
-               VALUES ('entrada', 'doacao', %s, %s)""",
+            """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id)
+               VALUES ('entrada', 'doacao', %s, %s, 2)""",
             (valor_dec, desc)
         )
         mov = conn.execute(
-            "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+            "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
         ).fetchone()
         if mov:
             conn.execute(
@@ -1146,15 +1146,16 @@ async def listar_fiados(request: Request):
     })
 
 
-def _contabilizar_recebimento(conn, valor: float, descricao: str):
-    """Insere em financeiro_movimentacoes e atualiza o caixa aberto mais recente."""
+def _contabilizar_recebimento(conn, valor: float, descricao: str, caixa_id: int = 2):
+    """Insere em financeiro_movimentacoes e atualiza o caixa aberto da Lanchonete."""
     conn.execute(
-        """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao)
-           VALUES ('entrada', 'recebimento_fiado', %s, %s)""",
-        (valor, descricao)
+        """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id)
+           VALUES ('entrada', 'recebimento_fiado', %s, %s, %s)""",
+        (valor, descricao, caixa_id)
     )
     mov = conn.execute(
-        "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+        "SELECT id FROM caixa_movimentos WHERE caixa_id=%s AND status='aberto' ORDER BY id DESC LIMIT 1",
+        (caixa_id,)
     ).fetchone()
     if mov:
         conn.execute(
@@ -1171,7 +1172,7 @@ async def pagar_fiado(request: Request, venda_id: int):
 
     with conectar() as conn:
         venda = conn.execute(
-            "SELECT total, fiado_credito_usado FROM vendas_pdv WHERE id = %s",
+            "SELECT total, fiado_credito_usado, fiado_trabalhador_id FROM vendas_pdv WHERE id = %s",
             (venda_id,)
         ).fetchone()
 
@@ -1186,9 +1187,14 @@ async def pagar_fiado(request: Request, venda_id: int):
         if venda:
             valor_pago = round(float(venda["total"]) - float(venda["fiado_credito_usado"] or 0), 2)
             if valor_pago > 0:
+                trab_id = venda["fiado_trabalhador_id"]
+                trab = conn.execute(
+                    "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trab_id,)
+                ).fetchone()
+                nome = trab["nome_completo"] if trab else f"#{trab_id}"
                 _contabilizar_recebimento(conn, valor_pago, f"Recebimento fiado — venda #{venda_id}")
 
-    return RedirectResponse(url="/caixa/fiados", status_code=303)
+    return RedirectResponse(url=f"/caixa/fiados?pago_ok={trab_id}&valor={valor_pago:.2f}", status_code=303) if venda else RedirectResponse(url="/caixa/fiados", status_code=303)
 
 
 @router.post("/fiados/{trabalhador_id}/pagar-divida")
@@ -1265,7 +1271,7 @@ async def pagar_divida_fiado(
                        VALUES (%s, 'credito', %s, 'Saldo de pagamento parcial de fiado')""",
                     (trabalhador_id, restante)
                 )
-            valor_efetivo = valor_dec  # cash total received, including any converted to credit
+            valor_efetivo = valor_dec
 
         trab = conn.execute(
             "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trabalhador_id,)
@@ -1273,7 +1279,7 @@ async def pagar_divida_fiado(
         nome = trab["nome_completo"] if trab else f"#{trabalhador_id}"
         _contabilizar_recebimento(conn, valor_efetivo, f"Recebimento fiado — {nome}")
 
-    return RedirectResponse(url="/caixa/fiados", status_code=303)
+    return RedirectResponse(url=f"/caixa/fiados?pago_ok={trabalhador_id}&valor={valor_efetivo:.2f}", status_code=303)
 
 
 @router.post("/fiados/credito/{trabalhador_id}")
@@ -1519,6 +1525,28 @@ async def escpos_mensalidade(request: Request, mov_id: int):
 
     trabalhador = {"nome_completo": mov["nome_completo"], "cpf": mov["cpf"]}
     dados = _gerar_bytes_escpos_mensalidade(dict(mov), trabalhador, centro_nome)
+    return Response(content=dados, media_type="application/octet-stream")
+
+
+@router.get("/fiados/{trabalhador_id}/recibo-escpos")
+async def escpos_recibo_fiado(request: Request, trabalhador_id: int, valor: str = "0"):
+    """Retorna bytes ESC/POS para recibo de pagamento de fiado (2 vias)."""
+    from fastapi.responses import Response
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return JSONResponse({}, status_code=401)
+
+    with conectar() as conn:
+        trab = conn.execute(
+            "SELECT nome_completo, cpf FROM trabalhadores WHERE id = %s", (trabalhador_id,)
+        ).fetchone()
+        if not trab:
+            return JSONResponse({"erro": "Trabalhador não encontrado"}, status_code=404)
+
+        centro = conn.execute("SELECT chave, valor FROM configuracoes_centro").fetchall()
+        centro_nome = {r["chave"]: r["valor"] for r in centro}.get("centro_nome", "Centro Espírita")
+
+    dados = _gerar_bytes_escpos_recibo_fiado(dict(trab), float(valor or 0), centro_nome)
     return Response(content=dados, media_type="application/octet-stream")
 
 
@@ -2254,6 +2282,94 @@ def _gerar_recibo(venda, itens, centro_nome: str,
     linhas.append("Volte sempre!".center(L))
 
     return "\n".join(linhas)
+
+
+def _gerar_bytes_escpos_recibo_fiado(trabalhador: dict, valor: float, centro_nome: str) -> bytes:
+    """Gera bytes ESC/POS para recibo de pagamento de fiado em 2 vias."""
+    ESC = b'\x1b'
+    GS  = b'\x1d'
+    LF  = b'\n'
+
+    INIT          = ESC + b'@'
+    ALINHAR_ESQU  = ESC + b'a\x00'
+    ALINHAR_CENT  = ESC + b'a\x01'
+    NEGRITO_ON    = ESC + b'E\x01'
+    NEGRITO_OFF   = ESC + b'E\x00'
+    DUPLO_ON      = GS  + b'!\x11'
+    DUPLO_OFF     = GS  + b'!\x00'
+    CORTAR        = GS  + b'V\x42\x05'
+
+    COLS = 42
+
+    def txt(s: str) -> bytes:
+        return s.encode('cp860', errors='replace')
+
+    def linha(s: str = '') -> bytes:
+        return txt(s) + LF
+
+    def separador(c: str = '-') -> bytes:
+        return linha(c * COLS)
+
+    from datetime import datetime
+    now = datetime.now()
+    data_str = now.strftime("%d/%m/%Y %H:%M")
+    nome = (trabalhador.get("nome_completo") or "").upper()
+    cpf = trabalhador.get("cpf") or ""
+
+    buf = bytearray()
+    buf += INIT
+
+    for via in [1, 2]:
+        if via == 2:
+            buf += CORTAR
+            buf += INIT
+            buf += LF * 3
+
+        buf += ALINHAR_CENT
+        buf += NEGRITO_ON
+        buf += linha(centro_nome[:COLS])
+        buf += NEGRITO_OFF
+        buf += linha("RECIBO DE PAGAMENTO — FIADO")
+        buf += LF
+
+        buf += ALINHAR_CENT
+        buf += DUPLO_ON
+        buf += linha(f"R$ {_fmt_valor(valor)}")
+        buf += DUPLO_OFF
+        buf += LF
+
+        buf += ALINHAR_ESQU
+        buf += separador()
+        buf += NEGRITO_ON
+        buf += linha(f"DEVEDOR: {nome[:38]}")
+        buf += NEGRITO_OFF
+        if cpf:
+            buf += linha(f"CPF: {cpf[:38]}")
+        buf += linha(f"Data: {data_str}")
+        buf += separador()
+        buf += LF
+
+        buf += ALINHAR_CENT
+        buf += NEGRITO_ON
+        if via == 1:
+            buf += linha("VIA DO CAIXA")
+            buf += NEGRITO_OFF
+            buf += linha("Assinatura do Devedor:")
+            buf += LF * 3
+            buf += ALINHAR_ESQU
+            buf += linha("_" * 36)
+        else:
+            buf += linha("VIA DO DEVEDOR")
+            buf += NEGRITO_OFF
+            buf += linha("Recebido por (carimbo e assinatura do caixa):")
+            buf += LF * 3
+            buf += ALINHAR_ESQU
+            buf += linha("_" * 36)
+        buf += separador()
+
+    buf += LF
+    buf += CORTAR
+    return bytes(buf)
 
 
 def _fmt_valor(v: float) -> str:

@@ -152,9 +152,9 @@
         <h2>Definir plano de tratamento</h2>
         <form method="post" action="/dia/fraterno/{{ checkin.id }}">
 
-            <label>Médium responsável *</label>
-            <select name="medium_id" required>
-                <option value="">— selecione —</option>
+            <label>Médium responsável <span style="font-weight:400;color:var(--cor-texto-suave)">(opcional — deixe em branco se não houver tratamento)</span></label>
+            <select name="medium_id">
+                <option value="">— não se aplica —</option>
                 {% for m in mediuns %}
                 <option value="{{ m.id }}">{{ m.nome_completo }}</option>
                 {% endfor %}

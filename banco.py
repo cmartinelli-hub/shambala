@@ -201,6 +201,7 @@ def _migrar(conn):
         ("produtos", "caixa_id", "INTEGER REFERENCES caixas(id)"),
         ("caixas", "usa_produtos", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("vendas_pdv", "doacao_valor", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
+        ("financeiro_movimentacoes", "forma_pagamento", "TEXT"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -622,7 +623,7 @@ def criar_tabelas():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS planos_tratamento (
                 id                  SERIAL PRIMARY KEY,
-                medium_id           INTEGER NOT NULL REFERENCES mediuns(id),
+                medium_id           INTEGER REFERENCES mediuns(id),
                 sessoes_total       INTEGER NOT NULL,
                 sessoes_realizadas  INTEGER NOT NULL DEFAULT 0,
                 data_inicio         TEXT NOT NULL,

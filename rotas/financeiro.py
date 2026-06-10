@@ -240,6 +240,7 @@ async def gerar_mensalidades(
 async def baixar_mensalidade(
     request: Request,
     mov_id: int,
+    forma_pagamento: str = Form("especie"),
     pix: str = Form(""),
 ):
     atendente, redir = _guard(request)
@@ -248,18 +249,19 @@ async def baixar_mensalidade(
 
     with conectar() as conn:
         conn.execute(
-            """UPDATE financeiro_movimentacoes SET status = 'pago', pix_copiadecola = %s WHERE id = %s""",
-            (pix.strip(), mov_id),
+            """UPDATE financeiro_movimentacoes SET status = 'pago', pix_copiadecola = %s,
+               forma_pagamento = %s WHERE id = %s""",
+            (pix.strip(), forma_pagamento, mov_id),
         )
         row = conn.execute(
             "SELECT data_movimentacao, valor FROM financeiro_movimentacoes WHERE id = %s", (mov_id,)
         ).fetchone()
         mes_str = str(row["data_movimentacao"])[:7] if row else ""
 
-        # Atualiza o caixa aberto mais recente com o valor da mensalidade
+        # Atualiza o caixa da Lanchonete (id=2) com o valor da mensalidade
         if row and float(row["valor"]) > 0:
             mov_caixa = conn.execute(
-                "SELECT id FROM caixa_movimentos WHERE status = 'aberto' ORDER BY id DESC LIMIT 1"
+                "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
             ).fetchone()
             if mov_caixa:
                 conn.execute(
@@ -269,6 +271,65 @@ async def baixar_mensalidade(
 
     mes_param = f"&mes={mes_str}" if mes_str else ""
     return RedirectResponse(url=f"/financeiro/mensalidades?pago={mov_id}{mes_param}", status_code=303)
+
+
+@router.get("/mensalidades/{mov_id}/pix", response_class=HTMLResponse)
+async def pix_mensalidade(request: Request, mov_id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    import qrcode as qrlib
+    import base64, io
+
+    with conectar() as conn:
+        mov = conn.execute(
+            """SELECT fm.*, t.nome_completo
+               FROM financeiro_movimentacoes fm
+               JOIN trabalhadores t ON t.id = fm.trabalhador_id
+               WHERE fm.id = %s AND fm.categoria = 'mensalidade'""",
+            (mov_id,)
+        ).fetchone()
+        if not mov:
+            return RedirectResponse(url="/financeiro/mensalidades", status_code=303)
+
+        # Busca chave PIX da Lanchonete (caixa_id=2) ou a primeira ativa
+        row = conn.execute(
+            """SELECT p.chave, p.tipo FROM caixas c
+               JOIN chaves_pix p ON p.id = c.chave_pix_id
+               WHERE c.id = 2 AND p.ativa = TRUE"""
+        ).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT chave, tipo FROM chaves_pix WHERE ativa = TRUE LIMIT 1"
+            ).fetchone()
+
+    if not row:
+        return HTMLResponse("<p>Nenhuma chave PIX ativa configurada.</p>", status_code=400)
+
+    from rotas.caixa import _normalizar_chave_pix, _gerar_payload_pix
+    chave = _normalizar_chave_pix(row["chave"], row["tipo"])
+    valor = float(mov["valor"])
+    pix_code = _gerar_payload_pix(chave, valor, f"Mensalidade {mov['nome_completo']}")
+
+    qr = qrlib.QRCode(version=1, box_size=10, border=2)
+    qr.add_data(pix_code)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    qr_b64 = base64.b64encode(buf.getvalue()).decode()
+
+    return templates.TemplateResponse("financeiro/pix.html", {
+        "request": request,
+        "atendente": atendente,
+        "pix_code": pix_code,
+        "qr_base64": qr_b64,
+        "valor": valor,
+        "descricao": f"Mensalidade {mov['nome_completo']}",
+        "chave": chave,
+        "mov_id": mov_id,
+    })
 
 
 # ── PIX Estático ──────────────────────────────────────────────────────────────

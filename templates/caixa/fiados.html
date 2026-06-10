@@ -32,6 +32,15 @@
     </div>
 </div>
 
+{% set _pago_ok = request.query_params.get('pago_ok') %}
+{% set _valor_pago = request.query_params.get('valor') %}
+{% if _pago_ok %}
+<div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
+    <span id="msg-pago-ok">⏳ Pagamento registrado — imprimindo 2 vias…</span>
+</div>
+{% endif %}
+
 {% if not fiados %}
 <div class="card-form" style="text-align:center;padding:2rem">
     <p style="font-size:1.1rem;color:var(--cor-texto-suave)">Nenhum fiado pendente.</p>
@@ -161,6 +170,28 @@
 {% endif %}
 
 <script>
+{% if _pago_ok %}
+async function imprimirReciboFiado() {
+    const msg = document.getElementById('msg-pago-ok');
+    const trabId = {{ _pago_ok }};
+    const valor = {{ _valor_pago }};
+    try {
+        const rb = await fetch(`/caixa/fiados/${trabId}/recibo-escpos?valor=${valor}`);
+        if (!rb.ok) throw new Error('Erro ao buscar recibo');
+        const bytes = await rb.arrayBuffer();
+        await fetch('http://localhost:9001/imprimir', {
+            method: 'POST',
+            body: bytes,
+            headers: {'Content-Type': 'application/octet-stream'}
+        });
+        if (msg) msg.textContent = '✅ Pagamento registrado! 2 vias impressas.';
+    } catch(e) {
+        if (msg) msg.textContent = '✅ Pagamento registrado. Agente não respondeu — verifique se está rodando.';
+    }
+}
+window.addEventListener('load', imprimirReciboFiado);
+{% endif %}
+
 function togglePagar(tid, total) {
     const el = document.getElementById('pagar-form-' + tid);
     el.classList.toggle('ativo');

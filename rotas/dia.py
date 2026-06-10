@@ -1119,7 +1119,7 @@ async def tela_fraterno(request: Request, checkin_id: int):
 async def salvar_fraterno(
     request: Request,
     checkin_id: int,
-    medium_id: int = Form(...),
+    medium_id: int = Form(None),
     sessoes_total: int = Form(1),
     frequencia: str = Form("semanal"),
     sessoes_com_passe: int = Form(1),
@@ -1137,20 +1137,23 @@ async def salvar_fraterno(
         ).fetchone()
         if not checkin:
             return RedirectResponse(url="/dia/acolhimento", status_code=303)
-        cur = conn.execute(
-            """INSERT INTO planos_tratamento
-               (medium_id, sessoes_total, data_inicio, frequencia, sessoes_com_passe, status)
-               VALUES (%s,%s,%s,%s,%s,'ativo')
-               RETURNING id""",
-            (medium_id, sessoes_total, inicio.isoformat(), frequencia, sessoes_com_passe)
-        )
-        plano_id = cur.fetchone()["id"]
-        conn.execute(
-            """INSERT INTO plano_pessoas (plano_id, pessoa_id)
-               VALUES (%s,%s) ON CONFLICT DO NOTHING""",
-            (plano_id, checkin["pessoa_id"])
-        )
-        gerar_agendamentos_plano(conn, plano_id, inicio, frequencia, sessoes_total, sessoes_com_passe)
+
+        if medium_id:
+            cur = conn.execute(
+                """INSERT INTO planos_tratamento
+                   (medium_id, sessoes_total, data_inicio, frequencia, sessoes_com_passe, status)
+                   VALUES (%s,%s,%s,%s,%s,'ativo')
+                   RETURNING id""",
+                (medium_id, sessoes_total, inicio.isoformat(), frequencia, sessoes_com_passe)
+            )
+            plano_id = cur.fetchone()["id"]
+            conn.execute(
+                """INSERT INTO plano_pessoas (plano_id, pessoa_id)
+                   VALUES (%s,%s) ON CONFLICT DO NOTHING""",
+                (plano_id, checkin["pessoa_id"])
+            )
+            gerar_agendamentos_plano(conn, plano_id, inicio, frequencia, sessoes_total, sessoes_com_passe)
+
         # Marcar acolhimento como realizado
         conn.execute(
             "UPDATE checkins SET acolhimento_realizado=1 WHERE id=%s", (checkin_id,)
