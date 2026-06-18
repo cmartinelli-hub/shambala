@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request, Form, Query, UploadFile, File, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from banco import conectar, _normalizar
-from rotas.auth import obter_atendente_logado
+from rotas.auth import obter_atendente_logado, e_admin
 from templates_config import templates
 
 router = APIRouter(prefix="/caixa")
@@ -1143,6 +1143,7 @@ async def listar_fiados(request: Request):
         "atendente": atendente,
         "fiados": [dict(f) for f in fiados],
         "agrupado": dict(agrupado),
+        "e_admin": e_admin(request),
     })
 
 
@@ -1280,6 +1281,71 @@ async def pagar_divida_fiado(
         _contabilizar_recebimento(conn, valor_efetivo, f"Recebimento fiado — {nome}")
 
     return RedirectResponse(url=f"/caixa/fiados?pago_ok={trabalhador_id}&valor={valor_efetivo:.2f}", status_code=303)
+
+
+@router.post("/fiados/{venda_id}/cancelar")
+async def cancelar_fiado(request: Request, venda_id: int):
+    """Cancela um lançamento de fiado (apenas admin). Restaura crédito usado e marca a venda como cancelada."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    if not e_admin(request):
+        return RedirectResponse(url="/caixa/fiados?erro=sem_permissao", status_code=303)
+
+    with conectar() as conn:
+        venda = conn.execute(
+            """SELECT id, total, fiado_credito_usado, fiado_trabalhador_id,
+                      caixa_movimento_id, fiado_pago, fiado_data_pagamento,
+                      caixa_id
+               FROM vendas_pdv WHERE id = %s AND forma_pagamento = 'fiado' AND status = 'concluida'""",
+            (venda_id,)
+        ).fetchone()
+
+        if not venda:
+            return RedirectResponse(url="/caixa/fiados?erro=nao_encontrada", status_code=303)
+
+        # Restaura crédito antecipado que foi usado nesta compra
+        credito = float(venda["fiado_credito_usado"] or 0)
+        if credito > 0:
+            conn.execute(
+                "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
+                (credito, venda["fiado_trabalhador_id"])
+            )
+            conn.execute(
+                """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
+                   VALUES (%s, 'credito', %s, %s)""",
+                (venda["fiado_trabalhador_id"], credito, f"Estorno venda #{venda_id}")
+            )
+
+        # Se já foi pago, reverte no financeiro
+        if venda["fiado_pago"]:
+            conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, descricao, caixa_id)
+                   VALUES ('saida', 'cancelamento_fiado', %s, %s, %s)""",
+                (float(venda["total"]), f"Cancelamento venda fiado #{venda_id} — estorno", venda["caixa_id"])
+            )
+
+        # Marca a venda como cancelada e limpa flags de fiado
+        conn.execute(
+            """UPDATE vendas_pdv
+               SET status = 'cancelada',
+                   fiado_pago = FALSE,
+                   fiado_data_pagamento = NULL,
+                   observacao = COALESCE(observacao || '; ', '') || %s
+               WHERE id = %s""",
+            (f"Cancelado por #{atendente['id']} em {date.today().isoformat()}", venda_id)
+        )
+
+        # Reverte o total de vendas no movimento de caixa (se ainda aberto)
+        if venda["caixa_movimento_id"]:
+            conn.execute(
+                "UPDATE caixa_movimentos SET total_vendas = total_vendas - %s WHERE id = %s AND status = 'aberto'",
+                (float(venda["total"]), venda["caixa_movimento_id"])
+            )
+
+    return RedirectResponse(url="/caixa/fiados?cancelado_ok=1", status_code=303)
 
 
 @router.post("/fiados/credito/{trabalhador_id}")

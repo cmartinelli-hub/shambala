@@ -90,6 +90,7 @@
 {% endif %}
 
 <script>
+const IMPRESSORA_URL = '{{ centro_config().get('impressora_url', 'http://localhost:9001') }}';
 {% if _pago_id %}
 async function imprimirMensalidade(movId) {
     const msg = document.getElementById('msg-ok');
@@ -97,7 +98,7 @@ async function imprimirMensalidade(movId) {
         const rb = await fetch(`/caixa/mensalidades/${movId}/escpos`);
         if (!rb.ok) throw new Error('Erro ao buscar bytes');
         const bytes = await rb.arrayBuffer();
-        await fetch('http://localhost:9001/imprimir', {
+        await fetch(IMPRESSORA_URL + '/imprimir', {
             method: 'POST',
             body: bytes,
             headers: { 'Content-Type': 'application/octet-stream' }
@@ -115,7 +116,7 @@ async function reimprimir(movId) {
         const rb = await fetch(`/caixa/mensalidades/${movId}/escpos`);
         if (!rb.ok) { alert('Erro ao buscar recibo.'); return; }
         const bytes = await rb.arrayBuffer();
-        const r = await fetch('http://localhost:9001/imprimir', {
+        const r = await fetch(IMPRESSORA_URL + '/imprimir', {
             method: 'POST',
             body: bytes,
             headers: { 'Content-Type': 'application/octet-stream' }

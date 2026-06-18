@@ -154,6 +154,7 @@
 <div id="msg-erro" class="msg-erro"></div>
 
 <script>
+    const IMPRESSORA_URL = '{{ centro_config().get('impressora_url', 'http://localhost:9001') }}';
     async function imprimirTermica() {
         const btn = document.getElementById('btn-termica');
         const msg = document.getElementById('msg-erro');
@@ -164,7 +165,7 @@
             const rb = await fetch('/caixa/vendas/{{ venda.id }}/escpos');
             if (!rb.ok) throw new Error('Erro ao buscar dados da venda.');
             const bytes = await rb.arrayBuffer();
-            const ra = await fetch('http://localhost:9001/imprimir', {
+            const ra = await fetch(IMPRESSORA_URL + '/imprimir', {
                 method: 'POST',
                 body: bytes,
                 headers: {'Content-Type': 'application/octet-stream'}
@@ -178,7 +179,7 @@
                 btn.textContent = '🖨 Reimprimir';
             }
         } catch (e) {
-            msg.textContent = 'Agente não respondeu — verifique se está rodando em localhost:9001.';
+            msg.textContent = 'Agente não respondeu — verifique se o agente de impressão está rodando.';
             btn.disabled = false;
             btn.textContent = '🖨 Reimprimir';
         }

@@ -41,6 +41,26 @@
 </div>
 {% endif %}
 
+{% set _cancelado_ok = request.query_params.get('cancelado_ok') %}
+{% set _erro = request.query_params.get('erro') %}
+{% if _cancelado_ok %}
+<div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
+    ✅ Fiado cancelado com sucesso! O crédito usado foi estornado.
+</div>
+{% endif %}
+{% if _erro == 'sem_permissao' %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    ⛔ Apenas administradores podem cancelar lançamentos de fiado.
+</div>
+{% elif _erro == 'nao_encontrada' %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    ⛔ Venda não encontrada ou já processada.
+</div>
+{% endif %}
+
 {% if not fiados %}
 <div class="card-form" style="text-align:center;padding:2rem">
     <p style="font-size:1.1rem;color:var(--cor-texto-suave)">Nenhum fiado pendente.</p>
@@ -159,6 +179,11 @@
                             <button class="btn btn-sm btn-secundario">💰 Quitar esta</button>
                         </form>
                         <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
+                        {% if e_admin %}
+                        <form method="post" action="/caixa/fiados/{{ v.id }}/cancelar" style="display:inline" onsubmit="return confirm('⚠️ Cancelar o fiado #{{ v.id }} (R$ {{ "%.2f"|format(_devido) }})?\n\nO crédito usado será estornado. Esta ação não pode ser desfeita.')">
+                            <button class="btn btn-sm btn-perigo">🗑 Cancelar</button>
+                        </form>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -170,6 +195,7 @@
 {% endif %}
 
 <script>
+const IMPRESSORA_URL = '{{ centro_config().get('impressora_url', 'http://localhost:9001') }}';
 {% if _pago_ok %}
 async function imprimirReciboFiado() {
     const msg = document.getElementById('msg-pago-ok');
@@ -179,7 +205,7 @@ async function imprimirReciboFiado() {
         const rb = await fetch(`/caixa/fiados/${trabId}/recibo-escpos?valor=${valor}`);
         if (!rb.ok) throw new Error('Erro ao buscar recibo');
         const bytes = await rb.arrayBuffer();
-        await fetch('http://localhost:9001/imprimir', {
+        await fetch(IMPRESSORA_URL + '/imprimir', {
             method: 'POST',
             body: bytes,
             headers: {'Content-Type': 'application/octet-stream'}

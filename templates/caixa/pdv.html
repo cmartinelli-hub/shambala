@@ -820,6 +820,7 @@ function fmtVal(v) {
 
 {% if request.query_params.get('ok') %}
 // ── Impressão automática via agente local ─────────────────────────────────────
+const IMPRESSORA_URL = '{{ centro_config().get('impressora_url', 'http://localhost:9001') }}';
 async function imprimirAgente(vendaId) {
     if (!vendaId) return;
     const msg = document.getElementById('msg-ok');
@@ -832,7 +833,7 @@ async function imprimirAgente(vendaId) {
         const rb = await fetch(`/caixa/vendas/${vendaId}/escpos`);
         if (!rb.ok) throw new Error('Erro ao buscar dados da venda.');
         const bytes = await rb.arrayBuffer();
-        await fetch('http://localhost:9001/imprimir', {
+        await fetch(IMPRESSORA_URL + '/imprimir', {
             method: 'POST',
             body: bytes,
             headers: {'Content-Type': 'application/octet-stream'}
@@ -842,7 +843,7 @@ async function imprimirAgente(vendaId) {
             const rb2 = await fetch(`/caixa/vendas/${vendaId}/escpos?via=caixa`);
             if (rb2.ok) {
                 const bytes2 = await rb2.arrayBuffer();
-                await fetch('http://localhost:9001/imprimir', {
+                await fetch(IMPRESSORA_URL + '/imprimir', {
                     method: 'POST',
                     body: bytes2,
                     headers: {'Content-Type': 'application/octet-stream'}

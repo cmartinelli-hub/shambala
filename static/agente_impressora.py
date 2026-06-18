@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Agente local de impressão ESC/POS.
 
-Roda no PC do caixa, escuta em localhost:9001.
-O browser envia os bytes ESC/POS (buscados do servidor) e o agente
-os escreve direto em /dev/ttyUSB0.
+Roda no PC com a impressora térmica, escuta em 0.0.0.0:9001 para aceitar
+conexões de outros computadores da rede. O browser envia os bytes ESC/POS
+(buscados do servidor) e o agente os escreve direto em /dev/ttyUSB0.
 
 Uso:
     python3 agente_impressora.py
@@ -57,6 +57,6 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    print(f'Agente de impressao rodando em localhost:{PORTA}')
+    print(f'Agente de impressao rodando em 0.0.0.0:{PORTA}')
     print(f'Dispositivo: {DISPOSITIVO}')
-    HTTPServer(('localhost', PORTA), _Handler).serve_forever()
+    HTTPServer(('0.0.0.0', PORTA), _Handler).serve_forever()

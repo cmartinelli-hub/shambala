@@ -282,6 +282,26 @@ async def salvar_config_centro(
     return RedirectResponse(url="/configuracoes", status_code=303)
 
 
+@router.post("/impressora")
+async def salvar_config_impressora(
+    request: Request,
+    impressora_url: str = Form("http://localhost:9001"),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        conn.execute(
+            """INSERT INTO configuracoes_centro (chave, valor)
+               VALUES ('impressora_url', %s)
+               ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor""",
+            (impressora_url.strip(),)
+        )
+
+    return RedirectResponse(url="/configuracoes", status_code=303)
+
+
 # ── Configuração de Backup em Pendrive ───────────────────────────────────────
 
 def _ler_config_pendrive(conn) -> dict:

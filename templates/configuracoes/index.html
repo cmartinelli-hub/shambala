@@ -222,4 +222,31 @@
         </div>
     </form>
 </div>
+
+<!-- 8. Impressora Térmica -->
+<div class="config-card">
+    <div class="config-card-header">
+        <span class="config-card-icon">🖨️</span>
+        <div>
+            <h2>Impressora Térmica</h2>
+            <p class="config-card-desc">Endereço do agente de impressão ESC/POS para emissão de cupons e recibos no PDV.</p>
+        </div>
+    </div>
+    <form method="post" action="/configuracoes/impressora" class="config-form-grid">
+        <div class="config-form-campo">
+            <label for="impressora_url">URL do Agente de Impressão</label>
+            <input type="url" id="impressora_url" name="impressora_url"
+                   value="{{ centro_cfg.get('impressora_url', 'http://localhost:9001') }}"
+                   placeholder="Ex: http://10.100.0.4:9001"
+                   class="form-input">
+            <small style="color: #6b7280; display: block; margin-top: 4px;">
+                O agente de impressão roda no computador que tem a impressora térmica conectada.
+                Em cada caixa, configure este campo com o IP do computador da impressora + porta 9001.
+            </small>
+        </div>
+        <div class="config-form-actions">
+            <button type="submit" class="btn btn-primario">💾 Salvar Impressora</button>
+        </div>
+    </form>
+</div>
 {% endblock %}

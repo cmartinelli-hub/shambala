@@ -43,9 +43,10 @@ def _obter_config_centro() -> dict:
                 config[r["chave"]] = r["valor"]
             config.setdefault("centro_nome", "Centro Espírita")
             config.setdefault("centro_logo", "")
+            config.setdefault("impressora_url", "http://localhost:9001")
             return config
     except Exception:
-        return {"centro_nome": "Centro Espírita", "centro_logo": ""}
+        return {"centro_nome": "Centro Espírita", "centro_logo": "", "impressora_url": "http://localhost:9001"}
 
 
 # Função callable para uso nos templates
