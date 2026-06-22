@@ -177,6 +177,64 @@
     border-radius: var(--raio); padding: .6rem 1rem;
     color: #155724; font-weight: 600; margin-bottom: 1rem;
 }
+
+/* ── Modal ── */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.modal-box {
+    background: var(--cor-superficie);
+    border-radius: var(--raio);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    width: 100%; max-width: 440px;
+    max-height: 90vh;
+    display: flex; flex-direction: column;
+}
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.2rem .5rem;
+    border-bottom: 1px solid var(--cor-borda);
+    flex-shrink: 0;
+}
+.modal-header h3 { margin: 0; font-size: 1.1rem; }
+.modal-close {
+    background: none; border: none;
+    font-size: 1.5rem; cursor: pointer;
+    color: var(--cor-texto-suave); line-height: 1;
+    padding: 0 .2rem;
+}
+.modal-close:hover { color: var(--cor-texto); }
+.modal-body {
+    padding: 1rem 1.2rem;
+    overflow-y: auto; flex: 1;
+}
+.modal-footer {
+    display: flex; gap: .5rem;
+    padding: .8rem 1.2rem 1rem;
+    border-top: 1px solid var(--cor-borda);
+    flex-shrink: 0;
+}
+.modal-footer button { flex: 1; font-size: .95rem; padding: .7rem; }
+.modal-qr-img {
+    max-width: 220px; border-radius: 8px;
+    display: block; margin: .5rem auto;
+}
+.modal-qr-code {
+    font-size: .68rem; word-break: break-all;
+    color: var(--cor-texto-suave); margin-top: .4rem;
+    background: var(--cor-fundo); padding: .4rem; border-radius: 4px;
+    font-family: monospace; max-height: 60px; overflow: hidden;
+    text-align: left;
+}
+.modal-resultados {
+    max-height: 200px; overflow-y: auto;
+    border: 1px solid var(--cor-borda); border-radius: var(--raio);
+    margin-top: .3rem;
+}
 </style>
 {% endblock %}
 
@@ -368,24 +426,13 @@
                 <button class="btn btn-secundario pdv-btn-pix" id="btn-gerar-pix" type="button">
                     📱 Gerar QR Code PIX
                 </button>
-                <div class="pdv-qr-inline" id="pdv-qr-inline">
-                    <div id="pix-breakdown" style="display:none;font-size:.78rem;color:var(--cor-texto-suave);margin-bottom:.3rem">
-                        Compras: R$ <span id="pix-sub"></span> &nbsp;+&nbsp;
-                        Doação: R$ <span id="pix-don"></span> &nbsp;=&nbsp;
-                        <strong>Total: R$ <span id="pix-tot"></span></strong>
-                    </div>
-                    <img id="pdv-qr-img" src="" alt="QR Code PIX">
-                    <div class="pdv-qr-code" id="pdv-qr-code"></div>
-                </div>
             </div>
 
             <div class="pdv-fiado" id="painel-fiado">
-                <label for="fiado-busca">Trabalhador (comprador a prazo)</label>
-                <div style="position:relative">
-                    <input type="text" id="fiado-busca" class="pdv-input-valor"
-                           placeholder="Digite o nome do trabalhador…" autocomplete="off">
-                    <div class="pdv-sugestoes" id="fiado-sugestoes" style="display:none"></div>
-                </div>
+                <label>Trabalhador (comprador a prazo)</label>
+                <button type="button" id="btn-abrir-fiado-modal" class="btn btn-primario pdv-btn-pix">
+                    🔍 Selecionar Trabalhador
+                </button>
                 <div id="fiado-selecionado" style="display:none;margin-top:.4rem;
                      padding:.4rem;background:#e8f5e9;border-radius:var(--raio);
                      font-size:.9rem;font-weight:600">
@@ -397,6 +444,7 @@
             </div>
 
         </div>
+        {# Botões fixos na barra — sempre visíveis #}
         <div class="pdv-btn-area">
             <div style="display:flex;gap:.4rem">
                 <button class="btn btn-secundario pdv-btn-finalizar" id="btn-finalizar" disabled style="flex:1">
@@ -421,6 +469,67 @@
     <input type="hidden" name="doacao_valor" id="f-doacao-valor" value="0">
     <input type="hidden" name="imprimir" id="f-imprimir" value="1">
 </form>
+
+{# ── Modal PIX ── #}
+<div class="modal-overlay" id="modal-pix" style="display:none" onclick="if(event.target===this)fecharModal('modal-pix')">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>📱 Pagamento PIX</h3>
+            <button type="button" class="modal-close" onclick="fecharModal('modal-pix')">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+            <div id="pix-breakdown" style="display:none;font-size:.82rem;color:var(--cor-texto-suave);margin-bottom:.5rem">
+                Compras: R$ <span id="pix-sub"></span> &nbsp;+&nbsp;
+                Doação: R$ <span id="pix-don"></span> &nbsp;=&nbsp;
+                <strong>Total: R$ <span id="pix-tot"></span></strong>
+            </div>
+            <img id="pdv-qr-img" class="modal-qr-img" src="" alt="QR Code PIX">
+            <div class="modal-qr-code" id="pdv-qr-code"></div>
+            <p style="font-size:.8rem;color:var(--cor-texto-suave);margin-top:.5rem">
+                Escaneie o QR Code acima com o app do seu banco.
+            </p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secundario" onclick="fecharModal('modal-pix')">← Voltar</button>
+            <button class="btn btn-primario" id="btn-finalizar-pix" style="flex:2">✅ Finalizar</button>
+            <button class="btn btn-primario" id="btn-finalizar-imprimir-pix" style="flex:2">🖨️ Finalizar e Imprimir</button>
+        </div>
+    </div>
+</div>
+
+{# ── Modal Fiado ── #}
+<div class="modal-overlay" id="modal-fiado" style="display:none" onclick="if(event.target===this)fecharModal('modal-fiado')">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>📝 Fiado — Selecionar Trabalhador</h3>
+            <button type="button" class="modal-close" onclick="fecharModal('modal-fiado')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <label style="font-weight:600;font-size:.9rem">Buscar trabalhador</label>
+            <input type="text" id="fiado-busca-modal" class="pdv-input-valor"
+                   placeholder="Digite o nome…" autocomplete="off"
+                   style="margin-bottom:.4rem">
+            <div class="modal-resultados" id="fiado-resultados-modal">
+                <div style="padding:.8rem;text-align:center;color:var(--cor-texto-suave);font-size:.85rem">
+                    Digite ao menos 2 letras para buscar.
+                </div>
+            </div>
+            <div id="fiado-selecionado-modal" style="display:none;margin-top:.5rem;
+                 padding:.5rem;background:#e8f5e9;border-radius:var(--raio);
+                 font-size:.9rem;font-weight:600">
+                <span id="fiado-nome-modal"></span>
+                <button type="button" id="fiado-limpar-modal" style="margin-left:.5rem;
+                        background:none;border:none;color:#c0392b;cursor:pointer">✕</button>
+                <div id="fiado-info-modal" style="font-size:.8rem;font-weight:400;margin-top:.3rem"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secundario" onclick="fecharModal('modal-fiado')">← Voltar</button>
+            <button class="btn btn-primario" id="btn-finalizar-fiado" disabled style="flex:2">✅ Finalizar</button>
+            <button class="btn btn-primario" id="btn-finalizar-imprimir-fiado" disabled style="flex:2">🖨️ Finalizar e Imprimir</button>
+        </div>
+    </div>
+</div>
 {% endif %}
 {% endif %}
 {% endblock %}
@@ -614,6 +723,14 @@ document.querySelectorAll('.pdv-atalho-item').forEach(el => {
     });
 });
 
+// ── Modal functions ──────────────────────────────────────────────────────
+function fecharModal(id) {
+    document.getElementById(id).style.display = 'none';
+}
+function abrirModal(id) {
+    document.getElementById(id).style.display = 'flex';
+}
+
 // ── Pagamento ─────────────────────────────────────────────────────────────────
 document.querySelectorAll('input[name="pgto"]').forEach(r => {
     r.addEventListener('change', () => {
@@ -657,6 +774,7 @@ document.getElementById('btn-doacao').addEventListener('click', () => {
     document.getElementById('btn-doacao-wrap').style.display = 'none';
 });
 
+// ── PIX ──────────────────────────────────────────────────────────────────────
 document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
     const total = carrinho.reduce((s, i) => s + i.subtotal, 0);
     if (!total) return;
@@ -664,11 +782,10 @@ document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
     const totalPix = parseFloat((total + doacao).toFixed(2));
     const res = await fetch(`/caixa/pix-qr?valor=${totalPix.toFixed(2)}&caixa_id={{ caixa_sel.id }}`);
     const dados = await res.json();
-    const qrInline = document.getElementById('pdv-qr-inline');
     document.getElementById('pdv-qr-img').src = `data:image/png;base64,${dados.qr_base64}`;
     document.getElementById('pdv-qr-code').textContent = dados.pix_code;
-    qrInline.style.display = 'block';
-    // Mostra breakdown se houver doação
+
+    // Show breakdown if donation
     const breakdown = document.getElementById('pix-breakdown');
     if (doacao > 0) {
         document.getElementById('pix-sub').textContent = fmtVal(total);
@@ -678,42 +795,37 @@ document.getElementById('btn-gerar-pix').addEventListener('click', async () => {
     } else {
         breakdown.style.display = 'none';
     }
-    // Marca o valor de doação gerado para uso no submit
-    document.getElementById('pdv-qr-inline').dataset.doacao = doacao.toFixed(2);
+
+    // Store doação amount for submit
+    document.getElementById('pix-doacao').dataset.doacaoAtual = doacao.toFixed(2);
+    abrirModal('modal-pix');
 });
 
-// Oculta QR se o valor de doação mudar após geração (força regeneração)
+// Oculta QR se o valor de doação mudar após geração
 document.getElementById('pix-doacao').addEventListener('input', () => {
-    const qrInline = document.getElementById('pdv-qr-inline');
-    if (qrInline.style.display !== 'none') {
-        qrInline.style.display = 'none';
-        document.getElementById('pix-breakdown').style.display = 'none';
-        qrInline.dataset.doacao = '0';
-    }
+    document.getElementById('pix-doacao').dataset.doacaoAtual = '0';
+    document.getElementById('pix-breakdown').style.display = 'none';
 });
 
 // ── Finalizar ─────────────────────────────────────────────────────────────────
 function submeterVenda(comImpressao) {
     const pgto = document.querySelector('input[name="pgto"]:checked').value;
-    if (pgto === 'fiado') {
-        const trabId = parseInt(document.getElementById('f-trabalhador-id').value) || 0;
-        if (!trabId) {
-            alert('Selecione um trabalhador para a venda fiado.');
-            document.getElementById('fiado-busca').focus();
-            return;
-        }
-        if (_fiadoBloqueado) {
-            alert('Este trabalhador está com fiado BLOQUEADO. Regularize os débitos pendentes primeiro.');
-            return;
-        }
+
+    // For PIX or Fiado called from sidebar — open modal instead
+    if (pgto === 'pix') {
+        const btn = document.getElementById('btn-gerar-pix');
+        if (btn) btn.click(); // trigger QR generation + modal
+        return;
     }
+    if (pgto === 'fiado') {
+        document.getElementById('btn-abrir-fiado-modal').click();
+        return;
+    }
+
+    // Espécie — submit directly
     document.getElementById('f-pagamento').value = pgto;
     document.getElementById('f-valor-recebido').value =
-        pgto === 'especie' ? (document.getElementById('valor-recebido').value || 0) : 0;
-    if (pgto === 'pix') {
-        const doacao = parseFloat(document.getElementById('pdv-qr-inline').dataset.doacao || '0') || 0;
-        document.getElementById('f-doacao-valor').value = doacao.toFixed(2);
-    }
+        (document.getElementById('valor-recebido').value || 0);
     document.getElementById('f-itens-json').value = JSON.stringify(carrinho);
     document.getElementById('f-imprimir').value = comImpressao ? '1' : '0';
     document.getElementById('form-finalizar').submit();
@@ -722,14 +834,41 @@ function submeterVenda(comImpressao) {
 document.getElementById('btn-finalizar').addEventListener('click', () => submeterVenda(false));
 document.getElementById('btn-finalizar-sem-impressao').addEventListener('click', () => submeterVenda(true));
 
-// ── Fiado: autocomplete de trabalhadores ────────────────────────────────────
+// ── Modal PIX: finalizar buttons ────────────────────────────────────────────
+function _submeterPix(comImpressao) {
+    const doacao = parseFloat(document.getElementById('pix-doacao').dataset.doacaoAtual || '0') || 0;
+    document.getElementById('f-pagamento').value = 'pix';
+    document.getElementById('f-valor-recebido').value = 0;
+    document.getElementById('f-doacao-valor').value = doacao.toFixed(2);
+    document.getElementById('f-itens-json').value = JSON.stringify(carrinho);
+    document.getElementById('f-imprimir').value = comImpressao ? '1' : '0';
+    document.getElementById('form-finalizar').submit();
+}
+document.getElementById('btn-finalizar-pix').addEventListener('click', () => _submeterPix(false));
+document.getElementById('btn-finalizar-imprimir-pix').addEventListener('click', () => _submeterPix(true));
+
+// ── Fiado: modal com busca ─────────────────────────────────────────────────
 let _fiadoBloqueado = false;
+
+document.getElementById('btn-abrir-fiado-modal').addEventListener('click', () => {
+    // Reset modal state
+    document.getElementById('fiado-busca-modal').value = '';
+    document.getElementById('fiado-resultados-modal').innerHTML =
+        '<div style="padding:.8rem;text-align:center;color:var(--cor-texto-suave);font-size:.85rem">Digite ao menos 2 letras para buscar.</div>';
+    document.getElementById('fiado-selecionado-modal').style.display = 'none';
+    document.getElementById('btn-finalizar-fiado').disabled = true;
+    document.getElementById('btn-finalizar-imprimir-fiado').disabled = true;
+    abrirModal('modal-fiado');
+    setTimeout(() => document.getElementById('fiado-busca-modal').focus(), 100);
+});
+
 (function() {
-    const input = document.getElementById('fiado-busca');
-    const sug   = document.getElementById('fiado-sugestoes');
-    const sel   = document.getElementById('fiado-selecionado');
-    const nome  = document.getElementById('fiado-nome');
-    const hId   = document.getElementById('f-trabalhador-id');
+    const input = document.getElementById('fiado-busca-modal');
+    const resultadosEl = document.getElementById('fiado-resultados-modal');
+    const sel = document.getElementById('fiado-selecionado-modal');
+    const nome = document.getElementById('fiado-nome-modal');
+    const info = document.getElementById('fiado-info-modal');
+    const hId = document.getElementById('f-trabalhador-id');
     if (!input) return;
     let timer = null;
     let resultados = [];
@@ -737,20 +876,26 @@ let _fiadoBloqueado = false;
     input.addEventListener('input', () => {
         clearTimeout(timer);
         const q = input.value.trim();
-        if (!q) { sug.style.display = 'none'; return; }
+        if (q.length < 2) {
+            resultadosEl.innerHTML =
+                '<div style="padding:.8rem;text-align:center;color:var(--cor-texto-suave);font-size:.85rem">Digite ao menos 2 letras para buscar.</div>';
+            return;
+        }
         timer = setTimeout(() => buscar(q), 180);
     });
-
-    const info  = document.getElementById('fiado-info');
 
     async function buscar(q) {
         const res = await fetch(`/caixa/trabalhadores/buscar?q=${encodeURIComponent(q)}`);
         resultados = await res.json();
-        if (!resultados.length) { sug.style.display = 'none'; return; }
-        sug.innerHTML = resultados.map((t, i) => {
+        if (!resultados.length) {
+            resultadosEl.innerHTML =
+                '<div style="padding:.8rem;text-align:center;color:var(--cor-texto-suave);font-size:.85rem">Nenhum trabalhador encontrado.</div>';
+            return;
+        }
+        resultadosEl.innerHTML = resultados.map((t, i) => {
             let extra = '';
             if (t.fiado_limite > 0) {
-                extra = ` — disp: R$ ${fmtVal(t.disponivel)} / lim: R$ ${fmtVal(t.fiado_limite)}`;
+                extra = `disp: R$ ${fmtVal(t.disponivel)} / lim: R$ ${fmtVal(t.fiado_limite)}`;
             }
             if (t.fiado_credito > 0) {
                 extra += ` crédito: R$ ${fmtVal(t.fiado_credito)}`;
@@ -760,24 +905,27 @@ let _fiadoBloqueado = false;
             }
             return `<div class="pdv-sugestao-item" data-idx="${i}">
                 <span>${t.nome}${t.cpf ? ' — ' + t.cpf : ''}</span>
-                <span style="font-size:.8rem;color:var(--cor-texto-suave)">${extra.trim()}</span>
+                <span style="font-size:.78rem;color:var(--cor-texto-suave)">${extra.trim()}</span>
              </div>`;
         }).join('');
-        sug.style.display = 'block';
     }
 
-    sug.addEventListener('mousedown', (e) => {
+    resultadosEl.addEventListener('mousedown', (e) => {
         const item = e.target.closest('[data-idx]');
         if (!item) return;
         const trab = resultados[parseInt(item.dataset.idx)];
         hId.value = trab.id;
         nome.textContent = `👤 ${trab.nome}${trab.cpf ? ' — CPF: ' + trab.cpf : ''}`;
-        sel.style.display = '';
-        // Show credit info
+        // Also update sidebar panel
+        const sNome = document.getElementById('fiado-nome');
+        const sInfo = document.getElementById('fiado-info');
+        const sSel = document.getElementById('fiado-selecionado');
+        if (sNome) sNome.textContent = `👤 ${trab.nome}${trab.cpf ? ' — CPF: ' + trab.cpf : ''}`;
+        // Show info
         let infoParts = [];
         if (trab.fiado_limite > 0) {
             infoParts.push(`Limite: R$ ${fmtVal(trab.fiado_limite)}`);
-            infoParts.push(`Disponível: R$ ${fmtVal(trab.disponivel)}`);
+            infoParts.push(`Disp: R$ ${fmtVal(trab.disponivel)}`);
         }
         if (trab.total_pendente > 0) {
             infoParts.push(`Devendo: R$ ${fmtVal(trab.total_pendente)}`);
@@ -795,23 +943,68 @@ let _fiadoBloqueado = false;
             sel.style.background = '#e8f5e9';
             _fiadoBloqueado = false;
         }
-        info.textContent = infoParts.join(' | ');
+        const infoText = infoParts.join(' | ');
+        info.textContent = infoText;
+        if (sInfo) sInfo.textContent = infoText;
+        sel.style.display = '';
+        if (sSel) {
+            sSel.style.display = '';
+            if (trab.fiado_bloqueado) {
+                sSel.style.border = '1px solid #c0392b';
+                sSel.style.background = '#f8d7da';
+            } else {
+                sSel.style.border = '';
+                sSel.style.background = '#e8f5e9';
+            }
+        }
+        document.getElementById('btn-finalizar-fiado').disabled = false;
+        document.getElementById('btn-finalizar-imprimir-fiado').disabled = false;
+        // Limpa busca
         input.value = '';
-        sug.style.display = 'none';
+        resultadosEl.innerHTML =
+            '<div style="padding:.8rem;text-align:center;color:var(--cor-texto-suave);font-size:.85rem">Trabalhador selecionado.</div>';
         resultados = [];
     });
 
-    document.getElementById('fiado-limpar').addEventListener('click', () => {
+    document.getElementById('fiado-limpar-modal').addEventListener('click', () => {
         hId.value = 0;
         sel.style.display = 'none';
         info.textContent = '';
         _fiadoBloqueado = false;
+        document.getElementById('btn-finalizar-fiado').disabled = true;
+        document.getElementById('btn-finalizar-imprimir-fiado').disabled = true;
         input.value = '';
         input.focus();
+        resultadosEl.innerHTML =
+            '<div style="padding:.8rem;text-align:center;color:var(--cor-texto-suave);font-size:.85rem">Digite ao menos 2 letras para buscar.</div>';
     });
-
-    input.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; }, 150));
 })();
+
+// ── Modal Fiado: finalizar buttons ──────────────────────────────────────────
+function _submeterFiado(comImpressao) {
+    const trabId = parseInt(document.getElementById('f-trabalhador-id').value) || 0;
+    if (!trabId) { alert('Selecione um trabalhador.'); return; }
+    if (_fiadoBloqueado) {
+        alert('Este trabalhador está com fiado BLOQUEADO. Regularize os débitos pendentes primeiro.');
+        return;
+    }
+    document.getElementById('f-pagamento').value = 'fiado';
+    document.getElementById('f-valor-recebido').value = 0;
+    document.getElementById('f-doacao-valor').value = '0';
+    document.getElementById('f-itens-json').value = JSON.stringify(carrinho);
+    document.getElementById('f-imprimir').value = comImpressao ? '1' : '0';
+    document.getElementById('form-finalizar').submit();
+}
+document.getElementById('btn-finalizar-fiado').addEventListener('click', () => _submeterFiado(false));
+document.getElementById('btn-finalizar-imprimir-fiado').addEventListener('click', () => _submeterFiado(true));
+
+// ── Botão limpar no sidebar ──────────────────────────────────────────────
+document.getElementById('fiado-limpar').addEventListener('click', () => {
+    document.getElementById('f-trabalhador-id').value = 0;
+    document.getElementById('fiado-selecionado').style.display = 'none';
+    document.getElementById('fiado-info').textContent = '';
+    _fiadoBloqueado = false;
+});
 
 // ── Utilitários ───────────────────────────────────────────────────────────────
 function fmtVal(v) {

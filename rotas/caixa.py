@@ -163,7 +163,7 @@ async def finalizar_venda(
             pendente = conn_check.execute(
                 """SELECT COALESCE(SUM(total - fiado_credito_usado), 0) AS total
                    FROM vendas_pdv
-                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE""",
+                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'""",
                 (trabalhador_id,)
             ).fetchone()["total"]
 
@@ -1076,6 +1076,7 @@ async def buscar_trabalhador_fiado(request: Request, q: str = Query("")):
                           FROM vendas_pdv v
                           WHERE v.fiado_trabalhador_id = t.id
                             AND v.fiado_pago = FALSE
+                            AND v.status = 'concluida'
                       ), 0) AS total_pendente
                FROM trabalhadores t
                WHERE norm(t.nome_completo) LIKE %s AND t.ativo = 1
@@ -1123,6 +1124,7 @@ async def listar_fiados(request: Request):
                JOIN trabalhadores t ON t.id = v.fiado_trabalhador_id
                WHERE v.forma_pagamento = 'fiado'
                  AND v.fiado_pago = FALSE
+                 AND v.status = 'concluida'
                ORDER BY v.data_venda DESC, v.id DESC"""
         ).fetchall()
 
@@ -1212,7 +1214,7 @@ async def pagar_divida_fiado(
         vendas = conn.execute(
             """SELECT id, total, fiado_credito_usado
                FROM vendas_pdv
-               WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE
+               WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'
                ORDER BY data_venda ASC, id ASC""",
             (trabalhador_id,)
         ).fetchall()
@@ -1239,7 +1241,7 @@ async def pagar_divida_fiado(
             conn.execute(
                 """UPDATE vendas_pdv
                    SET fiado_pago = TRUE, fiado_data_pagamento = %s
-                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE""",
+                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'""",
                 (hoje, trabalhador_id)
             )
             valor_efetivo = total_divida
