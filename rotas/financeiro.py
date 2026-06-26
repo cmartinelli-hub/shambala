@@ -6,7 +6,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Request, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from banco import conectar
+from banco import conectar, conta_id_por_tipo
 from rotas.auth import obter_atendente_logado
 from templates_config import templates
 
@@ -57,14 +57,30 @@ async def dashboard(
             (hoje.isoformat(),),
         ).fetchone()["total"]
 
+        # Saldo por conta
+        saldos_contas = conn.execute(
+            """SELECT c.id, c.nome, c.tipo,
+                      COALESCE(SUM(CASE WHEN fm.tipo = 'entrada' THEN fm.valor ELSE 0 END), 0) AS total_entradas,
+                      COALESCE(SUM(CASE WHEN fm.tipo = 'saida' THEN fm.valor ELSE 0 END), 0) AS total_saidas
+               FROM contas_financeiras c
+               LEFT JOIN financeiro_movimentacoes fm ON fm.conta_id = c.id
+                   AND fm.data_movimentacao LIKE %s AND fm.status = 'pago'
+               WHERE c.ativo = 1
+               GROUP BY c.id, c.nome, c.tipo
+               ORDER BY c.id""",
+            (f"{mes_ref}%",),
+        ).fetchall()
+
         # Movimentações recentes
         movs = conn.execute(
             """SELECT fm.*,
                       t.nome_completo AS trabalhador_nome,
-                      p.nome_completo AS pessoa_nome
+                      p.nome_completo AS pessoa_nome,
+                      c.nome AS conta_nome
                FROM financeiro_movimentacoes fm
                LEFT JOIN trabalhadores t ON t.id = fm.trabalhador_id
                LEFT JOIN pessoas p ON p.id = fm.pessoa_id
+               LEFT JOIN contas_financeiras c ON c.id = fm.conta_id
                WHERE fm.data_movimentacao LIKE %s
                ORDER BY fm.data_movimentacao DESC, fm.id DESC
                LIMIT 50""",
@@ -77,6 +93,7 @@ async def dashboard(
         "entradas": float(entradas),
         "saidas": float(saidas),
         "pendentes": float(pendentes),
+        "saldos_contas": [dict(sc) for sc in saldos_contas],
         "mes_ref": mes_ref,
         "movs": [dict(m) for m in movs],
     })
@@ -94,12 +111,16 @@ async def form_nova(request: Request):
         trabalhadores = conn.execute(
             "SELECT id, nome_completo FROM trabalhadores WHERE ativo = 1 ORDER BY nome_completo"
         ).fetchall()
+        contas = conn.execute(
+            "SELECT id, nome FROM contas_financeiras WHERE ativo = 1 ORDER BY id"
+        ).fetchall()
 
     return templates.TemplateResponse("financeiro/form.html", {
         "request": request,
         "atendente": atendente,
         "registro": None,
         "trabalhadores": [dict(t) for t in trabalhadores],
+        "contas": [dict(c) for c in contas],
     })
 
 
@@ -115,6 +136,7 @@ async def salvar_nova(
     pessoa_id: str = Form(""),
     status: str = Form("pago"),
     pix_copiadecola: str = Form(""),
+    conta_id: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -126,12 +148,13 @@ async def salvar_nova(
         conn.execute(
             """INSERT INTO financeiro_movimentacoes
                (tipo, categoria, valor, data_movimentacao, descricao,
-                trabalhador_id, pessoa_id, status, pix_copiadecola)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                trabalhador_id, pessoa_id, status, pix_copiadecola, conta_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (tipo, categoria, float(valor or 0), data_ref, descricao.strip(),
              int(trabalhador_id) if trabalhador_id else None,
              int(pessoa_id) if pessoa_id else None,
-             status, pix_copiadecola.strip()),
+             status, pix_copiadecola.strip(),
+             int(conta_id) if conta_id else None),
         )
 
     return RedirectResponse(url="/financeiro", status_code=303)
@@ -248,10 +271,11 @@ async def baixar_mensalidade(
         return redir
 
     with conectar() as conn:
+        cid = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
         conn.execute(
             """UPDATE financeiro_movimentacoes SET status = 'pago', pix_copiadecola = %s,
-               forma_pagamento = %s WHERE id = %s""",
-            (pix.strip(), forma_pagamento, mov_id),
+               forma_pagamento = %s, conta_id = %s WHERE id = %s""",
+            (pix.strip(), forma_pagamento, cid, mov_id),
         )
         row = conn.execute(
             "SELECT data_movimentacao, valor FROM financeiro_movimentacoes WHERE id = %s", (mov_id,)
@@ -495,6 +519,7 @@ async def relatorios_financeiro(
     data_fim: str = "",
     tipo: str = "",
     categoria: str = "",
+    conta_id: str = "",
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -504,20 +529,24 @@ async def relatorios_financeiro(
     params = []
 
     if data_inicio:
-        filtros.append("data_movimentacao >= %s")
+        filtros.append("fm.data_movimentacao >= %s")
         params.append(data_inicio)
 
     if data_fim:
-        filtros.append("data_movimentacao <= %s")
+        filtros.append("fm.data_movimentacao <= %s")
         params.append(data_fim)
 
     if tipo:
-        filtros.append("tipo = %s")
+        filtros.append("fm.tipo = %s")
         params.append(tipo)
 
     if categoria:
-        filtros.append("categoria = %s")
+        filtros.append("fm.categoria = %s")
         params.append(categoria)
+
+    if conta_id:
+        filtros.append("fm.conta_id = %s")
+        params.append(int(conta_id))
 
     where = ""
     if filtros:
@@ -525,26 +554,32 @@ async def relatorios_financeiro(
 
     with conectar() as conn:
         total_entradas = conn.execute(
-            f"SELECT COALESCE(SUM(CASE WHEN tipo='entrada' THEN valor ELSE 0 END), 0) AS total FROM financeiro_movimentacoes {where}",
+            f"SELECT COALESCE(SUM(CASE WHEN fm.tipo='entrada' THEN fm.valor ELSE 0 END), 0) AS total FROM financeiro_movimentacoes fm {where}",
             params,
         ).fetchone()["total"]
 
         total_saidas = conn.execute(
-            f"SELECT COALESCE(SUM(CASE WHEN tipo='saida' THEN valor ELSE 0 END), 0) AS total FROM financeiro_movimentacoes {where}",
+            f"SELECT COALESCE(SUM(CASE WHEN fm.tipo='saida' THEN fm.valor ELSE 0 END), 0) AS total FROM financeiro_movimentacoes fm {where}",
             params,
         ).fetchone()["total"]
 
         movs = conn.execute(
             f"""SELECT fm.*,
                        t.nome_completo AS trabalhador_nome,
-                       p.nome_completo AS pessoa_nome
+                       p.nome_completo AS pessoa_nome,
+                       c.nome AS conta_nome
                 FROM financeiro_movimentacoes fm
                 LEFT JOIN trabalhadores t ON t.id = fm.trabalhador_id
                 LEFT JOIN pessoas p ON p.id = fm.pessoa_id
+                LEFT JOIN contas_financeiras c ON c.id = fm.conta_id
                 {where}
                 ORDER BY fm.data_movimentacao DESC, fm.id DESC
                 LIMIT 200""",
             params,
+        ).fetchall()
+
+        contas = conn.execute(
+            "SELECT id, nome FROM contas_financeiras WHERE ativo = 1 ORDER BY id"
         ).fetchall()
 
     return templates.TemplateResponse("financeiro/relatorios.html", {
@@ -557,6 +592,8 @@ async def relatorios_financeiro(
         "data_fim": data_fim,
         "tipo": tipo,
         "categoria": categoria,
+        "conta_id": conta_id,
+        "contas": [dict(c) for c in contas],
     })
 
 
@@ -621,3 +658,68 @@ async def relatorio_fiados(request: Request, trabalhador_id: int = 0):
         "total_pago": total_pago,
         "total_pendente": total_pendente,
     })
+
+
+# ── Transferência entre Contas ────────────────────────────────────────────
+
+@router.get("/transferir", response_class=HTMLResponse)
+async def form_transferir(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        contas = conn.execute(
+            "SELECT id, nome FROM contas_financeiras WHERE ativo = 1 ORDER BY id"
+        ).fetchall()
+
+    return templates.TemplateResponse("financeiro/transferir.html", {
+        "request": request,
+        "atendente": atendente,
+        "contas": [dict(c) for c in contas],
+    })
+
+
+@router.post("/transferir", response_class=HTMLResponse)
+async def salvar_transferencia(
+    request: Request,
+    conta_origem: int = Form(...),
+    conta_destino: int = Form(...),
+    valor: str = Form("0"),
+    descricao: str = Form(""),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    try:
+        valor_dec = round(float(valor.strip().replace(",", ".")), 2)
+    except (ValueError, AttributeError):
+        valor_dec = 0.0
+
+    if valor_dec <= 0:
+        return RedirectResponse(url="/financeiro/transferir?erro=valor_invalido", status_code=303)
+
+    if conta_origem == conta_destino:
+        return RedirectResponse(url="/financeiro/transferir?erro=contas_iguais", status_code=303)
+
+    desc = descricao.strip() or "Transferência entre contas"
+    hoje = date.today().isoformat()
+
+    with conectar() as conn:
+        # Saída da origem
+        conn.execute(
+            """INSERT INTO financeiro_movimentacoes
+               (tipo, categoria, valor, data_movimentacao, descricao, conta_id, status)
+               VALUES ('saida', 'transferencia', %s, %s, %s, %s, 'pago')""",
+            (valor_dec, hoje, f"{desc} (origem)", conta_origem)
+        )
+        # Entrada no destino
+        conn.execute(
+            """INSERT INTO financeiro_movimentacoes
+               (tipo, categoria, valor, data_movimentacao, descricao, conta_id, status)
+               VALUES ('entrada', 'transferencia', %s, %s, %s, %s, 'pago')""",
+            (valor_dec, hoje, f"{desc} (destino)", conta_destino)
+        )
+
+    return RedirectResponse(url="/financeiro?transferencia_ok=1", status_code=303)

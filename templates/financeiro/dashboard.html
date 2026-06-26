@@ -11,6 +11,7 @@
         <a href="/financeiro/pix" class="btn btn-secundario">Gerar PIX</a>
         <a href="/financeiro/relatorios" class="btn btn-secundario">Relatórios</a>
         <a href="/financeiro/fiados" class="btn btn-secundario">Fiados</a>
+        <a href="/financeiro/transferir" class="btn btn-secundario">↔ Transferir</a>
     </div>
 </div>
 
@@ -37,6 +38,21 @@
     </div>
 </div>
 
+<!-- Saldo por Conta -->
+{% if saldos_contas %}
+<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:0.8rem; margin-bottom:1.5rem">
+{% for sc in saldos_contas %}
+    {% set _saldo = sc.total_entradas - sc.total_saidas %}
+    <div class="card-form" style="text-align:center; border-left: 4px solid {{ '#1da851' if _saldo >= 0 else '#ff4444' }}; padding:0.8rem">
+        <div style="font-size:0.8rem; color:var(--cor-texto-suave)">{{ sc.nome }}</div>
+        <div style="font-size:1.3rem; font-weight:700; color:{{ '#1da851' if _saldo >= 0 else '#ff4444' }}">
+            R$ {{ "%.2f"|format(_saldo)|replace('.', ',') }}
+        </div>
+    </div>
+{% endfor %}
+</div>
+{% endif %}
+
 <!-- Saldo -->
 <div class="card-form" style="margin-bottom:1.5rem; padding:1rem; background:{{ '1da85122' if entradas >= saidas else 'ff444422' }}; border: 1px solid {{ '#1da851' if entradas >= saidas else '#ff4444' }}; border-radius: var(--raio)">
     <strong>Saldo do mês: R$ {{ "%.2f"|format((entradas - saidas)|abs)|replace('.', ',') }}</strong>
@@ -57,6 +73,7 @@
                 <th>Descrição</th>
                 <th>Valor</th>
                 <th>Status</th>
+                <th>Conta</th>
                 <th>Vinculado</th>
             </tr>
         </thead>
@@ -83,6 +100,7 @@
                         <span style="color:#ff4444">Cancelado</span>
                     {% endif %}
                 </td>
+                <td>{{ m.conta_nome or '-' }}</td>
                 <td>
                     {% if m.trabalhador_nome %}
                         <a href="/financeiro/trabalhador/{{ m.trabalhador_id }}">{{ m.trabalhador_nome }}</a>

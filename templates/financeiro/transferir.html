@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block titulo %}Transferir entre Contas{% endblock %}
+
+{% block conteudo %}
+<a href="/financeiro" class="btn-voltar">← Voltar</a>
+<div class="cabecalho-secao">
+    <h2>Transferir entre Contas</h2>
+</div>
+
+{% set _erro = request.query_params.get('erro') %}
+{% if _erro %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    {% if _erro == 'valor_invalido' %}⚠️ Informe um valor válido maior que zero.{% endif %}
+    {% if _erro == 'contas_iguais' %}⚠️ Selecione duas contas diferentes.{% endif %}
+</div>
+{% endif %}
+
+<div class="card-form">
+    <form method="post">
+        <div class="grade-form">
+            <div class="campo">
+                <label>Conta de Origem *</label>
+                <select name="conta_origem" required>
+                    <option value="">Selecione...</option>
+                    {% for c in contas %}
+                    <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="campo">
+                <label>Conta de Destino *</label>
+                <select name="conta_destino" required>
+                    <option value="">Selecione...</option>
+                    {% for c in contas %}
+                    <option value="{{ c.id }}">{{ c.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="campo">
+                <label>Valor (R$) *</label>
+                <input type="number" name="valor" step="0.01" min="0" value="0" required>
+            </div>
+            <div class="campo campo-largo">
+                <label>Descrição</label>
+                <input type="text" name="descricao" placeholder="Motivo da transferência">
+            </div>
+        </div>
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">↔ Transferir</button>
+            <a href="/financeiro" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

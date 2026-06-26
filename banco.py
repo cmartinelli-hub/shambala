@@ -202,6 +202,7 @@ def _migrar(conn):
         ("caixas", "usa_produtos", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("vendas_pdv", "doacao_valor", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
         ("financeiro_movimentacoes", "forma_pagamento", "TEXT"),
+        ("financeiro_movimentacoes", "conta_id", "INTEGER REFERENCES contas_financeiras(id)"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -262,6 +263,11 @@ def _migrar(conn):
     # Índices para consultas de fiado
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_trab ON vendas_pdv(fiado_trabalhador_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_pendentes ON vendas_pdv(fiado_trabalhador_id) WHERE forma_pagamento = 'fiado' AND fiado_pago = FALSE")
+
+    # Migrar dados históricos para Conta Antiga
+    conn.execute(
+        "UPDATE financeiro_movimentacoes SET conta_id = (SELECT id FROM contas_financeiras WHERE tipo = 'legado') WHERE conta_id IS NULL"
+    )
 
 
 # ── Criação de tabelas ───────────────────────────────────────────────────────
@@ -395,6 +401,17 @@ def criar_tabelas():
                 descricao     TEXT,
                 ativo         INTEGER NOT NULL DEFAULT 1,
                 chave_pix_id  INTEGER REFERENCES chaves_pix(id) ON DELETE SET NULL
+            )
+        """)
+
+        # ── Contas Financeiras ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS contas_financeiras (
+                id          SERIAL PRIMARY KEY,
+                nome        TEXT NOT NULL UNIQUE,
+                tipo        TEXT NOT NULL,
+                ativo       INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT NOT NULL DEFAULT (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')::date::text
             )
         """)
 
@@ -789,9 +806,22 @@ def criar_tabelas():
             )
         """)
 
+        # Seed: contas financeiras padrão (antes de _migrar para UPDATE histórico funcionar)
+        for nome_ct, tipo_ct in [
+            ("Conta Antiga", "legado"),
+            ("Conta Espécie", "especie"),
+            ("Conta PIX", "pix"),
+            ("Valores a Receber", "areceber"),
+        ]:
+            conn.execute(
+                "INSERT INTO contas_financeiras (nome, tipo) VALUES (%s, %s) ON CONFLICT (nome) DO NOTHING",
+                (nome_ct, tipo_ct)
+            )
+
         _migrar(conn)
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_caixa_movimento ON vendas_pdv(caixa_movimento_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_financeiro_conta ON financeiro_movimentacoes(conta_id)")
 
         # Seed: caixas padrão
         for nome_cx, desc_cx in [
@@ -827,6 +857,15 @@ def criar_tabelas():
                    VALUES (2, 'Quarta-feira')
                    ON CONFLICT (dia_semana) DO NOTHING"""
             )
+
+
+def conta_id_por_tipo(conn, tipo: str) -> int | None:
+    """Retorna o id da conta financeira pelo tipo (legado, especie, pix, areceber)."""
+    row = conn.execute(
+        "SELECT id FROM contas_financeiras WHERE tipo = %s AND ativo = 1",
+        (tipo,)
+    ).fetchone()
+    return row["id"] if row else None
 
 
 if __name__ == "__main__":

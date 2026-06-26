@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block titulo %}Configurações — Contas Financeiras{% endblock %}
+
+{% block conteudo %}
+<a href="/configuracoes" class="btn-voltar">← Voltar</a>
+<div class="cabecalho-secao">
+    <h2>Contas Financeiras</h2>
+</div>
+
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin-bottom:.6rem">+ Nova Conta</h3>
+    <form method="post" action="/configuracoes/contas/nova">
+        <div class="grade-form">
+            <div class="campo">
+                <label>Nome da Conta *</label>
+                <input type="text" name="nome" placeholder="Ex: Cartão de Crédito" required>
+            </div>
+            <div class="campo">
+                <label>Tipo *</label>
+                <select name="tipo" required>
+                    <option value="especie">Espécie (Dinheiro físico)</option>
+                    <option value="pix">PIX / Banco</option>
+                    <option value="areceber">Valores a Receber</option>
+                    <option value="legado">Legado / Histórico</option>
+                    <option value="outro">Outro</option>
+                </select>
+            </div>
+        </div>
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Criar Conta</button>
+        </div>
+    </form>
+</div>
+
+{% if contas %}
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>Tipo</th>
+            <th>Saldo (mês)</th>
+            <th>Ativo</th>
+            <th>Criada em</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in contas %}
+        <tr>
+            <td>{{ c.id }}</td>
+            <td><strong>{{ c.nome }}</strong></td>
+            <td>{{ c.tipo }}</td>
+            <td style="font-weight:700;color:{{ '#1da851' if c.saldo >= 0 else '#ff4444' }}">
+                R$ {{ "%.2f"|format(c.saldo)|replace('.', ',') }}
+            </td>
+            <td>
+                <form method="post" action="/configuracoes/contas/{{ c.id }}/toggle" style="display:inline">
+                    <button type="submit" class="btn btn-sm {% if c.ativo %}btn-primario{% else %}btn-secundario{% endif %}"
+                            style="padding:.15rem .4rem;font-size:.75rem">
+                        {% if c.ativo %}✓ Ativo{% else %}✗ Inativo{% endif %}
+                    </button>
+                </form>
+            </td>
+            <td>{{ c.created_at or '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="dica">Nenhuma conta cadastrada.</p>
+{% endif %}
+{% endblock %}

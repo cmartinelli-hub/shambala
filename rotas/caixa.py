@@ -11,7 +11,7 @@ import qrcode
 from fastapi import APIRouter, Request, Form, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
-from banco import conectar, _normalizar
+from banco import conectar, _normalizar, conta_id_por_tipo
 from rotas.auth import obter_atendente_logado, e_admin
 from templates_config import templates
 
@@ -247,11 +247,13 @@ async def finalizar_venda(
 
         # Registra doação no financeiro e inclui no total do caixa
         if doacao > 0:
+            doacao_conta_id = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
             conn.execute(
                 """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id)
-                   VALUES ('entrada', 'doacao', %s, %s, %s)""",
-                (doacao, f"Doação via {'PIX' if forma_pagamento == 'pix' else 'troco'} — venda #{venda_id}", caixa_id)
+                   (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
+                   VALUES ('entrada', 'doacao', %s, %s, %s, %s, %s)""",
+                (doacao, f"Doação via {'PIX' if forma_pagamento == 'pix' else 'troco'} — venda #{venda_id}",
+                 caixa_id, forma_pagamento, doacao_conta_id)
             )
             if mov_id:
                 conn.execute(
@@ -674,10 +676,11 @@ async def registrar_doacao(
 
     desc = descricao.strip() or f"Doação avulsa via {'PIX' if forma == 'pix' else 'Dinheiro'}"
     with conectar() as conn:
+        avulsa_conta_id = conta_id_por_tipo(conn, 'pix' if forma == 'pix' else 'especie')
         conn.execute(
-            """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id)
-               VALUES ('entrada', 'doacao', %s, %s, 2)""",
-            (valor_dec, desc)
+            """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
+               VALUES ('entrada', 'doacao', %s, %s, 2, %s, %s)""",
+            (valor_dec, desc, forma, avulsa_conta_id)
         )
         mov = conn.execute(
             "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
@@ -1149,12 +1152,12 @@ async def listar_fiados(request: Request):
     })
 
 
-def _contabilizar_recebimento(conn, valor: float, descricao: str, caixa_id: int = 2):
+def _contabilizar_recebimento(conn, valor: float, descricao: str, caixa_id: int = 2, conta_id: int = None):
     """Insere em financeiro_movimentacoes e atualiza o caixa aberto da Lanchonete."""
     conn.execute(
-        """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id)
-           VALUES ('entrada', 'recebimento_fiado', %s, %s, %s)""",
-        (valor, descricao, caixa_id)
+        """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id, conta_id)
+           VALUES ('entrada', 'recebimento_fiado', %s, %s, %s, %s)""",
+        (valor, descricao, caixa_id, conta_id)
     )
     mov = conn.execute(
         "SELECT id FROM caixa_movimentos WHERE caixa_id=%s AND status='aberto' ORDER BY id DESC LIMIT 1",
@@ -1168,7 +1171,11 @@ def _contabilizar_recebimento(conn, valor: float, descricao: str, caixa_id: int 
 
 
 @router.post("/fiados/{venda_id}/pagar")
-async def pagar_fiado(request: Request, venda_id: int):
+async def pagar_fiado(
+    request: Request,
+    venda_id: int,
+    forma_pagamento: str = Form("especie"),
+):
     atendente, redir = _guard(request)
     if redir:
         return redir
@@ -1195,7 +1202,8 @@ async def pagar_fiado(request: Request, venda_id: int):
                     "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trab_id,)
                 ).fetchone()
                 nome = trab["nome_completo"] if trab else f"#{trab_id}"
-                _contabilizar_recebimento(conn, valor_pago, f"Recebimento fiado — venda #{venda_id}")
+                cid = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
+                _contabilizar_recebimento(conn, valor_pago, f"Recebimento fiado — venda #{venda_id}", conta_id=cid)
 
     return RedirectResponse(url=f"/caixa/fiados?pago_ok={trab_id}&valor={valor_pago:.2f}", status_code=303) if venda else RedirectResponse(url="/caixa/fiados", status_code=303)
 
@@ -1205,6 +1213,7 @@ async def pagar_divida_fiado(
     request: Request,
     trabalhador_id: int,
     valor: str = Form(""),
+    forma_pagamento: str = Form("especie"),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -1280,7 +1289,8 @@ async def pagar_divida_fiado(
             "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trabalhador_id,)
         ).fetchone()
         nome = trab["nome_completo"] if trab else f"#{trabalhador_id}"
-        _contabilizar_recebimento(conn, valor_efetivo, f"Recebimento fiado — {nome}")
+        cid = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
+        _contabilizar_recebimento(conn, valor_efetivo, f"Recebimento fiado — {nome}", conta_id=cid)
 
     return RedirectResponse(url=f"/caixa/fiados?pago_ok={trabalhador_id}&valor={valor_efetivo:.2f}", status_code=303)
 
@@ -1322,11 +1332,13 @@ async def cancelar_fiado(request: Request, venda_id: int):
 
         # Se já foi pago, reverte no financeiro
         if venda["fiado_pago"]:
+            estorno_conta_id = conta_id_por_tipo(conn, 'especie')
             conn.execute(
                 """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id)
-                   VALUES ('saida', 'cancelamento_fiado', %s, %s, %s)""",
-                (float(venda["total"]), f"Cancelamento venda fiado #{venda_id} — estorno", venda["caixa_id"])
+                   (tipo, categoria, valor, descricao, caixa_id, conta_id)
+                   VALUES ('saida', 'cancelamento_fiado', %s, %s, %s, %s)""",
+                (float(venda["total"]), f"Cancelamento venda fiado #{venda_id} — estorno",
+                 venda["caixa_id"], estorno_conta_id)
             )
 
         # Marca a venda como cancelada e limpa flags de fiado
@@ -1505,11 +1517,13 @@ async def salvar_sangria(
             "SELECT caixa_id FROM caixa_movimentos WHERE id=%s", (caixa_movimento_id,)
         ).fetchone()
         if mov_data:
+            sangria_conta_id = conta_id_por_tipo(conn, 'especie')
             conn.execute(
                 """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id)
-                   VALUES ('saida', 'sangria', %s, %s, %s)""",
-                (valor_dec, motivo.strip() or "Sangria de caixa", mov_data["caixa_id"])
+                   (tipo, categoria, valor, descricao, caixa_id, conta_id)
+                   VALUES ('saida', 'sangria', %s, %s, %s, %s)""",
+                (valor_dec, motivo.strip() or "Sangria de caixa",
+                 mov_data["caixa_id"], sangria_conta_id)
             )
 
     return RedirectResponse(url=f"/caixa/sangria/{sangria_id}/comprovante", status_code=303)
@@ -1734,14 +1748,29 @@ async def fechar_caixa(
         caixa_info = conn.execute("SELECT nome FROM caixas WHERE id=%s", (mov["caixa_id"],)).fetchone()
         caixa_nome = caixa_info["nome"] if caixa_info else f"#{mov['caixa_id']}"
 
-        if float(mov["total_vendas"]) > 0:
+        # Busca total por forma de pagamento e cria uma entrada no financeiro para cada
+        mapa_conta = {'especie': 'especie', 'pix': 'pix', 'fiado': 'areceber'}
+        vendas_por_pgto = conn.execute(
+            """SELECT forma_pagamento, COALESCE(SUM(total), 0) AS total
+               FROM vendas_pdv
+               WHERE caixa_movimento_id = %s AND status = 'concluida'
+               GROUP BY forma_pagamento""",
+            (caixa_movimento_id,)
+        ).fetchall()
+
+        for vp in vendas_por_pgto:
+            total_pgto = float(vp["total"])
+            if total_pgto <= 0:
+                continue
+            tipo_conta = mapa_conta.get(vp["forma_pagamento"], 'especie')
+            cid = conta_id_por_tipo(conn, tipo_conta)
             conn.execute(
                 """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id)
-                   VALUES ('entrada', 'venda_pdv', %s, %s, %s)""",
-                (float(mov["total_vendas"]),
-                 f"Vendas {caixa_nome} — fechamento #{caixa_movimento_id}",
-                 mov["caixa_id"])
+                   (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
+                   VALUES ('entrada', 'venda_pdv', %s, %s, %s, %s, %s)""",
+                (total_pgto,
+                 f"Vendas {caixa_nome} ({vp['forma_pagamento']}) — fechamento #{caixa_movimento_id}",
+                 mov["caixa_id"], vp["forma_pagamento"], cid)
             )
 
     return RedirectResponse(url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}", status_code=303)

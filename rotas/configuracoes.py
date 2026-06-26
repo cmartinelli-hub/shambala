@@ -556,3 +556,59 @@ async def executar_backup_pendrive(request: Request):
         })
     else:
         return JSONResponse({"erro": resultado["mensagem"]}, status_code=400)
+
+
+# ── Gestão de Contas Financeiras ──────────────────────────────────────────
+
+@router.get("/contas", response_class=HTMLResponse)
+async def pagina_contas(request: Request):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        contas = conn.execute(
+            """SELECT c.*,
+                      COALESCE(SUM(CASE WHEN fm.tipo='entrada' THEN fm.valor ELSE 0 END), 0)
+                    - COALESCE(SUM(CASE WHEN fm.tipo='saida' THEN fm.valor ELSE 0 END), 0) AS saldo
+               FROM contas_financeiras c
+               LEFT JOIN financeiro_movimentacoes fm ON fm.conta_id = c.id AND fm.status = 'pago'
+               GROUP BY c.id, c.nome, c.tipo, c.ativo, c.created_at
+               ORDER BY c.id"""
+        ).fetchall()
+
+    return templates.TemplateResponse("configuracoes/contas.html", {
+        "request": request,
+        "atendente": atendente,
+        "contas": [dict(c) for c in contas],
+    })
+
+
+@router.post("/contas/nova")
+async def nova_conta(
+    request: Request,
+    nome: str = Form(...),
+    tipo: str = Form(...),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        conn.execute(
+            "INSERT INTO contas_financeiras (nome, tipo) VALUES (%s, %s)",
+            (nome.strip(), tipo.strip()),
+        )
+    return RedirectResponse(url="/configuracoes/contas", status_code=303)
+
+
+@router.post("/contas/{conta_id}/toggle")
+async def toggle_conta(request: Request, conta_id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        conn.execute(
+            "UPDATE contas_financeiras SET ativo = CASE WHEN ativo=1 THEN 0 ELSE 1 END WHERE id = %s",
+            (conta_id,)
+        )
+    return RedirectResponse(url="/configuracoes/contas", status_code=303)

@@ -117,6 +117,11 @@
                     💰 Receber pagamento de {{ grupo.trabalhador_nome }}
                 </div>
                 <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+                    <label style="font-size:.85rem;font-weight:600;white-space:nowrap">Forma</label>
+                    <select name="forma_pagamento" style="padding:.35rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:.85rem">
+                        <option value="especie">Espécie</option>
+                        <option value="pix">PIX</option>
+                    </select>
                     <label style="font-size:.85rem;font-weight:600;white-space:nowrap">Valor recebido (R$)</label>
                     <input type="number" name="valor" id="valor-pagar-{{ tid }}"
                            step="0.01" min="0.01" required
@@ -176,6 +181,10 @@
                     <td>{{ v.caixa_nome }}</td>
                     <td style="display:flex;gap:.4rem;flex-wrap:wrap">
                         <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return confirm('Quitar apenas a compra #{{ v.id }} (R$ {{ "%.2f"|format(_devido) }})?')">
+                            <select name="forma_pagamento" style="padding:.1rem .3rem;font-size:.75rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                                <option value="especie">Espécie</option>
+                                <option value="pix">PIX</option>
+                            </select>
                             <button class="btn btn-sm btn-secundario">💰 Quitar esta</button>
                         </form>
                         <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
