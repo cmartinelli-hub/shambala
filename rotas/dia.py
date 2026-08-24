@@ -303,6 +303,9 @@ async def encerrar_dia(request: Request):
                     (plano_id,)
                 )
 
+    # Ao fechar o dia, limpar a tela de chamada (monitores do auditório)
+    await gerenciador.limpar()
+
     msgs_backup = fazer_backup()
     import urllib.parse
     backup_info = urllib.parse.quote(" | ".join(msgs_backup))

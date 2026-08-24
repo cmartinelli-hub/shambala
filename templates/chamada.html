@@ -191,6 +191,12 @@
             }
         }
 
+        function limparTela() {
+            conteudo.innerHTML = '<div class="aguardando">aguardando chamada…</div>';
+            painel.style.display = 'none';
+            lista.innerHTML = '';
+        }
+
         function conectar() {
             const proto = location.protocol === "https:" ? "wss" : "ws";
             const ws = new WebSocket(`${proto}://${location.host}/chamada/ws`);
@@ -201,7 +207,11 @@
 
             ws.onmessage = (ev) => {
                 const data = JSON.parse(ev.data);
-                mostrarChamada(data);
+                if (data.limpar) {
+                    limparTela();
+                } else {
+                    mostrarChamada(data);
+                }
             };
 
             ws.onclose = () => {

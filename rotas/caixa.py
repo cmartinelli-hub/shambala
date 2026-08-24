@@ -216,11 +216,11 @@ async def finalizar_venda(
                 (trabalhador_id, credito_usado, f"Compra #{venda_id}")
             )
 
-        # Atualiza total de vendas no movimento de caixa
+        # Atualiza total de vendas no movimento de caixa (inclui doação)
         if mov_id:
             conn.execute(
                 "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-                (total, mov_id)
+                (total + doacao, mov_id)
             )
 
         # Deduz estoque (apenas itens com produto real)
@@ -244,22 +244,6 @@ async def finalizar_venda(
                  item["quantidade"], venda_id, atendente["id"],
                  item["produto_id"])
             )
-
-        # Registra doação no financeiro e inclui no total do caixa
-        if doacao > 0:
-            doacao_conta_id = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
-            conn.execute(
-                """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
-                   VALUES ('entrada', 'doacao', %s, %s, %s, %s, %s)""",
-                (doacao, f"Doação via {'PIX' if forma_pagamento == 'pix' else 'troco'} — venda #{venda_id}",
-                 caixa_id, forma_pagamento, doacao_conta_id)
-            )
-            if mov_id:
-                conn.execute(
-                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-                    (doacao, mov_id)
-                )
 
     # Sinaliza ao segundo monitor que a venda foi concluída
     import asyncio
@@ -360,7 +344,7 @@ async def listar_vendas(request: Request, caixa_id: int = 0, data: str = ""):
             pgto_filtros.append("v.caixa_id = %s")
             pgto_params.append(caixa_id)
         por_pgto = conn.execute(
-            f"""SELECT forma_pagamento, COUNT(*) AS qtd, COALESCE(SUM(total),0) AS total
+            f"""SELECT forma_pagamento, COUNT(*) AS qtd, COALESCE(SUM(total + COALESCE(doacao_valor, 0)),0) AS total
                 FROM vendas_pdv v
                 WHERE {' AND '.join(pgto_filtros)}
                 GROUP BY forma_pagamento ORDER BY total DESC""",
@@ -1670,7 +1654,7 @@ async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query
         pgto = conn.execute(
             """SELECT forma_pagamento,
                       COUNT(*) AS qtd,
-                      COALESCE(SUM(total), 0) AS total
+                      COALESCE(SUM(total + COALESCE(doacao_valor, 0)), 0) AS total
                FROM vendas_pdv
                WHERE caixa_movimento_id = %s AND status = 'concluida'
                GROUP BY forma_pagamento""",
@@ -1751,7 +1735,7 @@ async def fechar_caixa(
         # Busca total por forma de pagamento e cria uma entrada no financeiro para cada
         mapa_conta = {'especie': 'especie', 'pix': 'pix', 'fiado': 'areceber'}
         vendas_por_pgto = conn.execute(
-            """SELECT forma_pagamento, COALESCE(SUM(total), 0) AS total
+            """SELECT forma_pagamento, COALESCE(SUM(total + COALESCE(doacao_valor, 0)), 0) AS total
                FROM vendas_pdv
                WHERE caixa_movimento_id = %s AND status = 'concluida'
                GROUP BY forma_pagamento""",
@@ -1812,7 +1796,7 @@ async def exportar_pdf_fechamento(request: Request, mov_id: int):
         ).fetchall()
 
         pgto = conn.execute(
-            """SELECT forma_pagamento, COUNT(*) AS qtd, COALESCE(SUM(total),0) AS total
+            """SELECT forma_pagamento, COUNT(*) AS qtd, COALESCE(SUM(total + COALESCE(doacao_valor, 0)),0) AS total
                FROM vendas_pdv WHERE caixa_movimento_id = %s AND status = 'concluida'
                GROUP BY forma_pagamento""",
             (mov_id,)

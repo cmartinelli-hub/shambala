@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from datetime import date
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -10,11 +11,16 @@ router = APIRouter()
 TEMPO_MINIMO_SEGUNDOS = 10
 
 
+def _hoje():
+    return date.today().isoformat()
+
+
 class GerenciadorConexoes:
     def __init__(self):
         self._conexoes: list[WebSocket] = []
         self.ultimo_codigo: str = ""
         self.historico: list[str] = []
+        self.data: str | None = None  # data da última chamada (AAAA-MM-DD)
         self._ultima_transmissao: float = 0.0
         self._fila: asyncio.Queue | None = None
         self._task: asyncio.Task | None = None
@@ -41,6 +47,7 @@ class GerenciadorConexoes:
             # Adiciona o último código ao início e mantém apenas os 3 primeiros
             self.historico = [self.ultimo_codigo] + self.historico[:2]
         self.ultimo_codigo = codigo
+        self.data = _hoje()
         self._ultima_transmissao = time.monotonic()
         texto = json.dumps({"codigo": codigo, "historico": self.historico})
         mortos = []
@@ -73,13 +80,33 @@ class GerenciadorConexoes:
                 break
         await self._fila.put(codigo)
 
+    async def limpar(self):
+        """Zera o estado da tela de chamada e avisa os monitores conectados."""
+        self.ultimo_codigo = ""
+        self.historico = []
+        self.data = None
+        texto = json.dumps({"limpar": True})
+        mortos = []
+        for ws in self._conexoes:
+            try:
+                await ws.send_text(texto)
+            except Exception:
+                mortos.append(ws)
+        for ws in mortos:
+            if ws in self._conexoes:
+                self._conexoes.remove(ws)
+
 
 gerenciador = GerenciadorConexoes()
 
 
 @router.get("/chamada/ultimo")
 async def ultimo_chamado():
-    return JSONResponse({"codigo": gerenciador.ultimo_codigo, "historico": gerenciador.historico})
+    # Só mostra a última chamada se ela for de hoje — evita exibir
+    # chamadas do dia anterior quando o monitor liga pela manhã.
+    if gerenciador.data == _hoje():
+        return JSONResponse({"codigo": gerenciador.ultimo_codigo, "historico": gerenciador.historico})
+    return JSONResponse({"codigo": "", "historico": []})
 
 
 @router.get("/chamada", response_class=HTMLResponse)

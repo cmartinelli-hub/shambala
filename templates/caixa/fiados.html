@@ -13,6 +13,57 @@
 }
 .progress-bar { height:6px; background:#ddd; border-radius:3px; margin-top:.3rem; overflow:hidden; }
 .progress-fill { height:100%; background:#c0392b; border-radius:3px; transition:width .2s; }
+.modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.modal-box {
+    background: var(--cor-superficie);
+    border-radius: var(--raio);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    width: 100%; max-width: 440px;
+    max-height: 90vh;
+    display: flex; flex-direction: column;
+}
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.2rem .5rem;
+    border-bottom: 1px solid var(--cor-borda);
+    flex-shrink: 0;
+}
+.modal-header h3 { margin: 0; font-size: 1.1rem; }
+.modal-close {
+    background: none; border: none;
+    font-size: 1.5rem; cursor: pointer;
+    color: var(--cor-texto-suave); line-height: 1;
+    padding: 0 .2rem;
+}
+.modal-close:hover { color: var(--cor-texto); }
+.modal-body {
+    padding: 1rem 1.2rem;
+    overflow-y: auto; flex: 1;
+}
+.modal-footer {
+    display: flex; gap: .5rem;
+    padding: .8rem 1.2rem 1rem;
+    border-top: 1px solid var(--cor-borda);
+    flex-shrink: 0;
+}
+.modal-footer button { flex: 1; font-size: .95rem; padding: .7rem; }
+.modal-qr-img {
+    max-width: 220px; border-radius: 8px;
+    display: block; margin: .5rem auto;
+}
+.modal-qr-code {
+    font-size: .68rem; word-break: break-all;
+    color: var(--cor-texto-suave); margin-top: .4rem;
+    background: var(--cor-fundo); padding: .4rem; border-radius: 4px;
+    font-family: monospace; max-height: 60px; overflow: hidden;
+    text-align: left;
+}
 </style>
 {% endblock %}
 
@@ -112,7 +163,7 @@
     <div class="pagar-form" id="pagar-form-{{ tid }}">
         <div class="pagar-panel">
             <form method="post" action="/caixa/fiados/{{ tid }}/pagar-divida"
-                  onsubmit="return validarPagamento(this, {{ grupo.total }})">
+                  onsubmit="return handlePagarDivida(event, this, {{ grupo.total }})">
                 <div style="font-weight:700;margin-bottom:.6rem;font-size:.95rem">
                     💰 Receber pagamento de {{ grupo.trabalhador_nome }}
                 </div>
@@ -180,7 +231,7 @@
                     <td style="font-weight:700;color:#c0392b">R$ {{ "%.2f"|format(_devido) }}</td>
                     <td>{{ v.caixa_nome }}</td>
                     <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-                        <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return confirm('Quitar apenas a compra #{{ v.id }} (R$ {{ "%.2f"|format(_devido) }})?')">
+                        <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return handleQuitarEsta(event, this, {{ v.id }}, {{ "%.2f"|format(_devido) }})">
                             <select name="forma_pagamento" style="padding:.1rem .3rem;font-size:.75rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
                                 <option value="especie">Espécie</option>
                                 <option value="pix">PIX</option>
@@ -203,8 +254,34 @@
 {% endfor %}
 {% endif %}
 
+{# ── Modal PIX ── #}
+<div class="modal-overlay" id="modal-pix-fiado" style="display:none" onclick="if(event.target===this)fecharModalPixFiado()">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>📱 Pagamento PIX — Fiado</h3>
+            <button type="button" class="modal-close" onclick="fecharModalPixFiado()">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+            <div style="font-size:.9rem;font-weight:600;margin-bottom:.5rem">
+                Valor: R$ <span id="fiado-pix-valor">0,00</span>
+            </div>
+            <img id="fiado-qr-img" class="modal-qr-img" src="" alt="QR Code PIX">
+            <div class="modal-qr-code" id="fiado-qr-code"></div>
+            <p style="font-size:.8rem;color:var(--cor-texto-suave);margin-top:.5rem">
+                Escaneie o QR Code acima com o app do seu banco.
+            </p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secundario" onclick="fecharModalPixFiado()">← Voltar</button>
+            <button class="btn btn-primario" id="btn-confirmar-pix-fiado" style="flex:2">✅ Confirmar Pagamento</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const IMPRESSORA_URL = '{{ centro_config().get('impressora_url', 'http://localhost:9001') }}';
+let _formPixPendente = null;
+
 {% if _pago_ok %}
 async function imprimirReciboFiado() {
     const msg = document.getElementById('msg-pago-ok');
@@ -233,7 +310,6 @@ function togglePagar(tid, total) {
     if (el.classList.contains('ativo') && total > 0) {
         document.getElementById('valor-pagar-' + tid).focus();
     }
-    // Fecha o painel de crédito se estiver aberto
     document.getElementById('credito-form-' + tid).classList.remove('ativo');
 }
 
@@ -243,17 +319,68 @@ function toggleCredito(tid) {
     document.getElementById('pagar-form-' + tid).classList.remove('ativo');
 }
 
-function validarPagamento(form, total) {
-    const val = parseFloat(form.valor.value);
-    if (!val || val <= 0) return false;
+function handlePagarDivida(event, form, total) {
+    const fp = form.querySelector('select[name="forma_pagamento"]').value;
+    const val = parseFloat(form.querySelector('input[name="valor"]').value);
+    if (!val || val <= 0) { event.preventDefault(); return false; }
     if (val < total) {
-        return confirm(
+        if (!confirm(
             `Pagamento parcial: R$ ${val.toFixed(2)} de R$ ${total.toFixed(2)}.\n` +
-            `As compras mais antigas serão quitadas primeiro.\n` +
-            `Eventuais centavos que não cobrirem a próxima compra viram crédito.\n\nConfirmar?`
-        );
+            'As compras mais antigas serão quitadas primeiro.\n' +
+            'Eventuais centavos que não cobrirem a próxima compra viram crédito.\n\nConfirmar?'
+        )) { event.preventDefault(); return false; }
+    }
+    if (fp === 'pix') {
+        event.preventDefault();
+        gerarPixFiado(val, form);
+        return false;
     }
     return true;
 }
+
+function handleQuitarEsta(event, form, vendaId, devido) {
+    const fp = form.querySelector('select[name="forma_pagamento"]').value;
+    if (fp === 'pix') {
+        event.preventDefault();
+        if (!confirm(`Quitar apenas a compra #${vendaId} (R$ ${devido.toFixed(2)})?`)) return false;
+        gerarPixFiado(devido, form);
+        return false;
+    }
+    return true;
+}
+
+async function gerarPixFiado(valor, form) {
+    try {
+        const res = await fetch(`/caixa/pix-qr?valor=${valor.toFixed(2)}&caixa_id=0`);
+        if (!res.ok) {
+            const err = await res.json();
+            alert('Erro ao gerar QR Code PIX: ' + (err.erro || 'sem chave PIX configurada'));
+            return;
+        }
+        const dados = await res.json();
+        document.getElementById('fiado-pix-valor').textContent = valor.toFixed(2).replace('.', ',');
+        document.getElementById('fiado-qr-img').src = 'data:image/png;base64,' + dados.qr_base64;
+        document.getElementById('fiado-qr-code').textContent = dados.pix_code;
+        _formPixPendente = form;
+        abrirModalPixFiado();
+    } catch(e) {
+        alert('Erro de conexão ao gerar PIX: ' + e.message);
+    }
+}
+
+function abrirModalPixFiado() {
+    document.getElementById('modal-pix-fiado').style.display = 'flex';
+}
+
+function fecharModalPixFiado() {
+    document.getElementById('modal-pix-fiado').style.display = 'none';
+    _formPixPendente = null;
+}
+
+document.getElementById('btn-confirmar-pix-fiado').addEventListener('click', function() {
+    if (_formPixPendente) {
+        _formPixPendente.submit();
+    }
+});
 </script>
 {% endblock %}
