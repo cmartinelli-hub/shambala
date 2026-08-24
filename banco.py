@@ -134,8 +134,16 @@ def gerar_agendamentos_plano(conn, plano_id: int, inicio: date,
         return
     dias = _dias_atendimento(conn)
     atual = _proxima_data_trabalho(inicio, dias)
+    # As 3 primeiras sessões SEMPRE exigem passe (piso), independente de
+    # sessoes_com_passe. A partir da 4ª segue o valor configurado.
+    # sessoes_com_passe < 0 mantém o comportamento legado de "todas com passe".
+    minimo_passe = 3
+    if sessoes_com_passe < 0:
+        efetivas_com_passe = total
+    else:
+        efetivas_com_passe = max(minimo_passe, sessoes_com_passe)
     for i in range(total):
-        requer_passe = 1 if (sessoes_com_passe < 0 or i < sessoes_com_passe) else 0
+        requer_passe = 1 if i < efetivas_com_passe else 0
         conn.execute(
             """INSERT INTO agendamentos (plano_id, data, status, requer_passe, encaixe)
                VALUES (%s, %s, 'agendado', %s, 0)""",
