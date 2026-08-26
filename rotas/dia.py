@@ -11,10 +11,11 @@ from templates_config import templates
 router = APIRouter(prefix="/dia")
 
 # Expressão SQL de prioridade: idoso 70+, deficiência, prioridade manual
+# Usa data_valida() para nunca quebrar com datas inválidas no cadastro
 _ORDEM_PRIORIDADE = """(
     p.prioridade + p.deficiencia +
-    CASE WHEN p.data_nascimento IS NOT NULL AND
-         (EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.data_nascimento::date)) >= 70)
+    CASE WHEN data_valida(p.data_nascimento) IS NOT NULL AND
+         (EXTRACT(YEAR FROM AGE(CURRENT_DATE, data_valida(p.data_nascimento))) >= 70)
          THEN 1 ELSE 0 END
 ) DESC, c.hora_checkin ASC"""
 
@@ -480,12 +481,14 @@ async def imprimir_ficha_acolhimento(request: Request, checkin_id: int):
             return RedirectResponse(url="/dia/acolhimento", status_code=303)
 
     # Calcular idade
+    idade = ''
     if row['data_nascimento']:
-        dn = date.fromisoformat(row['data_nascimento'])
-        hoje = date.today()
-        idade = hoje.year - dn.year - ((hoje.month, hoje.day) < (dn.month, dn.day))
-    else:
-        idade = ''
+        try:
+            dn = date.fromisoformat(row['data_nascimento'])
+            hoje = date.today()
+            idade = hoje.year - dn.year - ((hoje.month, hoje.day) < (dn.month, dn.day))
+        except ValueError:
+            idade = ''
 
     data_atendimento = date.today().strftime('%d/%m/%Y')
 

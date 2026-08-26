@@ -81,7 +81,8 @@ _NOMES_DIA = {
 
 
 def _parse_data(texto: str):
-    """Converte DD/MM/AAAA → YYYY-MM-DD."""
+    """Converte DD/MM/AAAA → YYYY-MM-DD. Aceita também YYYY-MM-DD direto.
+    Datas inválidas (ex.: 29/02/2001) retornam None — nunca grava data inexistente."""
     t = texto.strip()
     if not t:
         return None
@@ -89,8 +90,12 @@ def _parse_data(texto: str):
         partes = t.split("/")
         if len(partes) == 3:
             d, m, a = partes
-            return f"{a.zfill(4)}-{m.zfill(2)}-{d.zfill(2)}"
-    return t or None
+            t = f"{a.zfill(4)}-{m.zfill(2)}-{d.zfill(2)}"
+    try:
+        date.fromisoformat(t)
+        return t
+    except ValueError:
+        return None
 
 
 # ── Lista ─────────────────────────────────────────────────────────────────────

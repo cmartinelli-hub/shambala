@@ -293,6 +293,19 @@ def criar_tabelas():
                $$ LANGUAGE SQL IMMUTABLE"""
         )
 
+        # Função data_valida(): cast seguro de texto para date — datas inválidas
+        # (ex.: 2001-02-29) retornam NULL em vez de erro de conversão
+        conn.execute(
+            """CREATE OR REPLACE FUNCTION data_valida(texto TEXT)
+               RETURNS DATE AS $$
+               BEGIN
+                   IF texto IS NULL OR texto = '' THEN RETURN NULL; END IF;
+                   RETURN texto::date;
+               EXCEPTION WHEN OTHERS THEN RETURN NULL;
+               END;
+               $$ LANGUAGE plpgsql IMMUTABLE"""
+        )
+
         # ── Tabelas principais ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS pessoas (
