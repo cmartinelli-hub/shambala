@@ -212,6 +212,7 @@ def _migrar(conn):
         ("financeiro_movimentacoes", "forma_pagamento", "TEXT"),
         ("financeiro_movimentacoes", "conta_id", "INTEGER REFERENCES contas_financeiras(id)"),
         ("financeiro_movimentacoes", "data_pagamento", "TEXT"),
+        ("dias_trabalho", "reiki_ativo", "INTEGER NOT NULL DEFAULT 0"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -646,9 +647,10 @@ def criar_tabelas():
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS dias_trabalho (
-                id      SERIAL PRIMARY KEY,
-                data    TEXT NOT NULL UNIQUE,
-                aberto  INTEGER NOT NULL DEFAULT 1
+                id          SERIAL PRIMARY KEY,
+                data        TEXT NOT NULL UNIQUE,
+                aberto      INTEGER NOT NULL DEFAULT 1,
+                reiki_ativo INTEGER NOT NULL DEFAULT 0
             )
         """)
 

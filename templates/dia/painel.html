@@ -30,6 +30,7 @@
             <span class="fila-badge fila-realizado">{{ passe_realizado }} ✓</span>
             {% endif %}
         </a>
+        {% if reiki_ativo %}
         <a href="/dia/reiki" class="fila-card">
             <span class="fila-icon">🙌</span>
             <span class="fila-nome">Reiki</span>
@@ -39,6 +40,7 @@
             <span class="fila-badge fila-realizado">{{ reiki_realizado }} ✓</span>
             {% endif %}
         </a>
+        {% endif %}
         <a href="/dia/acolhimento" class="fila-card">
             <span class="fila-icon">🤝</span>
             <span class="fila-nome">Fraterno</span>
@@ -129,6 +131,7 @@
             <span class="stat-numero">{{ acolh_realizado }}</span>
             <span class="stat-label">Fraternos realizados</span>
         </a>
+        {% if reiki_ativo %}
         <a href="/dia/lista?tipo=reiki-aguardando" class="stat-card stat-pendente">
             <span class="stat-numero">{{ reiki_aguardando }}</span>
             <span class="stat-label">Reiki aguardando</span>
@@ -137,6 +140,7 @@
             <span class="stat-numero">{{ reiki_realizado }}</span>
             <span class="stat-label">Reiki realizado</span>
         </a>
+        {% endif %}
         <a href="/dia/lista?tipo=atendimento-aguardando" class="stat-card stat-pendente">
             <span class="stat-numero">{{ atend_aguardando }}</span>
             <span class="stat-label">Atendimentos aguardando</span>

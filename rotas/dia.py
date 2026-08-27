@@ -128,15 +128,19 @@ def _painel(request, atendente, conn, dia):
         (dia["id"],)
     ).fetchone()["c"]
 
-    reiki_aguardando = conn.execute(
-        "SELECT COUNT(*) AS c FROM checkins WHERE dia_trabalho_id = %s AND codigo_reiki IS NOT NULL AND reiki_realizado = 0",
-        (dia["id"],)
-    ).fetchone()["c"]
+    # Reiki: só calcula se selecionado na abertura do dia
+    reiki_aguardando = 0
+    reiki_realizado = 0
+    if dia.get("reiki_ativo"):
+        reiki_aguardando = conn.execute(
+            "SELECT COUNT(*) AS c FROM checkins WHERE dia_trabalho_id = %s AND codigo_reiki IS NOT NULL AND reiki_realizado = 0",
+            (dia["id"],)
+        ).fetchone()["c"]
 
-    reiki_realizado = conn.execute(
-        "SELECT COUNT(*) AS c FROM checkins WHERE dia_trabalho_id = %s AND reiki_realizado = 1",
-        (dia["id"],)
-    ).fetchone()["c"]
+        reiki_realizado = conn.execute(
+            "SELECT COUNT(*) AS c FROM checkins WHERE dia_trabalho_id = %s AND reiki_realizado = 1",
+            (dia["id"],)
+        ).fetchone()["c"]
 
     # Por médium
     filas_mediuns = []
@@ -182,6 +186,7 @@ def _painel(request, atendente, conn, dia):
         "atend_realizado": atend_realizado,
         "reiki_aguardando": reiki_aguardando,
         "reiki_realizado": reiki_realizado,
+        "reiki_ativo": bool(dia.get("reiki_ativo")),
         "filas_mediuns": filas_mediuns,
         "todos_mediuns": [dict(m) for m in todos_mediuns],
     })
@@ -225,9 +230,13 @@ async def abrir_dia(request: Request):
             mid = int(key.split("_")[1])
             vagas_map[mid] = int(val)
 
+    # Reiki: só ativo se marcado na abertura (checkbox "on")
+    reiki_ativo = 1 if formdata.get("reiki_ativo") else 0
+
     with conectar() as conn:
         cur = conn.execute(
-            "INSERT INTO dias_trabalho (data, aberto) VALUES (%s, 1) RETURNING id", (_hoje(),)
+            "INSERT INTO dias_trabalho (data, aberto, reiki_ativo) VALUES (%s, 1, %s) RETURNING id",
+            (_hoje(), reiki_ativo)
         )
         dia_id = cur.fetchone()["id"]
         for mid in mediuns_ids:
@@ -737,14 +746,18 @@ async def dashboard(request: Request):
             (dia["id"],)
         ).fetchall()
 
-        fila_reiki = conn.execute(
-            f"""SELECT c.id, c.codigo_reiki AS codigo, c.hora_checkin,
-                       p.nome_completo, p.prioridade, p.deficiencia, p.data_nascimento
-                FROM checkins c JOIN pessoas p ON p.id = c.pessoa_id
-                WHERE c.dia_trabalho_id = %s AND c.codigo_reiki IS NOT NULL AND c.reiki_realizado = 0
-                ORDER BY {_ORDEM_PRIORIDADE}""",
-            (dia["id"],)
-        ).fetchall()
+        # Reiki: só monta a fila se selecionado na abertura do dia
+        if dia["reiki_ativo"]:
+            fila_reiki = conn.execute(
+                f"""SELECT c.id, c.codigo_reiki AS codigo, c.hora_checkin,
+                           p.nome_completo, p.prioridade, p.deficiencia, p.data_nascimento
+                    FROM checkins c JOIN pessoas p ON p.id = c.pessoa_id
+                    WHERE c.dia_trabalho_id = %s AND c.codigo_reiki IS NOT NULL AND c.reiki_realizado = 0
+                    ORDER BY {_ORDEM_PRIORIDADE}""",
+                (dia["id"],)
+            ).fetchall()
+        else:
+            fila_reiki = []
 
         colunas_mediuns = []
         for m in mediuns_dia:
@@ -786,6 +799,7 @@ async def dashboard(request: Request):
         "fila_passe": [dict(r) for r in fila_passe],
         "fila_acolhimento": [dict(r) for r in fila_acolhimento],
         "fila_reiki": [dict(r) for r in fila_reiki],
+        "reiki_ativo": bool(dia["reiki_ativo"]),
         "colunas_mediuns": colunas_mediuns,
     })
 

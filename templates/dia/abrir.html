@@ -31,6 +31,17 @@
             </label>
             {% endfor %}
         </div>
+
+        <!-- Reiki opcional: só aparece no dashboard se marcado aqui -->
+        <label class="medium-check-card" style="margin-top:0.75rem">
+            <input type="checkbox" name="reiki_ativo" value="1"
+                   id="reiki-check" class="medium-check-input">
+            <div class="medium-check-info">
+                <span class="medium-check-nome">🙌 Atendimento de Reiki ativo hoje</span>
+                <span class="medium-check-vagas-label">Se marcado, a coluna Reiki aparece no dashboard</span>
+            </div>
+        </label>
+
         <div class="form-acoes">
             <button type="submit" class="btn btn-primario btn-grande">✅ Abrir dia</button>
             <a href="/menu" class="btn btn-secundario">Cancelar</a>

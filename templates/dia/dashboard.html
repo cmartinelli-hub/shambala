@@ -254,7 +254,8 @@
         {% endif %}
     </div>
 
-    {# ── Reiki ── #}
+    {# ── Reiki (só se selecionado na abertura do dia) ── #}
+    {% if reiki_ativo %}
     <div class="dash-col">
         <div class="col-cabecalho reiki">
             <a href="/dia/reiki" title="Abrir fila de Reiki">
@@ -293,6 +294,7 @@
             <div class="col-vazia">—</div>
         {% endif %}
     </div>
+    {% endif %}
 
     {# ── Fraterno ── #}
     <div class="dash-col">
