@@ -116,14 +116,11 @@
     left: .55rem;
 }
 
-/* Transferir atendimento — canto inferior direito */
+/* Transferir atendimento — ícone canto inferior direito (leva à tela própria) */
 .btn-transferir {
     position: absolute;
     bottom: .3rem;
     right: .55rem;
-    display: flex;
-    gap: .2rem;
-    align-items: center;
 }
 
 .btn-xs {
@@ -393,20 +390,9 @@
                       class="btn-chamar" style="margin:0">
                     <button class="btn btn-primario btn-xs" title="Chamar no painel">📢 Chamar</button>
                 </form>
-                <form method="post" action="/dia/dashboard/atendimento/{{ c.id }}/transferir"
-                      class="btn-transferir" style="margin:0">
-                    <select name="novo_medium_id"
-                            style="width:64px;padding:.1rem .2rem;font-size:.68rem;border:1px solid var(--cor-borda);border-radius:4px;background:var(--cor-superficie);color:var(--cor-texto)">
-                        {% for m in mediuns_destino %}
-                        {% if m.id != col.medium_id %}
-                        <option value="{{ m.id }}">{{ m.nome_completo.split(' ')[0] }}{% if not m.presente_hoje %}*{% endif %}</option>
-                        {% endif %}
-                        {% endfor %}
-                    </select>
-                    <button class="btn btn-secundario btn-xs" type="submit"
-                            title="Transferir para outro médium (* = não está no dia)"
-                            onclick="return confirm('Transferir {{ c.codigo }} para este médium?')">↔</button>
-                </form>
+                <a href="/dia/transferir?medium_id={{ col.medium_id }}"
+                   class="btn btn-secundario btn-xs btn-transferir"
+                   title="Transferir pendentes de {{ col.nome }}">↔</a>
             </div>
             {% endfor %}
         {% else %}
@@ -430,7 +416,7 @@ let timer = setInterval(() => {
 }, 1000);
 
 // Pausa o timer se o cursor estiver sobre botão
-document.querySelectorAll('.btn-chamar button, .btn-realizado button, .btn-cancelar button, .btn-transferir button, .btn-transferir select').forEach(btn => {
+document.querySelectorAll('.btn-chamar button, .btn-realizado button, .btn-cancelar button, .btn-transferir').forEach(btn => {
     btn.addEventListener('mouseenter', () => clearInterval(timer));
 });
 
@@ -493,7 +479,7 @@ document.querySelectorAll('.btn-chamar button, .btn-realizado button, .btn-cance
         colunas.scrollLeft = parseInt(pos, 10);
         sessionStorage.removeItem(CHAVE);
     }
-    document.querySelectorAll('.btn-chamar form, .btn-realizado form, .btn-cancelar form, .btn-transferir form').forEach(form => {
+    document.querySelectorAll('.btn-chamar form, .btn-realizado form, .btn-cancelar form').forEach(form => {
         form.addEventListener('submit', () => {
             sessionStorage.setItem(CHAVE, colunas.scrollLeft);
         });

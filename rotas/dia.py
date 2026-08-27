@@ -27,6 +27,7 @@ _MODULO_DIA = [
     ("/dia/reiki", "dia.reiki"),
     ("/dia/atendimento", "dia.atendimento"),
     ("/dia/mediuns", "dia.atendimento"),
+    ("/dia/transferir", "dia.atendimento"),
     ("/dia/fraterno", "dia.fraterno"),
 ]
 
@@ -763,6 +764,7 @@ async def transferir_atendimento(
     request: Request,
     checkin_id: int,
     novo_medium_id: int = Form(...),
+    voltar: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -777,8 +779,11 @@ async def transferir_atendimento(
         ok, msg = _transferir_checkin(conn, dia, checkin_id, novo_medium_id)
         origem_id = origem["medium_id"] if origem else None
     import urllib.parse
+    q = urllib.parse.quote(msg)
+    if voltar == "transferir":
+        # Veio da tela própria de transferência — volta para ela
+        return RedirectResponse(url=f"/dia/transferir?{'msg' if ok else 'erro'}={q}", status_code=303)
     if origem_id:
-        q = urllib.parse.quote(msg)
         return RedirectResponse(url=f"/dia/mediuns/{origem_id}?{'msg' if ok else 'erro'}={q}", status_code=303)
     return RedirectResponse(url="/dia", status_code=303)
 
@@ -788,6 +793,7 @@ async def transferir_todos_atendimentos(
     request: Request,
     medium_id: int,
     novo_medium_id: int = Form(...),
+    voltar: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -804,7 +810,65 @@ async def transferir_todos_atendimentos(
         ok, msg = _transferir_todos(conn, dia, medium_id, novo_medium_id)
     import urllib.parse
     q = urllib.parse.quote(msg)
+    if voltar == "transferir":
+        # Veio da tela própria de transferência — volta para ela
+        return RedirectResponse(url=f"/dia/transferir?{'msg' if ok else 'erro'}={q}", status_code=303)
     return RedirectResponse(url=f"/dia/mediuns/{medium_id}?{'msg' if ok else 'erro'}={q}", status_code=303)
+
+
+# ── Tela própria de transferência ─────────────────────────────────────────────
+
+@router.get("/transferir", response_class=HTMLResponse)
+async def tela_transferir(request: Request, medium_id: int = 0):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        dia = _dia_hoje(conn)
+        if not dia or not dia["aberto"]:
+            return RedirectResponse(url="/dia", status_code=303)
+        mediuns_dia = conn.execute(
+            """SELECT m.id, m.nome_completo FROM mediuns_dia md
+               JOIN mediuns m ON m.id = md.medium_id
+               WHERE md.dia_trabalho_id = %s ORDER BY m.nome_completo""",
+            (dia["id"],)
+        ).fetchall()
+        mediuns_destino = _mediuns_destino(conn, dia["id"])
+        blocos = []
+        for m in mediuns_dia:
+            if medium_id and m["id"] != medium_id:
+                continue
+            fila = conn.execute(
+                f"""SELECT c.id, c.codigo_atendimento, c.hora_checkin, p.nome_completo,
+                           p.prioridade, p.deficiencia, p.data_nascimento
+                    FROM checkins c JOIN pessoas p ON p.id = c.pessoa_id
+                    WHERE c.dia_trabalho_id = %s AND c.medium_id = %s
+                      AND c.codigo_atendimento IS NOT NULL AND c.atendimento_realizado = 0
+                      AND c.id = (
+                          SELECT MIN(c2.id) FROM checkins c2
+                          WHERE c2.dia_trabalho_id = c.dia_trabalho_id
+                            AND c2.codigo_atendimento = c.codigo_atendimento
+                            AND c2.atendimento_realizado = 0
+                      )
+                    ORDER BY {_ORDEM_PRIORIDADE}""",
+                (dia["id"], m["id"])
+            ).fetchall()
+            if fila:
+                blocos.append({
+                    "medium_id": m["id"],
+                    "nome": m["nome_completo"],
+                    "fila": [dict(r) for r in fila],
+                })
+
+    return templates.TemplateResponse("dia/transferir.html", {
+        "request": request,
+        "atendente": atendente,
+        "blocos": blocos,
+        "mediuns_origem": [dict(m) for m in mediuns_dia],
+        "mediuns_destino": [dict(m) for m in mediuns_destino],
+        "filtro_medium": medium_id,
+        "hoje": _hoje(),
+    })
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -890,8 +954,6 @@ async def dashboard(request: Request):
                 "vagas_restantes": vagas_restantes,
             })
 
-        mediuns_destino = _mediuns_destino(conn, dia["id"])
-
     return templates.TemplateResponse("dia/dashboard.html", {
         "request": request,
         "atendente": atendente,
@@ -902,7 +964,6 @@ async def dashboard(request: Request):
         "fila_reiki": [dict(r) for r in fila_reiki],
         "reiki_ativo": bool(dia["reiki_ativo"]),
         "colunas_mediuns": colunas_mediuns,
-        "mediuns_destino": [dict(m) for m in mediuns_destino],
     })
 
 
