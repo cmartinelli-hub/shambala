@@ -4,9 +4,9 @@ import base64
 import io
 from datetime import date, datetime
 from fastapi import APIRouter, Request, Form, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from banco import conectar, conta_id_por_tipo
+from banco import conectar, _normalizar, conta_id_por_tipo
 from rotas.auth import obter_atendente_logado
 from templates_config import templates
 
@@ -162,198 +162,294 @@ async def salvar_nova(
 
 # ── Mensalidades ──────────────────────────────────────────────────────────────
 
+def _adicionar_meses(ano: int, mes: int, n: int) -> tuple:
+    """Retorna (ano, mes) somando n meses ao mês dado."""
+    total = ano * 12 + (mes - 1) + n
+    return total // 12, total % 12 + 1
+
+
+def _data_vencimento(dia: int, ano: int, mes: int) -> str:
+    """ISO yyyy-mm-dd do vencimento, com fallback para dia 28 em meses curtos."""
+    try:
+        return date(ano, mes, dia).isoformat()
+    except ValueError:
+        return date(ano, mes, 28).isoformat()
+
+
 @router.get("/mensalidades", response_class=HTMLResponse)
 async def mensalidades(
     request: Request,
-    mes: str = "",
+    trabalhador_id: int = 0,
+    pago: str = "",
+    total: str = "",
+    erro: str = "",
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
     hoje = date.today()
-    mes_ref = mes if mes else f"{hoje.year}-{hoje.month:02d}"
-    ano, mes_num = mes_ref.split("-")
-    ano, mes_num = int(ano), int(mes_num)
+    mes_atual = f"{hoje.year}-{hoje.month:02d}"
+
+    trabalhador = None
+    pendentes = []
+    mes_atual_nao_gerado = False
+    meses_existentes = []
+    pagos_recentes = []
 
     with conectar() as conn:
-        rows = conn.execute(
-            """SELECT t.*,
-                      fm.id AS mov_id, fm.status AS mov_status,
-                      fm.data_movimentacao AS mov_data
-               FROM trabalhadores t
-               LEFT JOIN financeiro_movimentacoes fm
-                 ON fm.trabalhador_id = t.id
-                 AND fm.categoria = 'mensalidade'
-                 AND fm.data_movimentacao LIKE %s
-               WHERE t.ativo = 1 AND t.valor_mensalidade > 0
-               ORDER BY t.nome_completo""",
-            (f"{mes_ref}%",),
-        ).fetchall()
+        if trabalhador_id:
+            trab = conn.execute(
+                """SELECT id, nome_completo, valor_mensalidade, dia_vencimento, ativo
+                   FROM trabalhadores WHERE id = %s""",
+                (trabalhador_id,),
+            ).fetchone()
+            if not trab:
+                erro = "trabalhador_nao_encontrado"
+            else:
+                trabalhador = dict(trab)
 
-    lista = []
-    for t in rows:
-        dia_venc = t["dia_vencimento"] or 10
-        try:
-            data_venc = date(ano, mes_num, dia_venc)
-        except ValueError:
-            data_venc = date(ano, mes_num, 28)
+                exist = conn.execute(
+                    """SELECT data_movimentacao FROM financeiro_movimentacoes
+                       WHERE trabalhador_id = %s AND categoria = 'mensalidade'""",
+                    (trabalhador_id,),
+                ).fetchall()
+                meses_existentes = sorted({str(r["data_movimentacao"])[:7] for r in exist})
+                mes_atual_nao_gerado = mes_atual not in meses_existentes
 
-        lista.append({
-            "trabalhador": t,
-            "valor": float(t["valor_mensalidade"]),
-            "dia_vencimento": dia_venc,
-            "data_vencimento": data_venc.isoformat(),
-            "mov_id": t["mov_id"],
-            "mov_status": t["mov_status"],
-            "vencido": data_venc < hoje and t["mov_status"] != "pago",
-        })
+                pend = conn.execute(
+                    """SELECT id, data_movimentacao, valor FROM financeiro_movimentacoes
+                       WHERE trabalhador_id = %s AND categoria = 'mensalidade'
+                         AND status = 'pendente'
+                       ORDER BY data_movimentacao""",
+                    (trabalhador_id,),
+                ).fetchall()
+                hoje_iso = hoje.isoformat()
+                for r in pend:
+                    venc = str(r["data_movimentacao"])[:10]
+                    pendentes.append({
+                        "id": r["id"],
+                        "mes_ref": venc[:7],
+                        "data_vencimento": venc,
+                        "valor": float(r["valor"]),
+                        "vencido": venc < hoje_iso,
+                    })
+
+                pagos = conn.execute(
+                    """SELECT id, data_movimentacao, data_pagamento, valor
+                       FROM financeiro_movimentacoes
+                       WHERE trabalhador_id = %s AND categoria = 'mensalidade'
+                         AND status = 'pago'
+                       ORDER BY COALESCE(data_pagamento, data_movimentacao) DESC, id DESC
+                       LIMIT 10""",
+                    (trabalhador_id,),
+                ).fetchall()
+                for r in pagos:
+                    pagos_recentes.append({
+                        "id": r["id"],
+                        "mes_ref": str(r["data_movimentacao"])[:7],
+                        "valor": float(r["valor"]),
+                    })
+
+    ano_prox, mes_prox = _adicionar_meses(hoje.year, hoje.month, 1)
+    ano_lim, mes_lim = _adicionar_meses(hoje.year, hoje.month, 12)
 
     return templates.TemplateResponse("financeiro/mensalidades.html", {
         "request": request,
         "atendente": atendente,
-        "lista": lista,
-        "mes_ref": mes_ref,
+        "trabalhador": trabalhador,
+        "valor_mensal": float(trabalhador["valor_mensalidade"] or 0) if trabalhador else 0,
+        "dia_vencimento": (trabalhador or {}).get("dia_vencimento") or 10,
+        "pendentes": pendentes,
+        "mes_atual": mes_atual,
+        "mes_atual_nao_gerado": mes_atual_nao_gerado,
+        "meses_existentes": meses_existentes,
+        "pagos_recentes": pagos_recentes,
+        "mes_min": f"{ano_prox:04d}-{mes_prox:02d}",
+        "mes_max": f"{ano_lim:04d}-{mes_lim:02d}",
+        "pago": pago,
+        "total": total,
+        "erro": erro,
     })
 
 
-@router.post("/mensalidades/gerar", response_class=HTMLResponse)
-async def gerar_mensalidades(
+@router.get("/mensalidades/buscar", response_class=JSONResponse)
+async def buscar_mensalidade(request: Request, q: str = Query("")):
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return JSONResponse([], status_code=401)
+    if len(q.strip()) < 2:
+        return JSONResponse([])
+
+    with conectar() as conn:
+        termo = f"%{_normalizar(q.strip())}%"
+        rows = conn.execute(
+            """SELECT t.id, t.nome_completo, t.cpf, t.valor_mensalidade, t.dia_vencimento
+               FROM trabalhadores t
+               WHERE norm(t.nome_completo) LIKE %s
+                 AND t.ativo = 1 AND t.valor_mensalidade > 0
+               ORDER BY t.nome_completo LIMIT 10""",
+            (termo,),
+        ).fetchall()
+
+    return JSONResponse([
+        {
+            "id": r["id"],
+            "nome": r["nome_completo"],
+            "cpf": r["cpf"] or "",
+            "valor_mensalidade": float(r["valor_mensalidade"]),
+            "dia_vencimento": r["dia_vencimento"] or 10,
+        }
+        for r in rows
+    ])
+
+
+@router.post("/mensalidades/receber", response_class=HTMLResponse)
+async def receber_mensalidades(
     request: Request,
     trabalhador_id: int = Form(...),
-    mes_ref: str = Form(...),
+    mov_ids: str = Form(""),
+    incluir_mes_atual: str = Form("0"),
+    mes_antecipar: str = Form(""),
+    forma_pagamento: str = Form("especie"),
+    pix_copiadecola: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
-    ano_val, mes_n = mes_ref.split("-")
-    ano_val, mes_n = int(ano_val), int(mes_n)
+    if forma_pagamento not in ("especie", "pix"):
+        forma_pagamento = "especie"
+
+    hoje = date.today()
+    data_pgto = hoje.isoformat()
+
+    def _erro(cod: str):
+        return RedirectResponse(
+            url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}&erro={cod}",
+            status_code=303,
+        )
 
     with conectar() as conn:
-        t = conn.execute(
+        trab = conn.execute(
             "SELECT * FROM trabalhadores WHERE id = %s", (trabalhador_id,)
         ).fetchone()
-        if not t:
-            return RedirectResponse(url="/financeiro/mensalidades", status_code=303)
+        if not trab:
+            return _erro("trabalhador_nao_encontrado")
 
-        dia = t["dia_vencimento"] or 10
-        try:
-            data_venc = date(ano_val, mes_n, dia)
-        except ValueError:
-            data_venc = date(ano_val, mes_n, 28)
+        # Valida antecipação (formato + limite de 12 meses) antes de qualquer escrita
+        mes_antec = ""
+        if mes_antecipar.strip():
+            try:
+                ano_a, mes_a = mes_antecipar.strip().split("-")
+                ano_a, mes_a = int(ano_a), int(mes_a)
+                if mes_a < 1 or mes_a > 12:
+                    raise ValueError
+                if (ano_a, mes_a) <= (hoje.year, hoje.month):
+                    raise ValueError
+                ano_lim, mes_lim = _adicionar_meses(hoje.year, hoje.month, 12)
+                if (ano_a, mes_a) > (ano_lim, mes_lim):
+                    raise ValueError
+                mes_antec = f"{ano_a:04d}-{mes_a:02d}"
+            except ValueError:
+                return _erro("antecipacao_limite")
 
-        conn.execute(
-            """INSERT INTO financeiro_movimentacoes
-               (tipo, categoria, valor, data_movimentacao, descricao,
-                trabalhador_id, status)
-               VALUES ('entrada', 'mensalidade', %s, %s, %s, %s, 'pendente')""",
-            (
-                float(t["valor_mensalidade"]),
-                data_venc.isoformat(),
-                f"Mensalidade {t['nome_completo']} - {mes_ref}",
-                trabalhador_id,
-            ),
-        )
+        # Inativo: pode quitar pendentes, mas não gerar novos meses
+        if not trab["ativo"] and (incluir_mes_atual == "1" or mes_antec):
+            return _erro("trabalhador_inativo")
 
-    return RedirectResponse(url="/financeiro/mensalidades", status_code=303)
+        valor_mensal = float(trab["valor_mensalidade"] or 0)
+        dia_venc = trab["dia_vencimento"] or 10
 
+        def _existe_mes(ano_m: int, mes_m: int) -> bool:
+            pref = f"{ano_m:04d}-{mes_m:02d}"
+            return conn.execute(
+                """SELECT COUNT(*) AS c FROM financeiro_movimentacoes
+                   WHERE trabalhador_id = %s AND categoria = 'mensalidade'
+                     AND data_movimentacao LIKE %s""",
+                (trabalhador_id, f"{pref}%"),
+            ).fetchone()["c"] > 0
 
-@router.post("/mensalidades/{mov_id}/baixar", response_class=HTMLResponse)
-async def baixar_mensalidade(
-    request: Request,
-    mov_id: int,
-    forma_pagamento: str = Form("especie"),
-    pix: str = Form(""),
-):
-    atendente, redir = _guard(request)
-    if redir:
-        return redir
+        def _criar_mensalidade(ano_m: int, mes_m: int) -> dict:
+            pref = f"{ano_m:04d}-{mes_m:02d}"
+            return conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, data_movimentacao, descricao,
+                    trabalhador_id, status)
+                   VALUES ('entrada', 'mensalidade', %s, %s, %s, %s, 'pendente')
+                   RETURNING id, valor""",
+                (valor_mensal, _data_vencimento(dia_venc, ano_m, mes_m),
+                 f"Mensalidade {trab['nome_completo']} - {pref}", trabalhador_id),
+            ).fetchone()
 
-    with conectar() as conn:
+        # 1) Pendentes selecionadas (só as que ainda estão pendentes e do mesmo trabalhador)
+        a_pagar = []
+        vistos = set()
+        for sid in mov_ids.split(","):
+            sid = sid.strip()
+            if not sid.isdigit():
+                continue
+            mov = conn.execute(
+                """SELECT id, valor FROM financeiro_movimentacoes
+                   WHERE id = %s AND categoria = 'mensalidade'
+                     AND trabalhador_id = %s AND status = 'pendente'""",
+                (int(sid), trabalhador_id),
+            ).fetchone()
+            if mov and mov["id"] not in vistos:
+                vistos.add(mov["id"])
+                a_pagar.append(mov)
+
+        # 2) Mês corrente não gerado (pré-marcado na tela)
+        if incluir_mes_atual == "1" and not _existe_mes(hoje.year, hoje.month):
+            a_pagar.append(_criar_mensalidade(hoje.year, hoje.month))
+
+        # 3) Antecipação: cria cada mês até o alvo, pulando os que já têm mov (qualquer status)
+        if mes_antec:
+            ano_m, mes_m = hoje.year, hoje.month
+            while f"{ano_m:04d}-{mes_m:02d}" < mes_antec:
+                ano_m, mes_m = _adicionar_meses(ano_m, mes_m, 1)
+                if _existe_mes(ano_m, mes_m):
+                    continue
+                novo = _criar_mensalidade(ano_m, mes_m)
+                if novo and novo["id"] not in vistos:
+                    vistos.add(novo["id"])
+                    a_pagar.append(novo)
+
+        if not a_pagar:
+            return _erro("sem_itens")
+
+        total = round(sum(float(m["valor"]) for m in a_pagar), 2)
         cid = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
-        conn.execute(
-            """UPDATE financeiro_movimentacoes SET status = 'pago', pix_copiadecola = %s,
-               forma_pagamento = %s, conta_id = %s WHERE id = %s""",
-            (pix.strip(), forma_pagamento, cid, mov_id),
-        )
-        row = conn.execute(
-            "SELECT data_movimentacao, valor FROM financeiro_movimentacoes WHERE id = %s", (mov_id,)
+
+        ids_pagos = []
+        for m in a_pagar:
+            conn.execute(
+                """UPDATE financeiro_movimentacoes
+                   SET status = 'pago', forma_pagamento = %s, conta_id = %s,
+                       data_pagamento = %s, pix_copiadecola = %s
+                   WHERE id = %s""",
+                (forma_pagamento, cid, data_pgto, pix_copiadecola.strip(), m["id"]),
+            )
+            ids_pagos.append(m["id"])
+
+        # Caixa Lanchonete somado UMA vez (lote inteiro); caixa fechado não falha
+        aviso = ""
+        mov_caixa = conn.execute(
+            "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        mes_str = str(row["data_movimentacao"])[:7] if row else ""
+        if mov_caixa:
+            conn.execute(
+                "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
+                (total, mov_caixa["id"]),
+            )
+        else:
+            aviso = "&aviso=caixa_fechado"
 
-        # Atualiza o caixa da Lanchonete (id=2) com o valor da mensalidade
-        if row and float(row["valor"]) > 0:
-            mov_caixa = conn.execute(
-                "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
-            ).fetchone()
-            if mov_caixa:
-                conn.execute(
-                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-                    (float(row["valor"]), mov_caixa["id"])
-                )
-
-    mes_param = f"&mes={mes_str}" if mes_str else ""
-    return RedirectResponse(url=f"/financeiro/mensalidades?pago={mov_id}{mes_param}", status_code=303)
-
-
-@router.get("/mensalidades/{mov_id}/pix", response_class=HTMLResponse)
-async def pix_mensalidade(request: Request, mov_id: int):
-    atendente, redir = _guard(request)
-    if redir:
-        return redir
-
-    import qrcode as qrlib
-    import base64, io
-
-    with conectar() as conn:
-        mov = conn.execute(
-            """SELECT fm.*, t.nome_completo
-               FROM financeiro_movimentacoes fm
-               JOIN trabalhadores t ON t.id = fm.trabalhador_id
-               WHERE fm.id = %s AND fm.categoria = 'mensalidade'""",
-            (mov_id,)
-        ).fetchone()
-        if not mov:
-            return RedirectResponse(url="/financeiro/mensalidades", status_code=303)
-
-        # Busca chave PIX da Lanchonete (caixa_id=2) ou a primeira ativa
-        row = conn.execute(
-            """SELECT p.chave, p.tipo FROM caixas c
-               JOIN chaves_pix p ON p.id = c.chave_pix_id
-               WHERE c.id = 2 AND p.ativa = TRUE"""
-        ).fetchone()
-        if not row:
-            row = conn.execute(
-                "SELECT chave, tipo FROM chaves_pix WHERE ativa = TRUE LIMIT 1"
-            ).fetchone()
-
-    if not row:
-        return HTMLResponse("<p>Nenhuma chave PIX ativa configurada.</p>", status_code=400)
-
-    from rotas.caixa import _normalizar_chave_pix, _gerar_payload_pix
-    chave = _normalizar_chave_pix(row["chave"], row["tipo"])
-    valor = float(mov["valor"])
-    pix_code = _gerar_payload_pix(chave, valor, f"Mensalidade {mov['nome_completo']}")
-
-    qr = qrlib.QRCode(version=1, box_size=10, border=2)
-    qr.add_data(pix_code)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    qr_b64 = base64.b64encode(buf.getvalue()).decode()
-
-    return templates.TemplateResponse("financeiro/pix.html", {
-        "request": request,
-        "atendente": atendente,
-        "pix_code": pix_code,
-        "qr_base64": qr_b64,
-        "valor": valor,
-        "descricao": f"Mensalidade {mov['nome_completo']}",
-        "chave": chave,
-        "mov_id": mov_id,
-    })
+    ids_str = ",".join(str(i) for i in ids_pagos)
+    return RedirectResponse(
+        url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}&pago={ids_str}&total={total:.2f}{aviso}",
+        status_code=303,
+    )
 
 
 # ── PIX Estático ──────────────────────────────────────────────────────────────

@@ -2176,7 +2176,8 @@ def _gerar_bytes_escpos_mensalidade(mov: dict, trabalhador: dict, centro_nome: s
         return linha(c * COLS)
 
     valor = float(mov["valor"])
-    data_str = str(mov.get("data_movimentacao") or "")[:10]
+    # Data de pagamento real (fallback: vencimento para registros antigos)
+    data_str = str(mov.get("data_pagamento") or mov.get("data_movimentacao") or "")[:10]
     try:
         ano, mes_n, dia = data_str.split("-")
         mes_ext = f"{MESES_PT[int(mes_n)]}/{ano}"

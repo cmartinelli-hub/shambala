@@ -1,6 +1,72 @@
 {% extends "base.html" %}
 {% block titulo %}Mensalidades{% endblock %}
 
+{% block estilos %}
+<style>
+.busca-wrap { position: relative; max-width: 520px; }
+.busca-resultados {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+    background: var(--cor-superficie); border: 1px solid var(--cor-borda);
+    border-radius: var(--raio); margin-top: .2rem; box-shadow: 0 4px 16px rgba(0,0,0,.15);
+    max-height: 280px; overflow-y: auto;
+}
+.busca-item { padding: .6rem .8rem; cursor: pointer; border-bottom: 1px solid var(--cor-borda); }
+.busca-item:last-child { border-bottom: none; }
+.busca-item:hover { background: var(--cor-fundo); }
+.modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.modal-box {
+    background: var(--cor-superficie);
+    border-radius: var(--raio);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    width: 100%; max-width: 440px;
+    max-height: 90vh;
+    display: flex; flex-direction: column;
+}
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.2rem .5rem;
+    border-bottom: 1px solid var(--cor-borda);
+    flex-shrink: 0;
+}
+.modal-header h3 { margin: 0; font-size: 1.1rem; }
+.modal-close {
+    background: none; border: none;
+    font-size: 1.5rem; cursor: pointer;
+    color: var(--cor-texto-suave); line-height: 1;
+    padding: 0 .2rem;
+}
+.modal-close:hover { color: var(--cor-texto); }
+.modal-body {
+    padding: 1rem 1.2rem;
+    overflow-y: auto; flex: 1;
+}
+.modal-footer {
+    display: flex; gap: .5rem;
+    padding: .8rem 1.2rem 1rem;
+    border-top: 1px solid var(--cor-borda);
+    flex-shrink: 0;
+}
+.modal-footer button { flex: 1; font-size: .95rem; padding: .7rem; }
+.modal-qr-img {
+    max-width: 220px; border-radius: 8px;
+    display: block; margin: .5rem auto;
+}
+.modal-qr-code {
+    font-size: .68rem; word-break: break-all;
+    color: var(--cor-texto-suave); margin-top: .4rem;
+    background: var(--cor-fundo); padding: .4rem; border-radius: 4px;
+    font-family: monospace; max-height: 60px; overflow: hidden;
+    text-align: left;
+}
+</style>
+{% endblock %}
+
 {% block conteudo %}
 <div class="cabecalho-secao">
     <h2>Mensalidades</h2>
@@ -10,106 +76,337 @@
     </div>
 </div>
 
-{% set _pago_id = request.query_params.get('pago') %}
-{% if _pago_id %}
+{% if pago %}
 <div id="div-ok" style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
      padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
-    <span id="msg-ok">⏳ Mensalidade registrada — imprimindo 2 vias…</span>
+    <span id="msg-ok">⏳ Recebimento de R$ {{ total|replace('.', ',') }} registrado — imprimindo 2 vias…</span>
 </div>
 {% endif %}
 
-<!-- Filtro mês -->
-<form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:center">
-    <label style="font-weight:600">Referência:</label>
-    <input type="month" name="mes" value="{{ mes_ref }}" style="padding:0.4rem; border:1px solid var(--cor-borda); border-radius:var(--raio)">
-    <button type="submit" class="btn btn-primario" style="padding:0.4rem 1rem">Filtrar</button>
+{% if erro %}
+{% set erros = {
+    'trabalhador_nao_encontrado': 'Trabalhador não encontrado.',
+    'trabalhador_inativo': 'Trabalhador inativo: só é permitido quitar pendências, não gerar nem antecipar meses.',
+    'antecipacao_limite': 'Antecipação fora do limite: escolha um mês entre o próximo e 12 meses à frente.',
+    'sem_itens': 'Nenhum item selecionado para receber.'
+} %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    ⚠️ {{ erros.get(erro, 'Erro desconhecido.') }}
+</div>
+{% endif %}
+
+{% if request.query_params.get('aviso') == 'caixa_fechado' %}
+<div style="background:#fff3cd;border:1px solid #f9a825;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#856404;font-weight:600;margin-bottom:1rem">
+    ⚠️ Caixa Lanchonete fechado: pagamento registrado no financeiro, mas o valor NÃO entrou no caixa do dia.
+</div>
+{% endif %}
+
+<!-- Busca -->
+<div class="busca-wrap">
+    <label style="font-weight:600">Buscar trabalhador:</label>
+    <input type="text" id="busca-trabalhador" placeholder="Digite ao menos 2 letras…" autocomplete="off"
+           style="width:100%; padding:.55rem .8rem; border:1px solid var(--cor-borda); border-radius:var(--raio); font-size:1rem">
+    <div class="busca-resultados" id="busca-resultados"></div>
+</div>
+
+{% if trabalhador %}
+<form method="post" action="/financeiro/mensalidades/receber" id="form-receber" style="margin-top:1.5rem">
+<input type="hidden" name="trabalhador_id" value="{{ trabalhador.id }}">
+<input type="hidden" name="incluir_mes_atual" id="incluir-mes-atual" value="0">
+<input type="hidden" name="pix_copiadecola" id="pix-copiadecola" value="">
+
+<div style="background:var(--cor-superficie);border:1px solid var(--cor-borda);border-radius:var(--raio);padding:1rem 1.2rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+        <h3 style="margin:0">👤 {{ trabalhador.nome_completo }}</h3>
+        <span style="font-size:.9rem;color:var(--cor-texto-suave)">
+            Mensalidade: <strong>R$ {{ valor_mensal|replace('.', ',') }}</strong> — vencimento dia {{ dia_vencimento }}
+        </span>
+    </div>
+
+    {% if pendentes or mes_atual_nao_gerado %}
+    <div style="overflow-x:auto; margin-top:.8rem">
+    <table class="tabela">
+        <thead>
+            <tr><th style="width:2rem"></th><th>Mês</th><th>Vencimento</th><th>Valor</th></tr>
+        </thead>
+        <tbody>
+        {% for p in pendentes %}
+            <tr {% if p.vencido %}style="background:#ff444410"{% endif %}>
+                <td><input type="checkbox" class="cb-pendente" value="{{ p.id }}" name="mov_ids"
+                           data-valor="{{ p.valor }}" checked></td>
+                <td>{{ p.mes_ref }}{% if p.vencido %} <span style="color:#ff4444;font-weight:700;font-size:.75rem">VENCIDO</span>{% endif %}</td>
+                <td>{{ p.data_vencimento|data_br }}</td>
+                <td>R$ {{ p.valor|replace('.', ',') }}</td>
+            </tr>
+        {% endfor %}
+        {% if mes_atual_nao_gerado %}
+            <tr>
+                <td><input type="checkbox" id="chk-mes-atual" data-valor="{{ valor_mensal }}" checked></td>
+                <td>{{ mes_atual }} <span style="color:var(--cor-texto-suave)">(não gerado)</span></td>
+                <td>—</td>
+                <td>R$ {{ valor_mensal|replace('.', ',') }}</td>
+            </tr>
+        {% endif %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:var(--cor-texto-suave);margin-top:.8rem">Nenhuma mensalidade pendente para este trabalhador.</p>
+    {% endif %}
+
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;margin-top:1rem">
+        <div>
+            <label style="font-weight:600;font-size:.9rem">Antecipar até (máx. 12 meses):</label>
+            <input type="month" id="mes-antecipar" min="{{ mes_min }}" max="{{ mes_max }}"
+                   style="padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+            <span id="antecipacao-info" style="font-size:.8rem;color:var(--cor-texto-suave);margin-left:.4rem"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+            <label style="font-weight:600;font-size:.9rem">Forma:</label>
+            <select name="forma_pagamento" id="forma-pagamento" style="padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                <option value="especie">💵 Espécie</option>
+                <option value="pix">📱 PIX</option>
+            </select>
+        </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:1rem;margin-top:1rem;border-top:1px solid var(--cor-borda);padding-top:1rem">
+        <div style="font-size:1rem">Total: <strong style="font-size:1.3rem">R$ <span id="total-resumo">0,00</span></strong></div>
+        <button type="submit" id="btn-receber" class="btn btn-primario" style="padding:.6rem 1.4rem" disabled>💰 Receber</button>
+    </div>
+</div>
 </form>
 
-{% if lista %}
-<div style="overflow-x:auto">
-<table class="tabela">
-    <thead>
+{% if pagos_recentes %}
+<div style="margin-top:2rem">
+    <h3 style="margin:0 0 .6rem">✅ Pagos recentes</h3>
+    <div style="overflow-x:auto">
+    <table class="tabela">
+        <thead>
+            <tr><th>Mês</th><th>Valor</th><th>Ações</th></tr>
+        </thead>
+        <tbody>
+        {% for pr in pagos_recentes %}
         <tr>
-            <th>Trabalhador</th>
-            <th>Valor</th>
-            <th>Vencimento</th>
-            <th>Status</th>
-            <th>Ações</th>
+            <td>{{ pr.mes_ref }}</td>
+            <td>R$ {{ pr.valor|replace('.', ',') }}</td>
+            <td><button class="btn btn-secundario" style="padding:.25rem .6rem;font-size:.85rem"
+                        onclick="reimprimir({{ pr.id }})">🖨 Reimprimir</button></td>
         </tr>
-    </thead>
-    <tbody>
-    {% for item in lista %}
-        <tr style="{% if item.vencido %}background:#ff444410{% endif %}">
-            <td>{{ item.trabalhador.nome_completo }}</td>
-            <td style="font-weight:600">R$ {{ item.valor|replace('.', ',') }}</td>
-            <td>{{ item.data_vencimento|data_br }}</td>
-            <td>
-                {% if item.mov_status == 'pago' %}
-                    <span style="color:#1da851;font-weight:600">✅ Pago</span>
-                {% elif item.mov_status == 'pendente' %}
-                    <span style="color:#ffa400;font-weight:600">⏳ Pendente</span>
-                {% else %}
-                    <span style="color:var(--cor-texto-suave)">Gerar</span>
-                {% endif %}
-                {% if item.vencido %}
-                    <span style="color:#ff4444;font-weight:600;font-size:0.8rem"> (Vencido)</span>
-                {% endif %}
-            </td>
-            <td style="display:flex; gap:0.3rem; flex-wrap:wrap">
-                {% if not item.mov_id %}
-                <form method="post" action="/financeiro/mensalidades/gerar" style="display:inline">
-                    <input type="hidden" name="trabalhador_id" value="{{ item.trabalhador.id }}">
-                    <input type="hidden" name="mes_ref" value="{{ mes_ref }}">
-                    <button type="submit" class="btn btn-secundario" style="padding:0.25rem 0.6rem; font-size:0.85rem">Gerar</button>
-                </form>
-                {% endif %}
-                {% if item.mov_id and item.mov_status != 'pago' %}
-                <form method="post" action="/financeiro/mensalidades/{{ item.mov_id }}/baixar" style="display:inline"
-                      onsubmit="return confirm('Confirmar pagamento de mensalidade?')">
-                    <select name="forma_pagamento" required style="padding:0.2rem 0.3rem; font-size:0.8rem; border:1px solid var(--cor-borda); border-radius:var(--raio)">
-                        <option value="especie">💵 Espécie</option>
-                        <option value="pix">📱 PIX</option>
-                    </select>
-                    <button type="submit" class="btn btn-primario" style="padding:0.25rem 0.6rem; font-size:0.85rem">
-                        💰 Receber
-                    </button>
-                </form>
-                {% endif %}
-                {% if item.mov_id and item.mov_status == 'pago' %}
-                <button class="btn btn-secundario" style="padding:0.25rem 0.6rem; font-size:0.85rem"
-                        onclick="reimprimir({{ item.mov_id }})">🖨 Reimprimir</button>
-                {% endif %}
-            </td>
-        </tr>
-    {% endfor %}
-    </tbody>
-</table>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
 </div>
-{% else %}
-<p style="color:var(--cor-texto-suave)">Nenhum trabalhador com mensalidade configurada.</p>
 {% endif %}
+{% endif %}
+
+{# ── Modal PIX ── #}
+<div class="modal-overlay" id="modal-pix" style="display:none" onclick="if(event.target===this)fecharModalPix()">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>📱 Pagamento PIX — Mensalidades</h3>
+            <button type="button" class="modal-close" onclick="fecharModalPix()">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+            <div style="font-size:.9rem;font-weight:600;margin-bottom:.5rem">
+                Valor: R$ <span id="pix-valor">0,00</span>
+            </div>
+            <img id="pix-qr-img" class="modal-qr-img" src="" alt="QR Code PIX">
+            <div class="modal-qr-code" id="pix-qr-code"></div>
+            <p style="font-size:.8rem;color:var(--cor-texto-suave);margin-top:.5rem">
+                Escaneie o QR Code acima com o app do seu banco.
+            </p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secundario" onclick="fecharModalPix()">← Voltar</button>
+            <button class="btn btn-primario" id="btn-confirmar-pix" style="flex:2">✅ Confirmar Pagamento</button>
+        </div>
+    </div>
+</div>
 
 <script>
 const IMPRESSORA_URL = '{{ centro_config().get('impressora_url', 'http://localhost:9001') }}';
-{% if _pago_id %}
-async function imprimirMensalidade(movId) {
-    const msg = document.getElementById('msg-ok');
+const VALOR_MENSAL = {{ valor_mensal }};
+const MES_MIN = '{{ mes_min }}';
+const MESES_EXISTENTES = {{ meses_existentes | tojson }};
+const _idsPagos = {{ (pago.split(',') if pago else []) | tojson }};
+let _totalAtual = 0;
+
+function fmtVal(v) {
+    return v.toFixed(2).replace('.', ',');
+}
+
+function addMes(ym, n) {
+    const [a, m] = ym.split('-').map(Number);
+    const t = a * 12 + (m - 1) + n;
+    return String(Math.floor(t / 12)).padStart(4, '0') + '-' + String((t % 12) + 1).padStart(2, '0');
+}
+
+function mesesAntecipacao(fim) {
+    const out = [];
+    for (let m = MES_MIN; m <= fim; m = addMes(m, 1)) {
+        if (!MESES_EXISTENTES.includes(m)) out.push(m);
+    }
+    return out;
+}
+
+function recalcular() {
+    let total = 0;
+    document.querySelectorAll('.cb-pendente:checked').forEach(cb => total += parseFloat(cb.dataset.valor));
+    const chkMesAtual = document.getElementById('chk-mes-atual');
+    if (chkMesAtual && chkMesAtual.checked) total += VALOR_MENSAL;
+    const fim = document.getElementById('mes-antecipar').value;
+    const info = document.getElementById('antecipacao-info');
+    if (fim) {
+        const qtd = mesesAntecipacao(fim).length;
+        total += qtd * VALOR_MENSAL;
+        if (info) info.textContent = qtd > 0 ? `+${qtd} mês(es) a gerar` : '(meses já existentes — nada a gerar)';
+    } else if (info) {
+        info.textContent = '';
+    }
+    _totalAtual = total;
+    document.getElementById('total-resumo').textContent = fmtVal(total);
+    document.getElementById('btn-receber').disabled = total <= 0;
+}
+
+// ── Autocomplete de trabalhador ─────────────────────────────────────────────
+(function() {
+    const input = document.getElementById('busca-trabalhador');
+    const resEl = document.getElementById('busca-resultados');
+    if (!input) return;
+    let timer = null;
+    let resultados = [];
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) {
+            resEl.innerHTML = '';
+            resultados = [];
+            return;
+        }
+        timer = setTimeout(() => buscar(q), 180);
+    });
+
+    async function buscar(q) {
+        try {
+            const res = await fetch(`/financeiro/mensalidades/buscar?q=${encodeURIComponent(q)}`);
+            resultados = await res.json();
+        } catch(e) {
+            resultados = [];
+        }
+        if (!resultados.length) {
+            resEl.innerHTML = '<div style="padding:.8rem;text-align:center;color:var(--cor-texto-suave);font-size:.85rem">Nenhum trabalhador com mensalidade encontrado.</div>';
+            return;
+        }
+        resEl.innerHTML = resultados.map((t, i) => `
+            <div class="busca-item" data-idx="${i}">
+                <span>${t.nome}${t.cpf ? ' — ' + t.cpf : ''}</span>
+                <span style="font-size:.78rem;color:var(--cor-texto-suave)">R$ ${fmtVal(t.valor_mensalidade)}/mês</span>
+            </div>`).join('');
+    }
+
+    resEl.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('[data-idx]');
+        if (!item) return;
+        const trab = resultados[parseInt(item.dataset.idx)];
+        window.location.href = `/financeiro/mensalidades?trabalhador_id=${trab.id}`;
+    });
+})();
+
+// ── Cálculo do total e seleção ──────────────────────────────────────────────
+document.querySelectorAll('.cb-pendente').forEach(cb => cb.addEventListener('change', recalcular));
+
+const chkMesAtual = document.getElementById('chk-mes-atual');
+if (chkMesAtual) {
+    document.getElementById('incluir-mes-atual').value = chkMesAtual.checked ? '1' : '0';
+    chkMesAtual.addEventListener('change', () => {
+        document.getElementById('incluir-mes-atual').value = chkMesAtual.checked ? '1' : '0';
+        recalcular();
+    });
+}
+document.getElementById('mes-antecipar').addEventListener('change', recalcular);
+recalcular();
+
+// ── Envio: PIX via modal, espécie com confirmação ───────────────────────────
+const formReceber = document.getElementById('form-receber');
+const selectForma = document.getElementById('forma-pagamento');
+let _pixGerado = false;
+
+if (formReceber) {
+    formReceber.addEventListener('submit', (e) => {
+        if (selectForma.value === 'pix') {
+            if (!_pixGerado) {
+                e.preventDefault();
+                gerarPix(_totalAtual);
+            }
+        } else if (!confirm(`Confirmar recebimento de R$ ${fmtVal(_totalAtual)}?`)) {
+            e.preventDefault();
+        }
+    });
+}
+
+async function gerarPix(valor) {
     try {
-        const rb = await fetch(`/caixa/mensalidades/${movId}/escpos`);
-        if (!rb.ok) throw new Error('Erro ao buscar bytes');
-        const bytes = await rb.arrayBuffer();
-        await fetch(IMPRESSORA_URL + '/imprimir', {
-            method: 'POST',
-            body: bytes,
-            headers: { 'Content-Type': 'application/octet-stream' }
-        });
-        if (msg) msg.textContent = '✅ Mensalidade registrada! 2 vias impressas (trabalhador + caixa).';
+        const res = await fetch(`/caixa/pix-qr?valor=${valor.toFixed(2)}&caixa_id=2`);
+        if (!res.ok) {
+            const err = await res.json();
+            alert('Erro ao gerar QR Code PIX: ' + (err.erro || 'sem chave PIX configurada'));
+            return;
+        }
+        const dados = await res.json();
+        document.getElementById('pix-valor').textContent = fmtVal(valor);
+        document.getElementById('pix-qr-img').src = 'data:image/png;base64,' + dados.qr_base64;
+        document.getElementById('pix-qr-code').textContent = dados.pix_code;
+        document.getElementById('pix-copiadecola').value = dados.pix_code;
+        _pixGerado = true;
+        document.getElementById('modal-pix').style.display = 'flex';
     } catch(e) {
-        if (msg) msg.textContent = '✅ Mensalidade registrada. Agente não respondeu — verifique se está rodando.';
+        alert('Erro de conexão ao gerar PIX: ' + e.message);
     }
 }
-window.addEventListener('load', () => imprimirMensalidade({{ _pago_id }}));
-{% endif %}
+
+function fecharModalPix() {
+    document.getElementById('modal-pix').style.display = 'none';
+}
+
+document.getElementById('btn-confirmar-pix').addEventListener('click', () => {
+    fecharModalPix();
+    formReceber.submit();
+});
+
+// ── Impressão em sequência (1 recibo de 2 vias por mês) ─────────────────────
+async function imprimirSequencia(ids) {
+    const msg = document.getElementById('msg-ok');
+    let ok = 0, falha = 0;
+    for (const idStr of ids) {
+        try {
+            const rb = await fetch(`/caixa/mensalidades/${idStr}/escpos`);
+            if (!rb.ok) throw new Error('Erro ao buscar bytes');
+            const bytes = await rb.arrayBuffer();
+            const r = await fetch(IMPRESSORA_URL + '/imprimir', {
+                method: 'POST',
+                body: bytes,
+                headers: { 'Content-Type': 'application/octet-stream' }
+            });
+            if (!r.ok) throw new Error();
+            ok++;
+        } catch(e) {
+            falha++;
+        }
+        await new Promise(res => setTimeout(res, 400));
+    }
+    if (msg) {
+        msg.textContent = falha === 0
+            ? `✅ Recebimento concluído! ${ok} recibo(s) impresso(s) — 2 vias cada.`
+            : (ok > 0
+                ? `✅ Recebimento concluído! ${ok} recibo(s) impresso(s); ${falha} falharam — verifique o agente.`
+                : '✅ Recebimento registrado. Agente de impressão não respondeu — verifique se está rodando.');
+    }
+}
 
 async function reimprimir(movId) {
     try {
@@ -126,6 +423,10 @@ async function reimprimir(movId) {
     } catch(e) {
         alert('Agente de impressão não respondeu. Verifique se está rodando.');
     }
+}
+
+if (_idsPagos.length) {
+    window.addEventListener('load', () => imprimirSequencia(_idsPagos));
 }
 </script>
 {% endblock %}

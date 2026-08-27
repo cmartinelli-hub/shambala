@@ -211,6 +211,7 @@ def _migrar(conn):
         ("vendas_pdv", "doacao_valor", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
         ("financeiro_movimentacoes", "forma_pagamento", "TEXT"),
         ("financeiro_movimentacoes", "conta_id", "INTEGER REFERENCES contas_financeiras(id)"),
+        ("financeiro_movimentacoes", "data_pagamento", "TEXT"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -271,6 +272,9 @@ def _migrar(conn):
     # Índices para consultas de fiado
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_trab ON vendas_pdv(fiado_trabalhador_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_pendentes ON vendas_pdv(fiado_trabalhador_id) WHERE forma_pagamento = 'fiado' AND fiado_pago = FALSE")
+
+    # Índice parcial para mensalidades por trabalhador
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_financeiro_mensalidade_trab ON financeiro_movimentacoes(trabalhador_id) WHERE categoria = 'mensalidade'")
 
     # Migrar dados históricos para Conta Antiga
     conn.execute(
