@@ -578,13 +578,7 @@ async def fila_atendimento(request: Request, medium_id: int):
             (hoje, medium_id, dia["id"])
         ).fetchall()
 
-        outros_mediuns = conn.execute(
-            """SELECT m.id, m.nome_completo FROM mediuns_dia md
-               JOIN mediuns m ON m.id = md.medium_id
-               WHERE md.dia_trabalho_id = %s AND m.id != %s
-               ORDER BY m.nome_completo""",
-            (dia["id"], medium_id)
-        ).fetchall()
+        mediuns_destino = _mediuns_destino(conn, dia["id"], excluir=medium_id)
 
     return templates.TemplateResponse("dia/atendimento.html", {
         "request": request,
@@ -593,7 +587,7 @@ async def fila_atendimento(request: Request, medium_id: int):
         "fila": [dict(r) for r in fila],
         "realizados": [dict(r) for r in realizados],
         "agendados_sem_checkin": [dict(r) for r in agendados_sem_checkin],
-        "outros_mediuns": [dict(m) for m in outros_mediuns],
+        "mediuns_destino": [dict(m) for m in mediuns_destino],
         "hoje": hoje,
     })
 
@@ -682,6 +676,88 @@ async def atendimento_desfazer(request: Request, checkin_id: int):
     return RedirectResponse(url="/dia", status_code=303)
 
 
+# ── Transferência de atendimentos entre médiuns ──────────────────────────────
+
+def _adicionar_medium_dia(conn, dia_id, medium_id):
+    """Adiciona o médium ao dia (se ainda não estiver), sem vagas definidas."""
+    conn.execute(
+        """INSERT INTO mediuns_dia (dia_trabalho_id, medium_id, vagas_dia)
+           VALUES (%s, %s, NULL) ON CONFLICT DO NOTHING""",
+        (dia_id, medium_id)
+    )
+
+
+def _transferir_checkin(conn, dia, checkin_id, novo_medium_id):
+    """Move o checkin (titular + acompanhantes pendentes do mesmo código) para outro médium."""
+    if not dia["aberto"]:
+        return False, "O dia está encerrado."
+    row = conn.execute(
+        """SELECT codigo_atendimento, medium_id, atendimento_realizado
+           FROM checkins WHERE id = %s AND dia_trabalho_id = %s""",
+        (checkin_id, dia["id"])
+    ).fetchone()
+    if not row:
+        return False, "Atendimento não encontrado no dia de hoje."
+    if not row["codigo_atendimento"]:
+        return False, "Este check-in não possui senha de atendimento."
+    if row["atendimento_realizado"]:
+        return False, "Este atendimento já foi realizado."
+    if row["medium_id"] == novo_medium_id:
+        return False, "O atendimento já está com este médium."
+    destino = conn.execute(
+        "SELECT id, nome_completo FROM mediuns WHERE id = %s AND ativo = 1",
+        (novo_medium_id,)
+    ).fetchone()
+    if not destino:
+        return False, "Médium de destino não encontrado ou inativo."
+    conn.execute(
+        """UPDATE checkins SET medium_id = %s
+           WHERE dia_trabalho_id = %s AND codigo_atendimento = %s
+             AND atendimento_realizado = 0""",
+        (novo_medium_id, dia["id"], row["codigo_atendimento"])
+    )
+    _adicionar_medium_dia(conn, dia["id"], novo_medium_id)
+    return True, f"{row['codigo_atendimento']} transferido para {destino['nome_completo']}."
+
+
+def _transferir_todos(conn, dia, medium_id, novo_medium_id):
+    """Move todos os atendimentos pendentes de um médium para outro."""
+    if not dia["aberto"]:
+        return False, "O dia está encerrado."
+    if medium_id == novo_medium_id:
+        return False, "Escolha um médium diferente do atual."
+    destino = conn.execute(
+        "SELECT id, nome_completo FROM mediuns WHERE id = %s AND ativo = 1",
+        (novo_medium_id,)
+    ).fetchone()
+    if not destino:
+        return False, "Médium de destino não encontrado ou inativo."
+    cur = conn.execute(
+        """UPDATE checkins SET medium_id = %s
+           WHERE dia_trabalho_id = %s AND medium_id = %s
+             AND codigo_atendimento IS NOT NULL AND atendimento_realizado = 0""",
+        (novo_medium_id, dia["id"], medium_id)
+    )
+    if cur.rowcount == 0:
+        return False, "Nenhum atendimento pendente para transferir."
+    _adicionar_medium_dia(conn, dia["id"], novo_medium_id)
+    return True, f"{cur.rowcount} atendimentos transferidos para {destino['nome_completo']}."
+
+
+def _mediuns_destino(conn, dia_id, excluir=None):
+    """Médiuns ativos como destino de transferência, com flag de presença no dia."""
+    sql = """SELECT m.id, m.nome_completo, (md.id IS NOT NULL) AS presente_hoje
+             FROM mediuns m
+             LEFT JOIN mediuns_dia md ON md.medium_id = m.id AND md.dia_trabalho_id = %s
+             WHERE m.ativo = 1"""
+    params = [dia_id]
+    if excluir is not None:
+        sql += " AND m.id != %s"
+        params.append(excluir)
+    sql += " ORDER BY presente_hoje DESC, m.nome_completo"
+    return conn.execute(sql, params).fetchall()
+
+
 @router.post("/atendimento/{checkin_id}/transferir")
 async def transferir_atendimento(
     request: Request,
@@ -692,20 +768,43 @@ async def transferir_atendimento(
     if redir:
         return redir
     with conectar() as conn:
-        row = conn.execute(
+        dia = _dia_hoje(conn)
+        if not dia or not dia["aberto"]:
+            return RedirectResponse(url="/dia", status_code=303)
+        origem = conn.execute(
             "SELECT medium_id FROM checkins WHERE id = %s", (checkin_id,)
         ).fetchone()
-        if row:
-            conn.execute(
-                "UPDATE checkins SET medium_id = %s WHERE id = %s",
-                (novo_medium_id, checkin_id)
-            )
-            medium_id = row["medium_id"]
-        else:
-            medium_id = None
-    if medium_id:
-        return RedirectResponse(url=f"/dia/mediuns/{medium_id}", status_code=303)
+        ok, msg = _transferir_checkin(conn, dia, checkin_id, novo_medium_id)
+        origem_id = origem["medium_id"] if origem else None
+    import urllib.parse
+    if origem_id:
+        q = urllib.parse.quote(msg)
+        return RedirectResponse(url=f"/dia/mediuns/{origem_id}?{'msg' if ok else 'erro'}={q}", status_code=303)
     return RedirectResponse(url="/dia", status_code=303)
+
+
+@router.post("/mediuns/{medium_id}/transferir-todos")
+async def transferir_todos_atendimentos(
+    request: Request,
+    medium_id: int,
+    novo_medium_id: int = Form(...),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        dia = _dia_hoje(conn)
+        if not dia or not dia["aberto"]:
+            return RedirectResponse(url="/dia", status_code=303)
+        origem = conn.execute(
+            "SELECT id FROM mediuns WHERE id = %s", (medium_id,)
+        ).fetchone()
+        if not origem:
+            return RedirectResponse(url="/dia", status_code=303)
+        ok, msg = _transferir_todos(conn, dia, medium_id, novo_medium_id)
+    import urllib.parse
+    q = urllib.parse.quote(msg)
+    return RedirectResponse(url=f"/dia/mediuns/{medium_id}?{'msg' if ok else 'erro'}={q}", status_code=303)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -791,6 +890,8 @@ async def dashboard(request: Request):
                 "vagas_restantes": vagas_restantes,
             })
 
+        mediuns_destino = _mediuns_destino(conn, dia["id"])
+
     return templates.TemplateResponse("dia/dashboard.html", {
         "request": request,
         "atendente": atendente,
@@ -801,6 +902,7 @@ async def dashboard(request: Request):
         "fila_reiki": [dict(r) for r in fila_reiki],
         "reiki_ativo": bool(dia["reiki_ativo"]),
         "colunas_mediuns": colunas_mediuns,
+        "mediuns_destino": [dict(m) for m in mediuns_destino],
     })
 
 
@@ -883,6 +985,25 @@ async def dashboard_atendimento_realizado(request: Request, checkin_id: int):
                     (row["plano_id"],)
                 )
     return RedirectResponse(url="/dia/dashboard", status_code=303)
+
+
+@router.post("/dashboard/atendimento/{checkin_id}/transferir")
+async def dashboard_transferir_atendimento(
+    request: Request,
+    checkin_id: int,
+    novo_medium_id: int = Form(...),
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        dia = _dia_hoje(conn)
+        if not dia or not dia["aberto"]:
+            return RedirectResponse(url="/dia", status_code=303)
+        ok, msg = _transferir_checkin(conn, dia, checkin_id, novo_medium_id)
+    import urllib.parse
+    q = urllib.parse.quote(msg)
+    return RedirectResponse(url=f"/dia/dashboard?{'msg' if ok else 'erro'}={q}", status_code=303)
 
 
 @router.post("/dashboard/reiki/{checkin_id}/chamar")

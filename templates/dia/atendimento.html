@@ -10,6 +10,33 @@
     </div>
 </div>
 
+{% if request.query_params.get('erro') %}
+<div style="margin-bottom:1rem;padding:.6rem .75rem;background:#fee;border:1px solid #c00;border-radius:4px;color:#c00;font-size:.9rem">
+    ⚠️ {{ request.query_params.get('erro') }}
+</div>
+{% endif %}
+{% if request.query_params.get('msg') %}
+<div style="margin-bottom:1rem;padding:.6rem .75rem;background:#efe;border:1px solid #0a0;border-radius:4px;color:#0a0;font-size:.9rem">
+    ✓ {{ request.query_params.get('msg') }}
+</div>
+{% endif %}
+
+{% if fila and mediuns_destino %}
+<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;padding:.5rem .75rem;background:var(--cor-alerta-fundo);border-radius:var(--raio);flex-wrap:wrap">
+    <span style="font-size:.85rem;font-weight:600;color:var(--cor-alerta)">Transferir todos os pendentes:</span>
+    <form method="post" action="/dia/mediuns/{{ medium.id }}/transferir-todos"
+          style="display:flex;gap:.3rem;align-items:center;margin:0">
+        <select name="novo_medium_id" style="padding:.2rem .3rem;font-size:.8rem">
+            {% for m in mediuns_destino %}
+            <option value="{{ m.id }}">{{ m.nome_completo }}{% if not m.presente_hoje %} (não está no dia){% endif %}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-alerta btn-sm"
+                onclick="return confirm('Transferir TODOS os atendimentos pendentes para este médium?')">↔ Transferir todos</button>
+    </form>
+</div>
+{% endif %}
+
 {% if fila %}
 <table>
     <thead>
@@ -41,12 +68,12 @@
                 <form method="post" action="/dia/atendimento/{{ c.id }}/realizado" style="display:inline">
                     <button type="submit" class="btn btn-secundario btn-sm">✓ Realizado</button>
                 </form>
-                {% if outros_mediuns %}
+                {% if mediuns_destino %}
                 <form method="post" action="/dia/atendimento/{{ c.id }}/transferir"
                       style="display:inline;display:flex;gap:.3rem;align-items:center">
                     <select name="novo_medium_id" style="padding:.2rem .3rem;font-size:.8rem">
-                        {% for m in outros_mediuns %}
-                        <option value="{{ m.id }}">{{ m.nome_completo }}</option>
+                        {% for m in mediuns_destino %}
+                        <option value="{{ m.id }}">{{ m.nome_completo }}{% if not m.presente_hoje %} (não está no dia){% endif %}</option>
                         {% endfor %}
                     </select>
                     <button type="submit" class="btn btn-secundario btn-sm"
