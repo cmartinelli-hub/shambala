@@ -38,6 +38,7 @@ ROTULOS_ROTA = {
     "configuracoes": "Configurações",
     "mala.direta": "Mala Direta",
     "financeiro": "Financeiro",
+    "financeiro.compras": "Compras",
     "biblioteca": "Biblioteca",
     "doacoes": "Doações",
 }

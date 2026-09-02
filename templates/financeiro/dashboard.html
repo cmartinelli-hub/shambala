@@ -75,6 +75,7 @@
                 <th>Status</th>
                 <th>Conta</th>
                 <th>Vinculado</th>
+                <th>Nota</th>
             </tr>
         </thead>
         <tbody>
@@ -108,6 +109,11 @@
                         <a href="/financeiro/pessoa/{{ m.pessoa_id }}">{{ m.pessoa_nome }}</a>
                     {% else %}
                         -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if m.nota_fiscal_foto %}
+                    <a href="/static/fotos/{{ m.nota_fiscal_foto }}" target="_blank" title="Ver nota fiscal">📷</a>
                     {% endif %}
                 </td>
             </tr>

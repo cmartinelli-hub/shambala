@@ -212,6 +212,7 @@ def _migrar(conn):
         ("financeiro_movimentacoes", "forma_pagamento", "TEXT"),
         ("financeiro_movimentacoes", "conta_id", "INTEGER REFERENCES contas_financeiras(id)"),
         ("financeiro_movimentacoes", "data_pagamento", "TEXT"),
+        ("financeiro_movimentacoes", "nota_fiscal_foto", "TEXT"),
         ("dias_trabalho", "reiki_ativo", "INTEGER NOT NULL DEFAULT 0"),
     ]
 
@@ -576,6 +577,7 @@ def criar_tabelas():
                 trabalhador_id      INTEGER REFERENCES trabalhadores(id),
                 pessoa_id           INTEGER REFERENCES pessoas(id),
                 pix_copiadecola     TEXT,
+                nota_fiscal_foto    TEXT,
                 status              TEXT            NOT NULL DEFAULT 'pago'  -- 'pago', 'pendente', 'cancelado'
             )
         """)

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from banco import criar_tabelas, fechar_pool
-from rotas import auth, pessoas, mediuns, usuarios, dia, checkin, chamada, relatorios, agenda, configuracoes, mala_direta, trabalhadores, permissoes, financeiro, doacoes, biblioteca, caixa
+from rotas import auth, pessoas, mediuns, usuarios, dia, checkin, chamada, relatorios, agenda, configuracoes, mala_direta, trabalhadores, permissoes, financeiro, doacoes, biblioteca, compras, caixa
 from rotas.auth import criar_atendente_inicial
 
 
@@ -55,6 +55,7 @@ app.include_router(financeiro.router)
 app.include_router(doacoes.router)
 app.include_router(biblioteca.router)
 app.include_router(caixa.router)
+app.include_router(compras.router)
 
 # Alias para compatibilidade: /cadastros/atendentes → /cadastros/usuarios
 from fastapi import APIRouter as _APIRouter

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block titulo %}Lançar Compra — Financeiro{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>🧾 Lançar Compra</h2>
+    <a href="/financeiro" class="btn btn-secundario">← Voltar</a>
+</div>
+
+{% set ok = request.query_params.get('ok') %}
+{% if ok %}
+{% set val = request.query_params.get('valor', '0') %}
+{% set frm = request.query_params.get('forma', 'especie') %}
+<div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
+     padding:.8rem 1.2rem;color:#155724;font-weight:600;margin-bottom:1.2rem">
+    ✅ Compra de R$ {{ val }} via {{ 'PIX' if frm == 'pix' else 'Espécie' }} lançada como despesa.
+</div>
+{% endif %}
+
+{% if erro is defined and erro %}
+<div style="background:#f8d7da;border:1px solid #f5c6cb;border-radius:var(--raio);
+     padding:.8rem 1.2rem;color:#721c24;margin-bottom:1rem">
+    {{ erro }}
+</div>
+{% endif %}
+
+<div class="card-form" style="max-width:480px">
+    <form method="post" enctype="multipart/form-data">
+        <!-- Foto da nota (obrigatória) — padrão produto_form.html com câmera traseira -->
+        <div class="foto-compacta">
+            <label class="foto-compacta-btn">
+                <div class="foto-compacta-placeholder" id="foto-placeholder">📷</div>
+                <img src="" class="foto-compacta-thumb" id="foto-preview" style="display:none">
+                <input type="file" name="foto" accept="image/*" capture="environment"
+                       id="foto-input" style="display:none">
+                <span class="foto-compacta-texto" id="foto-texto">Foto da nota fiscal *</span>
+            </label>
+        </div>
+
+        <div class="grade-form">
+            <div class="campo">
+                <label>Valor (R$) *</label>
+                <input type="number" name="valor" step="0.01" min="0.01" required autofocus
+                       value="{{ valor_anterior if valor_anterior is defined else '' }}">
+            </div>
+            <div class="campo">
+                <label>Forma de pagamento *</label>
+                <select name="forma_pagamento" required>
+                    <option value="especie" {% if forma_anterior is defined and forma_anterior == 'especie' %}selected{% endif %}>💵 Espécie (Dinheiro)</option>
+                    <option value="pix" {% if forma_anterior is defined and forma_anterior == 'pix' %}selected{% endif %}>📱 PIX</option>
+                </select>
+            </div>
+            <div class="campo campo-largo">
+                <label>Descrição *</label>
+                <input type="text" name="descricao" required placeholder="Ex: Material de limpeza, papelaria…"
+                       value="{{ descricao_anterior if descricao_anterior is defined else '' }}">
+            </div>
+        </div>
+
+        <div class="acoes-form">
+            <button type="submit" class="btn btn-primario">Salvar Compra</button>
+            <a href="/financeiro" class="btn btn-secundario">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Preview da foto da nota (padrão produto_form.html, sem botão remover)
+(function() {
+    const fotoInput = document.getElementById('foto-input');
+    const fotoPreview = document.getElementById('foto-preview');
+    const fotoPlaceholder = document.getElementById('foto-placeholder');
+    const fotoTexto = document.getElementById('foto-texto');
+
+    if (fotoInput) {
+        fotoInput.addEventListener('change', () => {
+            const file = fotoInput.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                fotoPreview.src = e.target.result;
+                fotoPreview.style.display = '';
+                if (fotoPlaceholder) fotoPlaceholder.style.display = 'none';
+                fotoTexto.textContent = 'Trocar foto';
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+})();
+</script>
+{% endblock %}

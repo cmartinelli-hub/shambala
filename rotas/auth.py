@@ -148,7 +148,7 @@ async def pagina_menu(request: Request):
     permissoes = {}
     if not is_admin:
         from rotas.permissoes import usuario_pode
-        for mod in ["cadastros.trabalhadores", "cadastros.mediuns"]:
+        for mod in ["cadastros.trabalhadores", "cadastros.mediuns", "financeiro.compras"]:
             permissoes[mod] = usuario_pode(atendente["id"], mod)
     return templates.TemplateResponse("menu.html", {
         "request": request,

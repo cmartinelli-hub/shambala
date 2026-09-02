@@ -36,6 +36,12 @@
         <span class="menu-card-icon">💰</span>
         <span class="menu-card-label">Financeiro</span>
     </a>
+    {% if e_admin or permissoes.get('financeiro.compras') %}
+    <a href="/financeiro/compras" class="menu-card">
+        <span class="menu-card-icon">🧾</span>
+        <span class="menu-card-label">Compras</span>
+    </a>
+    {% endif %}
     <a href="/doacoes" class="menu-card">
         <span class="menu-card-icon">📦</span>
         <span class="menu-card-label">Doações</span>

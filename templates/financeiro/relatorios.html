@@ -37,6 +37,7 @@
                 <option value="energia" {% if categoria == 'energia' %}selected{% endif %}>Energia</option>
                 <option value="agua" {% if categoria == 'agua' %}selected{% endif %}>Água</option>
                 <option value="aluguel" {% if categoria == 'aluguel' %}selected{% endif %}>Aluguel</option>
+                <option value="compra" {% if categoria == 'compra' %}selected{% endif %}>Compra</option>
                 <option value="outros" {% if categoria == 'outros' %}selected{% endif %}>Outros</option>
             </select>
         </div>
@@ -86,6 +87,7 @@
                 <th>Status</th>
                 <th>Conta</th>
                 <th>Vinculado</th>
+                <th>Nota</th>
             </tr>
         </thead>
         <tbody>
@@ -119,6 +121,11 @@
                         <a href="/financeiro/pessoa/{{ m.pessoa_id }}">{{ m.pessoa_nome }}</a>
                     {% else %}
                         -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if m.nota_fiscal_foto %}
+                    <a href="/static/fotos/{{ m.nota_fiscal_foto }}" target="_blank" title="Ver nota fiscal">📷</a>
                     {% endif %}
                 </td>
             </tr>
