@@ -6,6 +6,7 @@ import os
 import uuid
 from banco import conectar
 from rotas.auth import obter_atendente_logado
+from rotas.financeiro_mensalidades import sincronizar_mensalidades, atualizar_pendentes_futuras
 
 from templates_config import templates
 router = APIRouter(prefix="/cadastros/trabalhadores")
@@ -186,6 +187,16 @@ async def salvar_novo(
                     )
                 except ValueError:
                     pass
+
+            # Gera mensalidades futuras (conta a receber) se houver valor mensal
+            if float(valor_mensalidade or 0) > 0:
+                sincronizar_mensalidades(conn, {
+                    "id": trab_id,
+                    "nome_completo": nome_completo.strip(),
+                    "valor_mensalidade": float(valor_mensalidade or 0),
+                    "dia_vencimento": int(dia_vencimento or 10),
+                    "ativo": 1,
+                })
     except Exception:
         return templates.TemplateResponse("trabalhadores/form.html", {
             "request": request,
@@ -251,6 +262,12 @@ async def salvar_editar(
         ).fetchone()
         foto_existente = existente["foto_trabalhador"] if existente else None
 
+        # Valores anteriores (para decidir se atualiza as pendentes futuras)
+        anterior = conn.execute(
+            "SELECT valor_mensalidade, dia_vencimento, ativo FROM trabalhadores WHERE id = %s",
+            (id,),
+        ).fetchone()
+
         # Remover foto se solicitado
         if remover_foto == "1" and foto_existente:
             if os.path.exists(os.path.join(FOTOS_TRAB_DIR, foto_existente)):
@@ -296,6 +313,28 @@ async def salvar_editar(
                 "registro": dict(row) if row else None,
                 "erro": f"CPF '{cpf}' já cadastrado.",
             })
+
+        # Mensalidades a receber: se valor/dia mudaram, atualiza as pendentes
+        # do mês corrente em diante; garante os 13 meses (corrente + 12 futuros)
+        novo_valor = float(valor_mensalidade or 0)
+        novo_dia = int(dia_vencimento or 10)
+        if anterior and anterior["ativo"] and novo_valor > 0:
+            trab = {
+                "id": id,
+                "nome_completo": nome_completo.strip(),
+                "valor_mensalidade": novo_valor,
+                "dia_vencimento": novo_dia,
+                "ativo": 1,
+            }
+            mudou = (
+                float(anterior["valor_mensalidade"] or 0) != novo_valor
+                or int(anterior["dia_vencimento"] or 10) != novo_dia
+            )
+            if mudou:
+                atualizar_pendentes_futuras(conn, trab)
+            else:
+                sincronizar_mensalidades(conn, trab)
+
     return RedirectResponse(url="/cadastros/trabalhadores", status_code=303)
 
 

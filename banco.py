@@ -283,6 +283,15 @@ def _migrar(conn):
         "UPDATE financeiro_movimentacoes SET conta_id = (SELECT id FROM contas_financeiras WHERE tipo = 'legado') WHERE conta_id IS NULL"
     )
 
+    # Mensalidades pendentes passam a pertencer à conta "Valores a Receber"
+    conn.execute(
+        """UPDATE financeiro_movimentacoes fm
+           SET conta_id = (SELECT id FROM contas_financeiras WHERE tipo = 'areceber')
+           WHERE fm.categoria = 'mensalidade' AND fm.status = 'pendente'
+             AND (fm.conta_id IS NULL
+                  OR fm.conta_id = (SELECT id FROM contas_financeiras WHERE tipo = 'legado'))"""
+    )
+
 
 # ── Criação de tabelas ───────────────────────────────────────────────────────
 

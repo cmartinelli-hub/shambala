@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from banco import conectar, _normalizar, conta_id_por_tipo
 from rotas.auth import obter_atendente_logado
+from rotas.financeiro_mensalidades import sincronizar_mensalidades
 from templates_config import templates
 
 router = APIRouter(prefix="/financeiro")
@@ -57,14 +58,17 @@ async def dashboard(
             (hoje.isoformat(),),
         ).fetchone()["total"]
 
-        # Saldo por conta
+        # Saldo por conta: pagas do mês (exceto "Valores a Receber", que soma
+        # todas as pendentes, de qualquer mês — é o total a receber do sistema)
         saldos_contas = conn.execute(
             """SELECT c.id, c.nome, c.tipo,
                       COALESCE(SUM(CASE WHEN fm.tipo = 'entrada' THEN fm.valor ELSE 0 END), 0) AS total_entradas,
                       COALESCE(SUM(CASE WHEN fm.tipo = 'saida' THEN fm.valor ELSE 0 END), 0) AS total_saidas
                FROM contas_financeiras c
                LEFT JOIN financeiro_movimentacoes fm ON fm.conta_id = c.id
-                   AND fm.data_movimentacao LIKE %s AND fm.status = 'pago'
+                   AND fm.status IN ('pago', 'pendente')
+                   AND ( (c.tipo = 'areceber' AND fm.status = 'pendente')
+                      OR (c.tipo <> 'areceber' AND fm.data_movimentacao LIKE %s) )
                WHERE c.ativo = 1
                GROUP BY c.id, c.nome, c.tipo
                ORDER BY c.id""",
@@ -162,20 +166,6 @@ async def salvar_nova(
 
 # ── Mensalidades ──────────────────────────────────────────────────────────────
 
-def _adicionar_meses(ano: int, mes: int, n: int) -> tuple:
-    """Retorna (ano, mes) somando n meses ao mês dado."""
-    total = ano * 12 + (mes - 1) + n
-    return total // 12, total % 12 + 1
-
-
-def _data_vencimento(dia: int, ano: int, mes: int) -> str:
-    """ISO yyyy-mm-dd do vencimento, com fallback para dia 28 em meses curtos."""
-    try:
-        return date(ano, mes, dia).isoformat()
-    except ValueError:
-        return date(ano, mes, 28).isoformat()
-
-
 @router.get("/mensalidades", response_class=HTMLResponse)
 async def mensalidades(
     request: Request,
@@ -193,8 +183,6 @@ async def mensalidades(
 
     trabalhador = None
     pendentes = []
-    mes_atual_nao_gerado = False
-    meses_existentes = []
     pagos_recentes = []
 
     with conectar() as conn:
@@ -208,14 +196,8 @@ async def mensalidades(
                 erro = "trabalhador_nao_encontrado"
             else:
                 trabalhador = dict(trab)
-
-                exist = conn.execute(
-                    """SELECT data_movimentacao FROM financeiro_movimentacoes
-                       WHERE trabalhador_id = %s AND categoria = 'mensalidade'""",
-                    (trabalhador_id,),
-                ).fetchall()
-                meses_existentes = sorted({str(r["data_movimentacao"])[:7] for r in exist})
-                mes_atual_nao_gerado = mes_atual not in meses_existentes
+                # Idempotente: garante mês corrente + 12 futuros (ativo e valor > 0)
+                sincronizar_mensalidades(conn, trabalhador)
 
                 pend = conn.execute(
                     """SELECT id, data_movimentacao, valor FROM financeiro_movimentacoes
@@ -233,6 +215,8 @@ async def mensalidades(
                         "data_vencimento": venc,
                         "valor": float(r["valor"]),
                         "vencido": venc < hoje_iso,
+                        "corrente": venc[:7] == mes_atual,
+                        "futuro": venc[:7] > mes_atual,
                     })
 
                 pagos = conn.execute(
@@ -251,9 +235,6 @@ async def mensalidades(
                         "valor": float(r["valor"]),
                     })
 
-    ano_prox, mes_prox = _adicionar_meses(hoje.year, hoje.month, 1)
-    ano_lim, mes_lim = _adicionar_meses(hoje.year, hoje.month, 12)
-
     return templates.TemplateResponse("financeiro/mensalidades.html", {
         "request": request,
         "atendente": atendente,
@@ -262,11 +243,7 @@ async def mensalidades(
         "dia_vencimento": (trabalhador or {}).get("dia_vencimento") or 10,
         "pendentes": pendentes,
         "mes_atual": mes_atual,
-        "mes_atual_nao_gerado": mes_atual_nao_gerado,
-        "meses_existentes": meses_existentes,
         "pagos_recentes": pagos_recentes,
-        "mes_min": f"{ano_prox:04d}-{mes_prox:02d}",
-        "mes_max": f"{ano_lim:04d}-{mes_lim:02d}",
         "pago": pago,
         "total": total,
         "erro": erro,
@@ -309,8 +286,6 @@ async def receber_mensalidades(
     request: Request,
     trabalhador_id: int = Form(...),
     mov_ids: str = Form(""),
-    incluir_mes_atual: str = Form("0"),
-    mes_antecipar: str = Form(""),
     forma_pagamento: str = Form("especie"),
     pix_copiadecola: str = Form(""),
 ):
@@ -337,52 +312,7 @@ async def receber_mensalidades(
         if not trab:
             return _erro("trabalhador_nao_encontrado")
 
-        # Valida antecipação (formato + limite de 12 meses) antes de qualquer escrita
-        mes_antec = ""
-        if mes_antecipar.strip():
-            try:
-                ano_a, mes_a = mes_antecipar.strip().split("-")
-                ano_a, mes_a = int(ano_a), int(mes_a)
-                if mes_a < 1 or mes_a > 12:
-                    raise ValueError
-                if (ano_a, mes_a) <= (hoje.year, hoje.month):
-                    raise ValueError
-                ano_lim, mes_lim = _adicionar_meses(hoje.year, hoje.month, 12)
-                if (ano_a, mes_a) > (ano_lim, mes_lim):
-                    raise ValueError
-                mes_antec = f"{ano_a:04d}-{mes_a:02d}"
-            except ValueError:
-                return _erro("antecipacao_limite")
-
-        # Inativo: pode quitar pendentes, mas não gerar novos meses
-        if not trab["ativo"] and (incluir_mes_atual == "1" or mes_antec):
-            return _erro("trabalhador_inativo")
-
-        valor_mensal = float(trab["valor_mensalidade"] or 0)
-        dia_venc = trab["dia_vencimento"] or 10
-
-        def _existe_mes(ano_m: int, mes_m: int) -> bool:
-            pref = f"{ano_m:04d}-{mes_m:02d}"
-            return conn.execute(
-                """SELECT COUNT(*) AS c FROM financeiro_movimentacoes
-                   WHERE trabalhador_id = %s AND categoria = 'mensalidade'
-                     AND data_movimentacao LIKE %s""",
-                (trabalhador_id, f"{pref}%"),
-            ).fetchone()["c"] > 0
-
-        def _criar_mensalidade(ano_m: int, mes_m: int) -> dict:
-            pref = f"{ano_m:04d}-{mes_m:02d}"
-            return conn.execute(
-                """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, data_movimentacao, descricao,
-                    trabalhador_id, status)
-                   VALUES ('entrada', 'mensalidade', %s, %s, %s, %s, 'pendente')
-                   RETURNING id, valor""",
-                (valor_mensal, _data_vencimento(dia_venc, ano_m, mes_m),
-                 f"Mensalidade {trab['nome_completo']} - {pref}", trabalhador_id),
-            ).fetchone()
-
-        # 1) Pendentes selecionadas (só as que ainda estão pendentes e do mesmo trabalhador)
+        # Pendentes selecionadas (só as que ainda estão pendentes e do mesmo trabalhador)
         a_pagar = []
         vistos = set()
         for sid in mov_ids.split(","):
@@ -398,22 +328,6 @@ async def receber_mensalidades(
             if mov and mov["id"] not in vistos:
                 vistos.add(mov["id"])
                 a_pagar.append(mov)
-
-        # 2) Mês corrente não gerado (pré-marcado na tela)
-        if incluir_mes_atual == "1" and not _existe_mes(hoje.year, hoje.month):
-            a_pagar.append(_criar_mensalidade(hoje.year, hoje.month))
-
-        # 3) Antecipação: cria cada mês até o alvo, pulando os que já têm mov (qualquer status)
-        if mes_antec:
-            ano_m, mes_m = hoje.year, hoje.month
-            while f"{ano_m:04d}-{mes_m:02d}" < mes_antec:
-                ano_m, mes_m = _adicionar_meses(ano_m, mes_m, 1)
-                if _existe_mes(ano_m, mes_m):
-                    continue
-                novo = _criar_mensalidade(ano_m, mes_m)
-                if novo and novo["id"] not in vistos:
-                    vistos.add(novo["id"])
-                    a_pagar.append(novo)
 
         if not a_pagar:
             return _erro("sem_itens")
@@ -450,6 +364,23 @@ async def receber_mensalidades(
         url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}&pago={ids_str}&total={total:.2f}{aviso}",
         status_code=303,
     )
+
+
+@router.post("/mensalidades/{mov_id}/cancelar")
+async def cancelar_mensalidade(request: Request, mov_id: int, trabalhador_id: int = Form(0)):
+    """Cancela um lançamento pendente (ex.: mês futuro gerado por engano).
+    Some do saldo de Valores a Receber e não é recriado."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        conn.execute(
+            """UPDATE financeiro_movimentacoes
+               SET status = 'cancelado', conta_id = NULL
+               WHERE id = %s AND categoria = 'mensalidade' AND status = 'pendente'""",
+            (mov_id,),
+        )
+    return RedirectResponse(url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}", status_code=303)
 
 
 # ── PIX Estático ──────────────────────────────────────────────────────────────
@@ -690,6 +621,81 @@ async def relatorios_financeiro(
         "categoria": categoria,
         "conta_id": conta_id,
         "contas": [dict(c) for c in contas],
+    })
+
+
+# ── Relatório de Mensalidades (extrato do mês / não pagas / por trabalhador) ──
+
+@router.get("/mensalidades/relatorio", response_class=HTMLResponse)
+async def relatorio_mensalidades(
+    request: Request,
+    mes: str = "",
+    status: str = "",
+    trabalhador_id: int = 0,
+    visao: str = "mes",
+):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    hoje = date.today()
+    mes_ref = mes if mes else f"{hoje.year}-{hoje.month:02d}"
+
+    with conectar() as conn:
+        trabalhadores = conn.execute(
+            "SELECT id, nome_completo FROM trabalhadores ORDER BY nome_completo"
+        ).fetchall()
+
+        filtros = ["fm.categoria = 'mensalidade'", "fm.data_movimentacao LIKE %s"]
+        params = [f"{mes_ref}%"]
+        if status:
+            filtros.append("fm.status = %s")
+            params.append(status)
+        if trabalhador_id:
+            filtros.append("fm.trabalhador_id = %s")
+            params.append(trabalhador_id)
+        where = "WHERE " + " AND ".join(filtros)
+
+        if visao == "trabalhador":
+            linhas = conn.execute(
+                f"""SELECT t.id, t.nome_completo,
+                           COALESCE(SUM(CASE WHEN fm.status='pago' THEN fm.valor ELSE 0 END),0) AS pago,
+                           COALESCE(SUM(CASE WHEN fm.status='pendente' THEN fm.valor ELSE 0 END),0) AS pendente,
+                           COALESCE(SUM(CASE WHEN fm.status='pendente' AND fm.data_movimentacao < %s THEN fm.valor ELSE 0 END),0) AS vencido
+                    FROM financeiro_movimentacoes fm
+                    JOIN trabalhadores t ON t.id = fm.trabalhador_id
+                    {where}
+                    GROUP BY t.id, t.nome_completo
+                    ORDER BY t.nome_completo""",
+                [hoje.isoformat()] + params,
+            ).fetchall()
+            resumo = None
+        else:
+            linhas = conn.execute(
+                f"""SELECT fm.*, t.nome_completo AS trabalhador_nome
+                    FROM financeiro_movimentacoes fm
+                    LEFT JOIN trabalhadores t ON t.id = fm.trabalhador_id
+                    {where} ORDER BY fm.data_movimentacao, t.nome_completo""",
+                params,
+            ).fetchall()
+            resumo = conn.execute(
+                f"""SELECT COALESCE(SUM(CASE WHEN fm.status='pago' THEN fm.valor ELSE 0 END),0) AS total_pago,
+                           COALESCE(SUM(CASE WHEN fm.status='pendente' THEN fm.valor ELSE 0 END),0) AS total_pendente,
+                           COALESCE(SUM(CASE WHEN fm.status='pendente' AND fm.data_movimentacao < %s THEN fm.valor ELSE 0 END),0) AS total_vencido
+                    FROM financeiro_movimentacoes fm {where}""",
+                [hoje.isoformat()] + params,
+            ).fetchone()
+
+    return templates.TemplateResponse("financeiro/relatorio_mensalidades.html", {
+        "request": request,
+        "atendente": atendente,
+        "mes_ref": mes_ref,
+        "status": status,
+        "visao": visao,
+        "trabalhador_id": trabalhador_id,
+        "trabalhadores": [dict(t) for t in trabalhadores],
+        "linhas": [dict(l) for l in linhas],
+        "resumo": dict(resumo) if resumo else None,
     })
 
 

@@ -86,8 +86,6 @@
 {% if erro %}
 {% set erros = {
     'trabalhador_nao_encontrado': 'Trabalhador não encontrado.',
-    'trabalhador_inativo': 'Trabalhador inativo: só é permitido quitar pendências, não gerar nem antecipar meses.',
-    'antecipacao_limite': 'Antecipação fora do limite: escolha um mês entre o próximo e 12 meses à frente.',
     'sem_itens': 'Nenhum item selecionado para receber.'
 } %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
@@ -114,7 +112,6 @@
 {% if trabalhador %}
 <form method="post" action="/financeiro/mensalidades/receber" id="form-receber" style="margin-top:1.5rem">
 <input type="hidden" name="trabalhador_id" value="{{ trabalhador.id }}">
-<input type="hidden" name="incluir_mes_atual" id="incluir-mes-atual" value="0">
 <input type="hidden" name="pix_copiadecola" id="pix-copiadecola" value="">
 
 <div style="background:var(--cor-superficie);border:1px solid var(--cor-borda);border-radius:var(--raio);padding:1rem 1.2rem">
@@ -125,44 +122,43 @@
         </span>
     </div>
 
-    {% if pendentes or mes_atual_nao_gerado %}
+    {% if pendentes %}
     <div style="overflow-x:auto; margin-top:.8rem">
     <table class="tabela">
         <thead>
-            <tr><th style="width:2rem"></th><th>Mês</th><th>Vencimento</th><th>Valor</th></tr>
+            <tr><th style="width:2rem"></th><th>Mês</th><th>Vencimento</th><th>Valor</th><th style="width:5rem"></th></tr>
         </thead>
         <tbody>
         {% for p in pendentes %}
             <tr {% if p.vencido %}style="background:#ff444410"{% endif %}>
                 <td><input type="checkbox" class="cb-pendente" value="{{ p.id }}" name="mov_ids"
-                           data-valor="{{ p.valor }}" checked></td>
-                <td>{{ p.mes_ref }}{% if p.vencido %} <span style="color:#ff4444;font-weight:700;font-size:.75rem">VENCIDO</span>{% endif %}</td>
+                           data-valor="{{ p.valor }}" {% if p.vencido or p.corrente %}checked{% endif %}></td>
+                <td>{{ p.mes_ref }}
+                    {% if p.vencido %}<span style="color:#ff4444;font-weight:700;font-size:.75rem"> VENCIDO</span>{% endif %}
+                    {% if p.corrente %}<span style="color:#1da851;font-weight:700;font-size:.75rem"> ATUAL</span>{% endif %}
+                    {% if p.futuro %}<span style="color:var(--cor-texto-suave);font-weight:600;font-size:.75rem"> FUTURA</span>{% endif %}
+                </td>
                 <td>{{ p.data_vencimento|data_br }}</td>
                 <td>R$ {{ p.valor|replace('.', ',') }}</td>
+                <td>
+                    {% if p.futuro %}
+                    <button type="button" class="btn btn-secundario" style="padding:.1rem .5rem;font-size:.75rem"
+                            onclick="cancelarMensalidade({{ p.id }})">cancelar</button>
+                    {% endif %}
+                </td>
             </tr>
         {% endfor %}
-        {% if mes_atual_nao_gerado %}
-            <tr>
-                <td><input type="checkbox" id="chk-mes-atual" data-valor="{{ valor_mensal }}" checked></td>
-                <td>{{ mes_atual }} <span style="color:var(--cor-texto-suave)">(não gerado)</span></td>
-                <td>—</td>
-                <td>R$ {{ valor_mensal|replace('.', ',') }}</td>
-            </tr>
-        {% endif %}
         </tbody>
     </table>
     </div>
+    <p style="font-size:.8rem;color:var(--cor-texto-suave);margin-top:.4rem">
+        Meses futuros (FUTURA) já estão lançados como contas a receber — marque os que quiser pagar antecipadamente.
+    </p>
     {% else %}
     <p style="color:var(--cor-texto-suave);margin-top:.8rem">Nenhuma mensalidade pendente para este trabalhador.</p>
     {% endif %}
 
     <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;margin-top:1rem">
-        <div>
-            <label style="font-weight:600;font-size:.9rem">Antecipar até (máx. 12 meses):</label>
-            <input type="month" id="mes-antecipar" min="{{ mes_min }}" max="{{ mes_max }}"
-                   style="padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
-            <span id="antecipacao-info" style="font-size:.8rem;color:var(--cor-texto-suave);margin-left:.4rem"></span>
-        </div>
         <div style="display:flex;align-items:center;gap:.5rem">
             <label style="font-weight:600;font-size:.9rem">Forma:</label>
             <select name="forma_pagamento" id="forma-pagamento" style="padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
@@ -229,9 +225,6 @@
 
 <script>
 const IMPRESSORA_URL = '{{ centro_config().get('impressora_url', 'http://localhost:9001') }}';
-const VALOR_MENSAL = {{ valor_mensal }};
-const MES_MIN = '{{ mes_min }}';
-const MESES_EXISTENTES = {{ meses_existentes | tojson }};
 const _idsPagos = {{ (pago.split(',') if pago else []) | tojson }};
 let _totalAtual = 0;
 
@@ -239,34 +232,9 @@ function fmtVal(v) {
     return v.toFixed(2).replace('.', ',');
 }
 
-function addMes(ym, n) {
-    const [a, m] = ym.split('-').map(Number);
-    const t = a * 12 + (m - 1) + n;
-    return String(Math.floor(t / 12)).padStart(4, '0') + '-' + String((t % 12) + 1).padStart(2, '0');
-}
-
-function mesesAntecipacao(fim) {
-    const out = [];
-    for (let m = MES_MIN; m <= fim; m = addMes(m, 1)) {
-        if (!MESES_EXISTENTES.includes(m)) out.push(m);
-    }
-    return out;
-}
-
 function recalcular() {
     let total = 0;
     document.querySelectorAll('.cb-pendente:checked').forEach(cb => total += parseFloat(cb.dataset.valor));
-    const chkMesAtual = document.getElementById('chk-mes-atual');
-    if (chkMesAtual && chkMesAtual.checked) total += VALOR_MENSAL;
-    const fim = document.getElementById('mes-antecipar').value;
-    const info = document.getElementById('antecipacao-info');
-    if (fim) {
-        const qtd = mesesAntecipacao(fim).length;
-        total += qtd * VALOR_MENSAL;
-        if (info) info.textContent = qtd > 0 ? `+${qtd} mês(es) a gerar` : '(meses já existentes — nada a gerar)';
-    } else if (info) {
-        info.textContent = '';
-    }
     _totalAtual = total;
     document.getElementById('total-resumo').textContent = fmtVal(total);
     document.getElementById('btn-receber').disabled = total <= 0;
@@ -319,17 +287,18 @@ function recalcular() {
 
 // ── Cálculo do total e seleção ──────────────────────────────────────────────
 document.querySelectorAll('.cb-pendente').forEach(cb => cb.addEventListener('change', recalcular));
-
-const chkMesAtual = document.getElementById('chk-mes-atual');
-if (chkMesAtual) {
-    document.getElementById('incluir-mes-atual').value = chkMesAtual.checked ? '1' : '0';
-    chkMesAtual.addEventListener('change', () => {
-        document.getElementById('incluir-mes-atual').value = chkMesAtual.checked ? '1' : '0';
-        recalcular();
-    });
-}
-document.getElementById('mes-antecipar').addEventListener('change', recalcular);
 recalcular();
+
+// ── Cancelar lançamento futuro ──────────────────────────────────────────────
+async function cancelarMensalidade(id) {
+    if (!confirm('Cancelar este lançamento futuro? Ele sairá das contas a receber.')) return;
+    await fetch(`/financeiro/mensalidades/${id}/cancelar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `trabalhador_id=${encodeURIComponent('{{ trabalhador.id }}')}`
+    });
+    window.location.reload();
+}
 
 // ── Envio: PIX via modal, espécie com confirmação ───────────────────────────
 const formReceber = document.getElementById('form-receber');

@@ -567,12 +567,16 @@ async def pagina_contas(request: Request):
         return redir
 
     with conectar() as conn:
+        # Saldo por conta: pagas + pendentes (exceto "Valores a Receber",
+        # que soma só as pendentes — fiados pagos também moram nessa conta)
         contas = conn.execute(
             """SELECT c.*,
                       COALESCE(SUM(CASE WHEN fm.tipo='entrada' THEN fm.valor ELSE 0 END), 0)
                     - COALESCE(SUM(CASE WHEN fm.tipo='saida' THEN fm.valor ELSE 0 END), 0) AS saldo
                FROM contas_financeiras c
-               LEFT JOIN financeiro_movimentacoes fm ON fm.conta_id = c.id AND fm.status = 'pago'
+               LEFT JOIN financeiro_movimentacoes fm ON fm.conta_id = c.id
+                   AND fm.status IN ('pago', 'pendente')
+                   AND (c.tipo <> 'areceber' OR fm.status = 'pendente')
                GROUP BY c.id, c.nome, c.tipo, c.ativo, c.created_at
                ORDER BY c.id"""
         ).fetchall()

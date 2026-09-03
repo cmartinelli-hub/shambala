@@ -9,6 +9,7 @@ load_dotenv()
 
 from banco import criar_tabelas, fechar_pool
 from rotas import auth, pessoas, mediuns, usuarios, dia, checkin, chamada, relatorios, agenda, configuracoes, mala_direta, trabalhadores, permissoes, financeiro, doacoes, biblioteca, compras, caixa
+from rotas import financeiro_mensalidades
 from rotas.auth import criar_atendente_inicial
 
 
@@ -17,6 +18,9 @@ async def lifespan(app: FastAPI):
     criar_tabelas()
     criar_atendente_inicial()
     permissoes.seed_permissoes()
+    # Implantação sem retroativo: garante mensalidades (corrente + 12 futuras)
+    # para todos os ativos — idempotente, auto-reparadora a cada restart
+    financeiro_mensalidades.gerar_todas_ativas()
     yield
     fechar_pool()
 
