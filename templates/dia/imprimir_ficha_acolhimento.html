@@ -149,7 +149,7 @@
             <div class="linha">
                 <div class="campo" style="flex: 2;">
                     <span class="rotulo">Nome:</span>
-                    <span class="valor">{{ pessoa.nome_completo }}</span>
+                    <span class="valor">{{ pessoa.nome_completo }}{% if acompanhantes %} + {{ acompanhantes|join(', ') }}{% endif %}</span>
                 </div>
                 <div class="campo">
                     <span class="rotulo">Data:</span>
@@ -160,7 +160,7 @@
             <div class="linha">
                 <div class="campo">
                     <span class="rotulo">Data Nasc.:</span>
-                    <span class="valor">{% if pessoa.data_nascimento %}{{ pessoa.data_nascimento }}{% endif %}</span>
+                    <span class="valor">{% if pessoa.data_nascimento %}{{ pessoa.data_nascimento|data_br }}{% endif %}</span>
                 </div>
                 <div class="campo">
                     <span class="rotulo">Idade:</span>

@@ -480,7 +480,8 @@ async def imprimir_ficha_acolhimento(request: Request, checkin_id: int):
 
     with conectar() as conn:
         row = conn.execute("""
-            SELECT c.id, c.hora_checkin,
+            SELECT c.id, c.hora_checkin, c.dia_trabalho_id,
+                   c.codigo_acolhimento, c.codigo_atendimento,
                    p.id as pessoa_id, p.nome_completo, p.data_nascimento,
                    p.telefone, p.email
             FROM checkins c
@@ -489,6 +490,26 @@ async def imprimir_ficha_acolhimento(request: Request, checkin_id: int):
         """, (checkin_id,)).fetchone()
         if not row:
             return RedirectResponse(url="/dia/acolhimento", status_code=303)
+
+        # Acompanhantes: checkins do mesmo dia com a mesma senha da sessão
+        # (acolhimento ou atendimento), exceto o próprio titular
+        acompanhantes = []
+        conds, params = [], [row["dia_trabalho_id"], row["pessoa_id"]]
+        if row["codigo_acolhimento"]:
+            conds.append("c.codigo_acolhimento = %s")
+            params.append(row["codigo_acolhimento"])
+        if row["codigo_atendimento"]:
+            conds.append("c.codigo_atendimento = %s")
+            params.append(row["codigo_atendimento"])
+        if conds:
+            acs = conn.execute(
+                f"""SELECT p.nome_completo FROM checkins c
+                    JOIN pessoas p ON p.id = c.pessoa_id
+                    WHERE c.dia_trabalho_id = %s AND c.pessoa_id <> %s
+                      AND ({" OR ".join(conds)})""",
+                params,
+            ).fetchall()
+            acompanhantes = [a["nome_completo"] for a in acs]
 
     # Calcular idade
     idade = ''
@@ -508,6 +529,7 @@ async def imprimir_ficha_acolhimento(request: Request, checkin_id: int):
         "pessoa": dict(row),
         "idade": idade,
         "data_atendimento": data_atendimento,
+        "acompanhantes": acompanhantes,
     })
 
 

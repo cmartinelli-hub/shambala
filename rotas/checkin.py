@@ -397,8 +397,9 @@ async def salvar_checkin(
             )
             checkin_id = cur.fetchone()["id"]
 
-        # Acompanhantes — check-in com a mesma senha de atendimento
-        if acompanhantes and codigo_atendimento:
+        # Acompanhantes — check-in compartilhando as senhas da sessão do titular
+        # (atendimento mediúnico e/ou acolhimento fraterno)
+        if acompanhantes and (codigo_atendimento or codigo_acolhimento):
             for ac_id in acompanhantes:
                 if ac_id == pessoa_id:
                     continue
@@ -409,20 +410,23 @@ async def salvar_checkin(
                 if ex_ac:
                     conn.execute(
                         """UPDATE checkins SET
-                           codigo_atendimento = COALESCE(codigo_atendimento, %s),
+                           codigo_atendimento  = COALESCE(codigo_atendimento, %s),
+                           codigo_acolhimento  = COALESCE(codigo_acolhimento, %s),
                            medium_id = COALESCE(medium_id, %s),
                            plano_id  = COALESCE(plano_id, %s)
                            WHERE id = %s""",
-                        (codigo_atendimento, medium_id_int, plano_id_int, ex_ac["id"])
+                        (codigo_atendimento, codigo_acolhimento,
+                         medium_id_int, plano_id_int, ex_ac["id"])
                     )
                 else:
                     conn.execute(
                         """INSERT INTO checkins
                            (dia_trabalho_id, pessoa_id, hora_checkin,
-                            codigo_atendimento, medium_id, plano_id)
-                           VALUES (%s,%s,%s,%s,%s,%s)""",
+                            codigo_atendimento, codigo_acolhimento, medium_id, plano_id)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                         (dia["id"], ac_id, hora,
-                         codigo_atendimento, medium_id_int, plano_id_int)
+                         codigo_atendimento, codigo_acolhimento,
+                         medium_id_int, plano_id_int)
                     )
 
     with conectar() as conn:
