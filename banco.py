@@ -380,6 +380,48 @@ def criar_tabelas():
             )
         """)
 
+        # ── Trabalhadores ──
+        # (criada aqui porque fiado_credito_mov a referencia)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trabalhadores (
+                id                  SERIAL PRIMARY KEY,
+                nome_completo       TEXT NOT NULL,
+                cpf                 TEXT UNIQUE,
+                rg                  TEXT,
+                data_nascimento     TEXT,
+                telefone            TEXT,
+                email               TEXT,
+                cep                 TEXT,
+                logradouro          TEXT,
+                numero              TEXT,
+                complemento         TEXT,
+                bairro              TEXT,
+                cidade              TEXT,
+                uf                  TEXT,
+                valor_mensalidade   NUMERIC(10,2) DEFAULT 0,
+                dia_vencimento      INTEGER DEFAULT 10,
+                ativo               INTEGER NOT NULL DEFAULT 1,
+                foto_trabalhador    TEXT,
+                created_at          TEXT NOT NULL DEFAULT (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')::date::text
+            )
+        """)
+
+        # ── Atendentes ──
+        # (criada aqui porque vendas_pdv, caixa_movimentos, caixa_sangrias
+        #  e estoque_movimentos a referenciam)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS atendentes (
+                id              SERIAL PRIMARY KEY,
+                nome_usuario    TEXT NOT NULL UNIQUE,
+                nome_completo   TEXT NOT NULL,
+                senha_hash      TEXT NOT NULL,
+                telefone        TEXT,
+                email           TEXT,
+                ativo           INTEGER NOT NULL DEFAULT 1,
+                grupo_id        INTEGER REFERENCES grupos(id)
+            )
+        """)
+
         # ── Configurações SMTP ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS configuracoes_smtp (
@@ -541,31 +583,6 @@ def criar_tabelas():
             )
         """)
 
-        # ── Trabalhadores ──
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trabalhadores (
-                id                  SERIAL PRIMARY KEY,
-                nome_completo       TEXT NOT NULL,
-                cpf                 TEXT UNIQUE,
-                rg                  TEXT,
-                data_nascimento     TEXT,
-                telefone            TEXT,
-                email               TEXT,
-                cep                 TEXT,
-                logradouro          TEXT,
-                numero              TEXT,
-                complemento         TEXT,
-                bairro              TEXT,
-                cidade              TEXT,
-                uf                  TEXT,
-                valor_mensalidade   NUMERIC(10,2) DEFAULT 0,
-                dia_vencimento      INTEGER DEFAULT 10,
-                ativo               INTEGER NOT NULL DEFAULT 1,
-                foto_trabalhador    TEXT,
-                created_at          TEXT NOT NULL DEFAULT (CURRENT_DATE AT TIME ZONE 'America/Sao_Paulo')::date::text
-            )
-        """)
-
         conn.execute("""
             CREATE TABLE IF NOT EXISTS financeiro_movimentacoes (
                 id                  SERIAL PRIMARY KEY,
@@ -622,19 +639,6 @@ def criar_tabelas():
                 tipo_doacao_id  INTEGER NOT NULL REFERENCES tipos_doacao(id),
                 quantidade      INTEGER NOT NULL DEFAULT 1,
                 UNIQUE (doacao_id, tipo_doacao_id)
-            )
-        """)
-
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS atendentes (
-                id              SERIAL PRIMARY KEY,
-                nome_usuario    TEXT NOT NULL UNIQUE,
-                nome_completo   TEXT NOT NULL,
-                senha_hash      TEXT NOT NULL,
-                telefone        TEXT,
-                email           TEXT,
-                ativo           INTEGER NOT NULL DEFAULT 1,
-                grupo_id        INTEGER REFERENCES grupos(id)
             )
         """)
 
