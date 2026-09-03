@@ -189,6 +189,13 @@
             <div class="descricao-label">
                 <span class="rotulo">Descrição:</span>
             </div>
+
+            {% if pessoa.observacao_acolhimento %}
+            <div style="margin: 0 0 4mm 0; border: 1px solid #999; border-radius: 3px; padding: 3mm;">
+                <span class="rotulo">Observações do acolhimento:</span>
+                <div style="margin-top: 1.5mm; line-height: 1.35; white-space: pre-wrap;">{{ pessoa.observacao_acolhimento }}</div>
+            </div>
+            {% endif %}
         </div>
 
         <div class="ficha-meio">

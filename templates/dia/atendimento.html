@@ -61,7 +61,21 @@
                 {% if idoso %} ★{% endif %}
             </td>
             <td>{{ c.hora_checkin }}</td>
-            <td class="acoes" style="display:flex;gap:.3rem;flex-wrap:wrap">
+            <td class="acoes" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
+                {% if fila|length > 1 %}
+                <span style="display:inline-flex;gap:.15rem">
+                    <form method="post" action="/dia/atendimento/{{ c.id }}/mover" style="display:inline">
+                        <input type="hidden" name="direcao" value="cima">
+                        <button type="submit" class="btn btn-secundario btn-sm" title="Mover para cima"
+                                {% if loop.first %}disabled{% endif %}>▲</button>
+                    </form>
+                    <form method="post" action="/dia/atendimento/{{ c.id }}/mover" style="display:inline">
+                        <input type="hidden" name="direcao" value="baixo">
+                        <button type="submit" class="btn btn-secundario btn-sm" title="Mover para baixo"
+                                {% if loop.last %}disabled{% endif %}>▼</button>
+                    </form>
+                </span>
+                {% endif %}
                 <form method="post" action="/dia/atendimento/{{ c.id }}/chamar" style="display:inline">
                     <button type="submit" class="btn btn-primario btn-sm">📢 Chamar</button>
                 </form>

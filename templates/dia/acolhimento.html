@@ -42,6 +42,10 @@
                 </form>
                 <a href="/dia/fraterno/{{ c.id }}" class="btn btn-primario btn-sm">Atender</a>
                 <a href="/dia/acolhimento/{{ c.id }}/imprimir" class="btn btn-secundario btn-sm">🖨️ Ficha</a>
+                <form method="post" action="/dia/acolhimento/{{ c.id }}/cancelar" style="display:inline">
+                    <button type="submit" class="btn btn-secundario btn-sm"
+                            onclick="return confirm('Cancelar este acolhimento? A pessoa sairá da fila.')">✕ Cancelar</button>
+                </form>
             </td>
         </tr>
         {% endfor %}
@@ -58,7 +62,7 @@
     </summary>
     <table style="margin-top:.5rem;opacity:.7">
         <thead>
-            <tr><th>Código</th><th>Pessoa</th><th>Chegada</th></tr>
+            <tr><th>Código</th><th>Pessoa</th><th>Chegada</th><th></th></tr>
         </thead>
         <tbody>
             {% for c in realizados %}
@@ -66,6 +70,37 @@
                 <td>{{ c.codigo_acolhimento }}</td>
                 <td>{{ c.nome_completo }}</td>
                 <td>{{ c.hora_checkin }}</td>
+                <td>
+                    <a href="/dia/acolhimento/{{ c.id }}/imprimir" class="btn btn-secundario btn-sm">🖨️ Ficha</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</details>
+{% endif %}
+
+{% if cancelados %}
+<details style="margin-top:1.5rem">
+    <summary style="cursor:pointer;color:var(--cor-erro);font-size:0.9rem;font-weight:600">
+        Cancelados hoje ({{ cancelados|length }})
+    </summary>
+    <table style="margin-top:.5rem;opacity:.7">
+        <thead>
+            <tr><th>Código</th><th>Pessoa</th><th>Chegada</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for c in cancelados %}
+            <tr>
+                <td>{{ c.codigo_acolhimento }}</td>
+                <td>{{ c.nome_completo }}</td>
+                <td>{{ c.hora_checkin }}</td>
+                <td>
+                    <form method="post" action="/dia/acolhimento/{{ c.id }}/desfazer-cancelamento" style="display:inline">
+                        <button type="submit" class="btn btn-secundario btn-sm"
+                                onclick="return confirm('Reativar este acolhimento? A pessoa volta para a fila.')">↩ Reativar</button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

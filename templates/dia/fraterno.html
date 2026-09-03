@@ -64,14 +64,16 @@
         }
 
         label { display: block; font-size: .9rem; color: #555; margin-bottom: .25rem; margin-top: .8rem; }
-        input, select {
+        input, select, textarea {
             width: 100%;
             padding: .7rem .8rem;
             font-size: 1rem;
             border: 1px solid #ced4da;
             border-radius: 6px;
             background: #fff;
+            font-family: inherit;
         }
+        textarea { resize: vertical; }
         .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
 
         .btn-salvar {
@@ -182,6 +184,10 @@
 
             <label>Data da 1ª sessão</label>
             <input type="date" name="data_inicio" value="{{ hoje }}" required>
+
+            <label>Observações do acolhimento</label>
+            <textarea name="observacao_acolhimento" rows="4"
+                      placeholder="Registre aqui as observações do atendimento…">{{ checkin.observacao_acolhimento or '' }}</textarea>
 
             <button type="submit" class="btn-salvar">Salvar plano e finalizar atendimento</button>
         </form>

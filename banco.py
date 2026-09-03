@@ -214,6 +214,9 @@ def _migrar(conn):
         ("financeiro_movimentacoes", "data_pagamento", "TEXT"),
         ("financeiro_movimentacoes", "nota_fiscal_foto", "TEXT"),
         ("dias_trabalho", "reiki_ativo", "INTEGER NOT NULL DEFAULT 0"),
+        ("checkins", "posicao", "INTEGER"),
+        ("checkins", "observacao_acolhimento", "TEXT"),
+        ("checkins", "acolhimento_cancelado", "INTEGER NOT NULL DEFAULT 0"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:

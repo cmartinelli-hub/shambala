@@ -19,6 +19,10 @@ _ORDEM_PRIORIDADE = """(
          THEN 1 ELSE 0 END
 ) DESC, c.hora_checkin ASC"""
 
+# Fila de atendimento do médium: quem foi reordenado manualmente (posicao)
+# vem na frente; os demais (novos, sem posicao) seguem prioridade + chegada.
+_ORDEM_FILA_ATENDIMENTO = f"""c.posicao ASC NULLS LAST, {_ORDEM_PRIORIDADE}"""
+
 
 _MODULO_DIA = [
     ("/dia/dashboard", "dia.dashboard"),
@@ -423,7 +427,8 @@ async def fila_acolhimento(request: Request):
                        p.prioridade, p.deficiencia, p.data_nascimento, p.id as pessoa_id,
                        c.acolhimento_chamado
                 FROM checkins c JOIN pessoas p ON p.id = c.pessoa_id
-                WHERE c.dia_trabalho_id = %s AND c.codigo_acolhimento IS NOT NULL AND c.acolhimento_realizado = 0
+                WHERE c.dia_trabalho_id = %s AND c.codigo_acolhimento IS NOT NULL
+                  AND c.acolhimento_realizado = 0 AND c.acolhimento_cancelado = 0
                 ORDER BY c.acolhimento_chamado ASC, {_ORDEM_PRIORIDADE}""",
             (dia["id"],)
         ).fetchall()
@@ -434,11 +439,19 @@ async def fila_acolhimento(request: Request):
                ORDER BY c.hora_checkin""",
             (dia["id"],)
         ).fetchall()
+        cancelados = conn.execute(
+            """SELECT c.id, c.codigo_acolhimento, c.hora_checkin, p.nome_completo
+               FROM checkins c JOIN pessoas p ON p.id = c.pessoa_id
+               WHERE c.dia_trabalho_id = %s AND c.acolhimento_cancelado = 1
+               ORDER BY c.hora_checkin""",
+            (dia["id"],)
+        ).fetchall()
     return templates.TemplateResponse("dia/acolhimento.html", {
         "request": request,
         "atendente": atendente,
         "fila": [dict(r) for r in fila],
         "realizados": [dict(r) for r in realizados],
+        "cancelados": [dict(r) for r in cancelados],
         "hoje": _hoje(),
     })
 
@@ -472,6 +485,44 @@ async def acolhimento_realizado(request: Request, checkin_id: int):
     return RedirectResponse(url="/dia/acolhimento", status_code=303)
 
 
+@router.post("/acolhimento/{checkin_id}/cancelar")
+async def acolhimento_cancelar(request: Request, checkin_id: int):
+    """Desistência: cancela a sessão de acolhimento (titular + acompanhantes da senha)."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT dia_trabalho_id, codigo_acolhimento FROM checkins WHERE id = %s",
+            (checkin_id,)
+        ).fetchone()
+        if row and row["codigo_acolhimento"]:
+            conn.execute(
+                "UPDATE checkins SET acolhimento_cancelado = 1 WHERE dia_trabalho_id = %s AND codigo_acolhimento = %s",
+                (row["dia_trabalho_id"], row["codigo_acolhimento"])
+            )
+    return RedirectResponse(url="/dia/acolhimento", status_code=303)
+
+
+@router.post("/acolhimento/{checkin_id}/desfazer-cancelamento")
+async def acolhimento_desfazer_cancelamento(request: Request, checkin_id: int):
+    """Reativa uma sessão de acolhimento cancelada (titular + acompanhantes da senha)."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT dia_trabalho_id, codigo_acolhimento FROM checkins WHERE id = %s",
+            (checkin_id,)
+        ).fetchone()
+        if row and row["codigo_acolhimento"]:
+            conn.execute(
+                "UPDATE checkins SET acolhimento_cancelado = 0 WHERE dia_trabalho_id = %s AND codigo_acolhimento = %s",
+                (row["dia_trabalho_id"], row["codigo_acolhimento"])
+            )
+    return RedirectResponse(url="/dia/acolhimento", status_code=303)
+
+
 @router.get("/acolhimento/{checkin_id}/imprimir", response_class=HTMLResponse)
 async def imprimir_ficha_acolhimento(request: Request, checkin_id: int):
     atendente, redir = _guard(request)
@@ -482,6 +533,7 @@ async def imprimir_ficha_acolhimento(request: Request, checkin_id: int):
         row = conn.execute("""
             SELECT c.id, c.hora_checkin, c.dia_trabalho_id,
                    c.codigo_acolhimento, c.codigo_atendimento,
+                   c.observacao_acolhimento,
                    p.id as pessoa_id, p.nome_completo, p.data_nascimento,
                    p.telefone, p.email
             FROM checkins c
@@ -564,7 +616,7 @@ async def fila_atendimento(request: Request, medium_id: int):
                         AND c2.codigo_atendimento = c.codigo_atendimento
                         AND c2.atendimento_realizado = 0
                   )
-                ORDER BY {_ORDEM_PRIORIDADE}""",
+                ORDER BY {_ORDEM_FILA_ATENDIMENTO}""",
             (dia["id"], medium_id)
         ).fetchall()
 
@@ -697,6 +749,47 @@ async def atendimento_desfazer(request: Request, checkin_id: int):
     if medium_id:
         return RedirectResponse(url=f"/dia/mediuns/{medium_id}", status_code=303)
     return RedirectResponse(url="/dia", status_code=303)
+
+
+@router.post("/atendimento/{checkin_id}/mover")
+async def mover_atendimento(request: Request, checkin_id: int, direcao: str = Form(...)):
+    """Move a pessoa na fila do médium (cima/baixo) e renumera a fila inteira."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        row = conn.execute(
+            "SELECT medium_id, dia_trabalho_id FROM checkins WHERE id = %s", (checkin_id,)
+        ).fetchone()
+        if not row:
+            return RedirectResponse(url="/dia", status_code=303)
+
+        # Mesma ordenação exibida na tela (só titulares)
+        fila = conn.execute(
+            f"""SELECT c.id
+                FROM checkins c JOIN pessoas p ON p.id = c.pessoa_id
+                WHERE c.dia_trabalho_id = %s AND c.medium_id = %s
+                  AND c.codigo_atendimento IS NOT NULL AND c.atendimento_realizado = 0
+                  AND c.id = (
+                      SELECT MIN(c2.id) FROM checkins c2
+                      WHERE c2.dia_trabalho_id = c.dia_trabalho_id
+                        AND c2.codigo_atendimento = c.codigo_atendimento
+                        AND c2.atendimento_realizado = 0
+                  )
+                ORDER BY {_ORDEM_FILA_ATENDIMENTO}""",
+            (row["dia_trabalho_id"], row["medium_id"])
+        ).fetchall()
+        ids = [r["id"] for r in fila]
+        if checkin_id in ids:
+            i = ids.index(checkin_id)
+            j = i - 1 if direcao == "cima" else i + 1
+            if 0 <= j < len(ids):
+                ids[i], ids[j] = ids[j], ids[i]
+                for pos, cid in enumerate(ids, start=1):
+                    conn.execute(
+                        "UPDATE checkins SET posicao = %s WHERE id = %s", (pos, cid)
+                    )
+    return RedirectResponse(url=f"/dia/mediuns/{row['medium_id']}", status_code=303)
 
 
 # ── Transferência de atendimentos entre médiuns ──────────────────────────────
@@ -872,7 +965,7 @@ async def tela_transferir(request: Request, medium_id: int = 0):
                             AND c2.codigo_atendimento = c.codigo_atendimento
                             AND c2.atendimento_realizado = 0
                       )
-                    ORDER BY {_ORDEM_PRIORIDADE}""",
+                    ORDER BY {_ORDEM_FILA_ATENDIMENTO}""",
                 (dia["id"], m["id"])
             ).fetchall()
             if fila:
@@ -919,7 +1012,8 @@ async def dashboard(request: Request):
             f"""SELECT c.id, c.codigo_acolhimento AS codigo, c.hora_checkin,
                        p.nome_completo, p.prioridade, p.deficiencia, p.data_nascimento
                 FROM checkins c JOIN pessoas p ON p.id = c.pessoa_id
-                WHERE c.dia_trabalho_id = %s AND c.codigo_acolhimento IS NOT NULL AND c.acolhimento_realizado = 0
+                WHERE c.dia_trabalho_id = %s AND c.codigo_acolhimento IS NOT NULL
+                  AND c.acolhimento_realizado = 0 AND c.acolhimento_cancelado = 0
                 ORDER BY {_ORDEM_PRIORIDADE}""",
             (dia["id"],)
         ).fetchall()
@@ -958,7 +1052,7 @@ async def dashboard(request: Request):
                             AND c2.codigo_atendimento = c.codigo_atendimento
                             AND c2.atendimento_realizado = 0
                       )
-                    ORDER BY {_ORDEM_PRIORIDADE}""",
+                    ORDER BY {_ORDEM_FILA_ATENDIMENTO}""",
                 (dia["id"], m["id"])
             ).fetchall()
             total = conn.execute(
@@ -1348,6 +1442,7 @@ async def salvar_fraterno(
     frequencia: str = Form("semanal"),
     sessoes_com_passe: int = Form(1),
     data_inicio: str = Form(""),
+    observacao_acolhimento: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -1378,8 +1473,9 @@ async def salvar_fraterno(
             )
             gerar_agendamentos_plano(conn, plano_id, inicio, frequencia, sessoes_total, sessoes_com_passe)
 
-        # Marcar acolhimento como realizado
+        # Marcar acolhimento como realizado e salvar observações
         conn.execute(
-            "UPDATE checkins SET acolhimento_realizado=1 WHERE id=%s", (checkin_id,)
+            "UPDATE checkins SET acolhimento_realizado=1, observacao_acolhimento=%s WHERE id=%s",
+            (observacao_acolhimento.strip() or None, checkin_id)
         )
     return RedirectResponse(url="/dia/acolhimento", status_code=303)
