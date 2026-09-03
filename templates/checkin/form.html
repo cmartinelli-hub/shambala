@@ -75,6 +75,87 @@
 </div>
 {% endif %}
 
+{# Consulta rápida: plano de atendimento + agenda do médium #}
+{% if resumo_plano %}
+<div class="checkin-acoes-rapidas">
+    <button type="button" class="checkin-info-btn" onclick="abrirModalInfo('plano')">📋 Ver plano de atendimento</button>
+    <button type="button" class="checkin-info-btn" onclick="abrirModalInfo('agenda')">📅 Agenda do médium</button>
+</div>
+
+<div id="modal-info" class="checkin-modal" hidden>
+    <div class="checkin-modal-fundo" onclick="fecharModalInfo()"></div>
+    <div class="checkin-modal-caixa" role="dialog" aria-modal="true" aria-label="Plano de atendimento e agenda do médium">
+        <div class="checkin-modal-topo">
+            <div class="checkin-modal-abas">
+                <button type="button" id="aba-btn-plano" class="checkin-aba-btn checkin-aba-ativa" onclick="trocarAbaInfo('plano')">Plano de atendimento</button>
+                <button type="button" id="aba-btn-agenda" class="checkin-aba-btn" onclick="trocarAbaInfo('agenda')">Agenda do médium</button>
+            </div>
+            <button type="button" class="checkin-modal-fechar" onclick="fecharModalInfo()" aria-label="Fechar">✕</button>
+        </div>
+
+        <div id="aba-conteudo-plano" class="checkin-aba-conteudo">
+            <div class="checkin-plano-linha">
+                <span class="checkin-plano-rotulo">Médium</span>
+                <strong>{{ resumo_plano.medium_nome }}</strong>
+            </div>
+            <div class="checkin-plano-linha">
+                <span class="checkin-plano-rotulo">Frequência</span>
+                <span>{{ resumo_plano.frequencia }}</span>
+            </div>
+            <div class="checkin-plano-linha">
+                <span class="checkin-plano-rotulo">Sessões</span>
+                <span><strong>{{ resumo_plano.sessoes_realizadas }}</strong> de {{ resumo_plano.sessoes_total }} realizadas</span>
+            </div>
+            <div class="checkin-plano-linha">
+                <span class="checkin-plano-rotulo">Início</span>
+                <span>{{ resumo_plano.data_inicio | data_br }}</span>
+            </div>
+            <div class="checkin-plano-linha">
+                <span class="checkin-plano-rotulo">Situação</span>
+                {% if resumo_plano.status == 'ativo' %}
+                <span class="checkin-badge checkin-badge-ativo">Plano ativo</span>
+                {% elif resumo_plano.concluido %}
+                <span class="checkin-badge checkin-badge-concluido">Concluído</span>
+                {% else %}
+                <span class="checkin-badge">{{ resumo_plano.status }}</span>
+                {% endif %}
+            </div>
+
+            <div class="checkin-plano-proximas">
+                <h4 class="checkin-plano-subtitulo">Próximas sessões deste plano</h4>
+                {% if resumo_plano.proximas %}
+                <ul class="checkin-plano-datas">
+                    {% for d in resumo_plano.proximas %}
+                    <li>{{ d | data_br }}{% if d == hoje %} <span class="checkin-badge checkin-badge-hoje">hoje</span>{% endif %}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="checkin-plano-vazio">Nenhuma sessão futura agendada.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div id="aba-conteudo-agenda" class="checkin-aba-conteudo" hidden>
+            <p class="checkin-agenda-titulo">Próximos atendimentos de <strong>{{ resumo_plano.medium_nome }}</strong>:</p>
+            {% if agenda_medium %}
+            <ul class="checkin-agenda-lista">
+                {% for a in agenda_medium %}
+                <li class="checkin-agenda-item">
+                    <span class="checkin-agenda-data">{{ a.data | data_br }}</span>
+                    <span class="checkin-agenda-pessoas">{{ a.pessoas }}</span>
+                    {% if a.encaixe %}<span class="checkin-badge checkin-badge-encaixe">encaixe</span>{% endif %}
+                    {% if a.data == hoje %}<span class="checkin-badge checkin-badge-hoje">hoje</span>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="checkin-plano-vazio">Sem agendamentos futuros para este médium.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Formulário -->
 <form method="post" action="/dia/checkin/{{ pessoa.id }}" class="checkin-form">
     {% if sit.agendamento %}
@@ -229,5 +310,33 @@ function remover(btn, id) {
     adicionados.delete(id);
     btn.closest('.acomp-chip').remove();
 }
+
+// ── Modal plano de atendimento / agenda do médium ──
+function abrirModalInfo(aba) {
+    const modal = document.getElementById('modal-info');
+    if (!modal) return;
+    modal.hidden = false;
+    trocarAbaInfo(aba);
+    document.body.style.overflow = 'hidden';
+}
+
+function fecharModalInfo() {
+    const modal = document.getElementById('modal-info');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    document.body.style.overflow = '';
+}
+
+function trocarAbaInfo(aba) {
+    const mostrarPlano = aba === 'plano';
+    document.getElementById('aba-conteudo-plano').hidden = !mostrarPlano;
+    document.getElementById('aba-conteudo-agenda').hidden = mostrarPlano;
+    document.getElementById('aba-btn-plano').classList.toggle('checkin-aba-ativa', mostrarPlano);
+    document.getElementById('aba-btn-agenda').classList.toggle('checkin-aba-ativa', !mostrarPlano);
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') fecharModalInfo();
+});
 </script>
 {% endblock %}

@@ -131,6 +131,100 @@ def _situacao_pessoa(conn, pessoa_id: int, hoje: str) -> dict:
     }
 
 
+def _resumo_plano_agenda(conn, pessoa_id: int, situacao: dict):
+    """Resumo do plano da pessoa + agenda do médium, para o modal do check-in.
+
+    Médium considerado: o do agendamento de hoje; senão o do plano ativo;
+    senão o do plano mais recente do histórico. Sem nenhum plano → (None, None).
+    """
+    if situacao["agendamento"]:
+        plano_exibir = conn.execute(
+            """SELECT pt.*, m.nome_completo as medium_nome
+               FROM planos_tratamento pt
+               JOIN mediuns m ON m.id = pt.medium_id
+               WHERE pt.id = %s""",
+            (situacao["agendamento"]["plano_id"],)
+        ).fetchone()
+    elif situacao["plano_ativo"]:
+        plano_exibir = conn.execute(
+            """SELECT pt.*, m.nome_completo as medium_nome
+               FROM planos_tratamento pt
+               JOIN mediuns m ON m.id = pt.medium_id
+               WHERE pt.id = %s""",
+            (situacao["plano_ativo"]["id"],)
+        ).fetchone()
+    else:
+        plano_exibir = conn.execute(
+            """SELECT pt.*, m.nome_completo as medium_nome
+               FROM planos_tratamento pt
+               JOIN plano_pessoas pp ON pp.plano_id = pt.id
+               JOIN mediuns m ON m.id = pt.medium_id
+               WHERE pp.pessoa_id = %s
+               ORDER BY pt.data_inicio DESC NULLS LAST, pt.id DESC
+               LIMIT 1""",
+            (pessoa_id,)
+        ).fetchone()
+
+    if not plano_exibir:
+        return None, None
+
+    proximas = conn.execute(
+        """SELECT data FROM agendamentos
+           WHERE plano_id = %s AND status = 'agendado' AND data >= %s
+           ORDER BY data LIMIT 8""",
+        (plano_exibir["id"], _hoje())
+    ).fetchall()
+    resumo = dict(plano_exibir)
+    resumo["proximas"] = [r["data"] for r in proximas]
+
+    agenda = conn.execute(
+        """SELECT a.id, a.data, a.encaixe,
+                  STRING_AGG(pe.nome_completo, ', ' ORDER BY pe.nome_completo) AS pessoas
+           FROM agendamentos a
+           JOIN planos_tratamento pt ON pt.id = a.plano_id
+           JOIN plano_pessoas pp ON pp.plano_id = pt.id
+           JOIN pessoas pe ON pe.id = pp.pessoa_id
+           WHERE pt.medium_id = %s AND a.data >= %s AND a.status = 'agendado'
+           GROUP BY a.id, a.data, a.encaixe
+           ORDER BY a.data, a.id
+           LIMIT 12""",
+        (plano_exibir["medium_id"], _hoje())
+    ).fetchall()
+
+    return resumo, [dict(a) for a in agenda]
+
+
+def _contexto_form(conn, dia_id: int, pessoa_id: int, exibir_existente: bool = True) -> dict:
+    """Monta o contexto completo do formulário de check-in (GET e re-renders de erro)."""
+    pessoa = conn.execute("SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)).fetchone()
+    mediuns_hoje = conn.execute(
+        """SELECT m.id, m.nome_completo FROM mediuns_dia md
+           JOIN mediuns m ON m.id = md.medium_id
+           WHERE md.dia_trabalho_id = %s ORDER BY m.nome_completo""",
+        (dia_id,)
+    ).fetchall()
+    situacao = _situacao_pessoa(conn, pessoa_id, _hoje())
+    resumo_plano, agenda_medium = _resumo_plano_agenda(conn, pessoa_id, situacao)
+
+    checkin_existente = None
+    if exibir_existente:
+        ce = conn.execute(
+            "SELECT * FROM checkins WHERE dia_trabalho_id = %s AND pessoa_id = %s",
+            (dia_id, pessoa_id)
+        ).fetchone()
+        checkin_existente = dict(ce) if ce else None
+
+    return {
+        "pessoa": dict(pessoa) if pessoa else None,
+        "mediuns_hoje": [dict(m) for m in mediuns_hoje],
+        "checkin_existente": checkin_existente,
+        "situacao": situacao,
+        "resumo_plano": resumo_plano,
+        "agenda_medium": agenda_medium,
+        "hoje": _hoje(),
+    }
+
+
 # ── Busca ─────────────────────────────────────────────────────────────────────
 
 @router.get("", response_class=HTMLResponse)
@@ -172,32 +266,14 @@ async def form_checkin(request: Request, pessoa_id: int):
         dia = _dia_aberto(conn)
         if not dia:
             return RedirectResponse(url="/dia", status_code=303)
-
-        pessoa = conn.execute("SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)).fetchone()
-        if not pessoa:
+        ctx = _contexto_form(conn, dia["id"], pessoa_id)
+        if not ctx["pessoa"]:
             return RedirectResponse(url="/dia/checkin", status_code=303)
-
-        checkin_existente = conn.execute(
-            "SELECT * FROM checkins WHERE dia_trabalho_id = %s AND pessoa_id = %s",
-            (dia["id"], pessoa_id)
-        ).fetchone()
-
-        mediuns_hoje = conn.execute(
-            """SELECT m.id, m.nome_completo FROM mediuns_dia md
-               JOIN mediuns m ON m.id = md.medium_id
-               WHERE md.dia_trabalho_id = %s ORDER BY m.nome_completo""",
-            (dia["id"],)
-        ).fetchall()
-
-        situacao = _situacao_pessoa(conn, pessoa_id, _hoje())
 
     return templates.TemplateResponse("checkin/form.html", {
         "request": request,
         "atendente": atendente,
-        "pessoa": dict(pessoa),
-        "mediuns_hoje": [dict(m) for m in mediuns_hoje],
-        "checkin_existente": dict(checkin_existente) if checkin_existente else None,
-        "situacao": situacao,
+        **ctx,
         "erro": None,
     })
 
@@ -229,21 +305,11 @@ async def salvar_checkin(
     if not codigo_passe and not codigo_acolhimento and not codigo_atendimento and not codigo_reiki:
         with conectar() as conn:
             dia = _dia_aberto(conn)
-            pessoa = conn.execute("SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)).fetchone()
-            mediuns_hoje = conn.execute(
-                """SELECT m.id, m.nome_completo FROM mediuns_dia md
-                   JOIN mediuns m ON m.id = md.medium_id
-                   WHERE md.dia_trabalho_id = %s ORDER BY m.nome_completo""",
-                (dia["id"],)
-            ).fetchall()
-            situacao = _situacao_pessoa(conn, pessoa_id, _hoje())
+            ctx = _contexto_form(conn, dia["id"], pessoa_id, exibir_existente=False)
         return templates.TemplateResponse("checkin/form.html", {
             "request": request,
             "atendente": atendente,
-            "pessoa": dict(pessoa),
-            "mediuns_hoje": [dict(m) for m in mediuns_hoje],
-            "checkin_existente": None,
-            "situacao": situacao,
+            **ctx,
             "erro": "Informe ao menos uma senha (passe, Reiki, fraterno ou atendimento).",
         })
 
@@ -251,21 +317,11 @@ async def salvar_checkin(
     if codigo_atendimento and not medium_id_int:
         with conectar() as conn:
             dia = _dia_aberto(conn)
-            pessoa = conn.execute("SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)).fetchone()
-            mediuns_hoje = conn.execute(
-                """SELECT m.id, m.nome_completo FROM mediuns_dia md
-                   JOIN mediuns m ON m.id = md.medium_id
-                   WHERE md.dia_trabalho_id = %s ORDER BY m.nome_completo""",
-                (dia["id"],)
-            ).fetchall()
-            situacao = _situacao_pessoa(conn, pessoa_id, _hoje())
+            ctx = _contexto_form(conn, dia["id"], pessoa_id, exibir_existente=False)
         return templates.TemplateResponse("checkin/form.html", {
             "request": request,
             "atendente": atendente,
-            "pessoa": dict(pessoa),
-            "mediuns_hoje": [dict(m) for m in mediuns_hoje],
-            "checkin_existente": None,
-            "situacao": situacao,
+            **ctx,
             "erro": "Atendimento mediúnico exige a seleção de um médium responsável.",
         })
 
@@ -286,21 +342,11 @@ async def salvar_checkin(
                         (dia["id"], medium_id_int)
                     ).fetchone()["c"]
                     if usados >= lim["vagas_dia"]:
-                        pessoa = conn.execute("SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)).fetchone()
-                        mediuns_hoje = conn.execute(
-                            """SELECT m.id, m.nome_completo FROM mediuns_dia md
-                               JOIN mediuns m ON m.id = md.medium_id
-                               WHERE md.dia_trabalho_id = %s ORDER BY m.nome_completo""",
-                            (dia["id"],)
-                        ).fetchall()
-                        situacao = _situacao_pessoa(conn, pessoa_id, _hoje())
+                        ctx = _contexto_form(conn, dia["id"], pessoa_id, exibir_existente=False)
                         return templates.TemplateResponse("checkin/form.html", {
                             "request": request,
                             "atendente": atendente,
-                            "pessoa": dict(pessoa),
-                            "mediuns_hoje": [dict(m) for m in mediuns_hoje],
-                            "checkin_existente": None,
-                            "situacao": situacao,
+                            **ctx,
                             "erro": f"O médium atingiu o limite de {lim['vagas_dia']} atendimentos hoje.",
                         })
 
@@ -324,25 +370,11 @@ async def salvar_checkin(
                 conflitos.append(f'Senha "{senha}" ({campo}) já está em uso como {em_uso[senha]} neste dia.')
 
         if conflitos:
-            pessoa = conn.execute("SELECT * FROM pessoas WHERE id = %s", (pessoa_id,)).fetchone()
-            mediuns_hoje = conn.execute(
-                """SELECT m.id, m.nome_completo FROM mediuns_dia md
-                   JOIN mediuns m ON m.id = md.medium_id
-                   WHERE md.dia_trabalho_id = %s ORDER BY m.nome_completo""",
-                (dia["id"],)
-            ).fetchall()
-            checkin_existente = conn.execute(
-                "SELECT * FROM checkins WHERE dia_trabalho_id = %s AND pessoa_id = %s",
-                (dia["id"], pessoa_id)
-            ).fetchone()
-            situacao = _situacao_pessoa(conn, pessoa_id, _hoje())
+            ctx = _contexto_form(conn, dia["id"], pessoa_id)
             return templates.TemplateResponse("checkin/form.html", {
                 "request": request,
                 "atendente": atendente,
-                "pessoa": dict(pessoa),
-                "mediuns_hoje": [dict(m) for m in mediuns_hoje],
-                "checkin_existente": dict(checkin_existente) if checkin_existente else None,
-                "situacao": situacao,
+                **ctx,
                 "erro": " | ".join(conflitos),
             })
 

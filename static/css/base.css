@@ -3150,6 +3150,225 @@ td.acoes { white-space: nowrap; text-align: right; }
     opacity: 1;
 }
 
+/* Consulta rápida — plano de atendimento + agenda do médium */
+.checkin-acoes-rapidas {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin: 0 0 1rem 0;
+}
+
+.checkin-info-btn {
+    background: var(--cor-superficie);
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    padding: 0.5rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--cor-primaria);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.checkin-info-btn:hover {
+    border-color: var(--cor-primaria);
+    box-shadow: 0 2px 8px rgba(26, 95, 168, 0.15);
+}
+
+.checkin-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.checkin-modal[hidden] {
+    display: none;
+}
+
+.checkin-modal-fundo {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.checkin-modal-caixa {
+    position: relative;
+    background: var(--cor-superficie);
+    border-radius: var(--raio);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    width: 100%;
+    max-width: 560px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 1.1rem 1.25rem 1.25rem;
+}
+
+.checkin-modal-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+    border-bottom: 1px solid var(--cor-borda);
+    padding-bottom: 0.6rem;
+}
+
+.checkin-modal-abas {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.checkin-aba-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--cor-texto-suave);
+    cursor: pointer;
+}
+
+.checkin-aba-btn.checkin-aba-ativa {
+    color: var(--cor-primaria);
+    border-bottom-color: var(--cor-primaria);
+}
+
+.checkin-modal-fechar {
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    color: var(--cor-texto-suave);
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+}
+
+.checkin-modal-fechar:hover {
+    color: var(--cor-texto);
+}
+
+.checkin-plano-linha {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px dashed var(--cor-borda);
+    font-size: 0.9rem;
+}
+
+.checkin-plano-rotulo {
+    color: var(--cor-texto-suave);
+    font-weight: 600;
+    min-width: 110px;
+    flex-shrink: 0;
+}
+
+.checkin-plano-proximas {
+    margin-top: 0.9rem;
+}
+
+.checkin-plano-subtitulo {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--cor-texto-suave);
+    margin: 0 0 0.5rem 0;
+}
+
+.checkin-plano-datas {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.checkin-plano-datas li {
+    background: #f0f4ff;
+    border: 1px solid #c7d2fe;
+    color: #3730a3;
+    border-radius: 20px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.checkin-plano-vazio {
+    font-size: 0.88rem;
+    color: var(--cor-texto-suave);
+    margin: 0;
+}
+
+.checkin-agenda-titulo {
+    font-size: 0.9rem;
+    margin: 0 0 0.75rem 0;
+}
+
+.checkin-agenda-lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.checkin-agenda-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--cor-fundo);
+    border-radius: var(--raio);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.88rem;
+}
+
+.checkin-agenda-data {
+    font-weight: 700;
+    color: var(--cor-primaria);
+    flex-shrink: 0;
+}
+
+.checkin-agenda-pessoas {
+    flex: 1;
+}
+
+.checkin-badge {
+    display: inline-block;
+    background: #f3f4f6;
+    color: #374151;
+    border-radius: 20px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.checkin-badge-ativo {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.checkin-badge-concluido {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.checkin-badge-encaixe {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.checkin-badge-hoje {
+    background: #fffbeb;
+    color: #92400e;
+}
+
 /* Responsivo para check-in */
 @media (max-width: 768px) {
     .checkin-busca-form {
