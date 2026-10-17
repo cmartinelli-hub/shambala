@@ -66,6 +66,52 @@ def _guard(request: Request):
     return atendente, None
 
 
+# ── Regra do passe nas sessões do plano ───────────────────────────────────────
+
+def _agendamentos_do_passe(conn, plano_id: int) -> list:
+    """Sessões que participam da regra do passe: realizadas/faltas primeiro
+    (a ordem cronológica do tratamento), depois as futuras ainda agendadas."""
+    return conn.execute(
+        """SELECT id, status, requer_passe FROM agendamentos
+           WHERE plano_id = %s AND status IN ('realizado','faltou','agendado')
+           ORDER BY CASE WHEN status = 'agendado' THEN 1 ELSE 0 END, data, id""",
+        (plano_id,)
+    ).fetchall()
+
+
+def _reaplicar_piso_passe(conn, plano_id: int) -> None:
+    """Garante o piso de 3 passes nas 3 primeiras sessões do plano.
+
+    Só ACRESCENTA obrigatoriedade — nunca remove passe de uma sessão. Assim,
+    acrescentar ou reagendar uma sessão não pode apagar a regra, e nenhuma
+    sessão já marcada com passe perde a marcação.
+    """
+    sessoes = _agendamentos_do_passe(conn, plano_id)
+    alvo = min(3, len(sessoes))
+    for i in range(alvo):
+        if not sessoes[i]["requer_passe"]:
+            conn.execute(
+                "UPDATE agendamentos SET requer_passe = 1 WHERE id = %s",
+                (sessoes[i]["id"],)
+            )
+
+
+def _reaplicar_requer_passe(conn, plano_id: int, requeridos: list) -> None:
+    """Redistribui a obrigatoriedade de passe após o reagendamento.
+
+    Acompanha a ORDEM das sessões (não a data), garantindo que as sessões que
+    já exigiam passe continuem exigindo — sem inventar nem perder obrigações.
+    """
+    sessoes = _agendamentos_do_passe(conn, plano_id)
+    for i, sessao in enumerate(sessoes):
+        desejado = 1 if (i < len(requeridos) and requeridos[i]) else 0
+        if bool(sessao["requer_passe"]) != bool(desejado):
+            conn.execute(
+                "UPDATE agendamentos SET requer_passe = %s WHERE id = %s",
+                (desejado, sessao["id"])
+            )
+
+
 # ── Lista ─────────────────────────────────────────────────────────────────────
 
 @router.get("", response_class=HTMLResponse)
@@ -446,12 +492,27 @@ async def novo_agendamento(
     atendente, redir = _guard(request)
     if redir:
         return redir
+    from banco import data_atendimento_valida
+    destino = f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda"
     with conectar() as conn:
+        # Sessão só pode cair em dia de atendimento cadastrado (R4). O
+        # parâmetro `encaixe` não libera a restrição: qualquer exceção
+        # precisaria de decisão expressa do proprietário.
+        if not data_atendimento_valida(conn, data):
+            return RedirectResponse(
+                url=f"{destino}?erro=" + urllib.parse.quote(
+                    "Data não é dia de atendimento. Escolha um dia cadastrado em Configurações."
+                ),
+                status_code=303,
+            )
         conn.execute(
             "INSERT INTO agendamentos (plano_id, data, status, requer_passe, encaixe) VALUES (%s,%s,%s,%s,%s)",
-            (plano_id, data, "agendado", requer_passe, encaixe)
+            (plano_id, data, "agendado", 1 if requer_passe else 0, 1 if encaixe else 0)
         )
-    return RedirectResponse(url=f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda", status_code=303)
+        # A obrigatoriedade das 3 primeiras sessões não pode ser removida por
+        # este formulário: reaplica o piso ao conjunto do plano.
+        _reaplicar_piso_passe(conn, plano_id)
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.post("/{id}/planos/{plano_id}/agenda/{ag_id}/cancelar")
@@ -509,36 +570,67 @@ async def reagendar(
     if redir:
         return redir
     from datetime import date as _date, timedelta as _td
+    from banco import data_atendimento_valida, datas_agendamento, _dias_atendimento
+    destino = f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda"
     with conectar() as conn:
         ag = conn.execute(
             "SELECT data, requer_passe FROM agendamentos WHERE id=%s AND plano_id=%s",
             (ag_id, plano_id)
         ).fetchone()
-        if ag:
-            data_original = _date.fromisoformat(ag["data"])
-            data_nova = _date.fromisoformat(nova_data)
-            delta = (data_nova - data_original).days
+        if not ag:
+            return RedirectResponse(url=destino, status_code=303)
 
-            # Atualiza este agendamento
-            conn.execute(
-                "UPDATE agendamentos SET data=%s WHERE id=%s", (nova_data, ag_id)
+        # A nova data precisa ser dia de atendimento: reagendar não pode jogar
+        # a sessão para sábado/domingo (defeito S9 da investigação).
+        if not data_atendimento_valida(conn, nova_data):
+            return RedirectResponse(
+                url=f"{destino}?erro=" + urllib.parse.quote(
+                    "A nova data não é dia de atendimento. Escolha um dia cadastrado."
+                ),
+                status_code=303,
             )
 
-            # Ajusta todos os agendamentos futuros do mesmo plano com status 'agendado'
-            if delta != 0:
-                futuros = conn.execute(
-                    """SELECT id, data FROM agendamentos
-                       WHERE plano_id=%s AND status='agendado' AND data > %s AND id != %s
-                       ORDER BY data""",
-                    (plano_id, ag["data"], ag_id)
-                ).fetchall()
-                for f in futuros:
-                    d_fut = _date.fromisoformat(f["data"]) + _td(days=delta)
-                    conn.execute(
-                        "UPDATE agendamentos SET data=%s WHERE id=%s",
-                        (d_fut.isoformat(), f["id"])
-                    )
-    return RedirectResponse(url=f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda", status_code=303)
+        data_original = _date.fromisoformat(ag["data"])
+        if nova_data == ag["data"]:
+            return RedirectResponse(url=destino, status_code=303)
+
+        # Recalcula TODA a agenda do plano a partir da nova data da sessão
+        # escolhida, mantendo a quantidade de sessões e a frequência — assim
+        # nenhuma sessão futura desliza para fora do calendário.
+        plano = conn.execute(
+            "SELECT frequencia, sessoes_total FROM planos_tratamento WHERE id=%s",
+            (plano_id,)
+        ).fetchone()
+        if not plano:
+            return RedirectResponse(url=destino, status_code=303)
+
+        restantes = conn.execute(
+            """SELECT id FROM agendamentos
+               WHERE plano_id=%s AND status='agendado' AND data >= %s
+               ORDER BY data""",
+            (plano_id, ag["data"])
+        ).fetchall()
+        if not restantes:
+            return RedirectResponse(url=destino, status_code=303)
+
+        dias = _dias_atendimento(conn)
+        novas = datas_agendamento(
+            _date.fromisoformat(nova_data), len(restantes), plano["frequencia"], dias
+        )
+        # Fecha a agenda futura e regrava a partir da nova data, preservando o
+        # requer_passe de cada sessão já marcada.
+        requeridos = [r["requer_passe"] for r in conn.execute(
+            """SELECT requer_passe FROM agendamentos
+               WHERE plano_id=%s AND status='agendado' AND data >= %s ORDER BY data""",
+            (plano_id, ag["data"])
+        ).fetchall()]
+        for idx, r in enumerate(restantes):
+            conn.execute(
+                "UPDATE agendamentos SET data=%s, status='agendado' WHERE id=%s",
+                (novas[idx], r["id"])
+            )
+        _reaplicar_requer_passe(conn, plano_id, requeridos)
+    return RedirectResponse(url=destino, status_code=303)
 
 
 # ── Ativar / Desativar ────────────────────────────────────────────────────────

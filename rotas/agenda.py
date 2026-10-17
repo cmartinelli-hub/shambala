@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, Query, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from banco import conectar, _normalizar
+import banco
 from rotas.auth import obter_atendente_logado
 from templates_config import templates
 
@@ -24,6 +25,8 @@ FREQ_MAP = {
     "quinzenal": 14,
     "mensal": 28,
 }
+
+# Intervalos lidos de banco._INTERVALO_FREQUENCIA (fonte única do calendário)
 
 
 def _guard(request: Request):
@@ -149,8 +152,6 @@ async def novo_agendamento(
     request: Request,
     pessoa_id: int = Form(...),
     data: str = Form(...),
-    requer_passe: int = Form(0),
-    encaixe: int = Form(0),
     medium_id: int = Form(...),
     data_de: str = Form(""),
     data_ate: str = Form(""),
@@ -169,47 +170,54 @@ async def novo_agendamento(
         if len(data_parts) == 3:
             data = f"{data_parts[2]}-{data_parts[1]}-{data_parts[0]}"
 
-    delta_dias = FREQ_MAP.get(frequencia, 7)
+    params = (f"medium_id={medium_id}&de={data_de}&ate={data_ate}"
+              f"&dia_semana={dia_semana}&pessoa_nome={urllib.parse.quote(pessoa_nome, safe='')}")
+
+    def _voltar(erro: str):
+        return RedirectResponse(
+            url=f"/agenda?{params}&erro={urllib.parse.quote(erro)}", status_code=303
+        )
 
     with conectar() as conn:
         # Validar data inicial
         try:
             data_inicio = date.fromisoformat(data)
         except ValueError:
-            msg = urllib.parse.quote("Data inválida.")
-            params = f"medium_id={medium_id}&de={data_de}&ate={data_ate}&dia_semana={dia_semana}&pessoa_nome={urllib.parse.quote(pessoa_nome, safe='')}"
-            return RedirectResponse(url=f"/agenda?{params}&erro={msg}", status_code=303)
+            return _voltar("Data inválida.")
 
-        # Gerar lista de datas
-        datas = []
-        data_atual = data_inicio
-        for i in range(qtd_sessoes):
-            # Verificar se já tem agendamento nesta data
+        total = max(1, int(qtd_sessoes or 1))
+        inicio = banco._proxima_data_trabalho(data_inicio, banco._dias_atendimento(conn))
+
+        # A Agenda NÃO contorna o calendário nem o piso de passe: as datas são
+        # as mesmas que o Acolhimento Fraterno usaria, sempre em dia de
+        # atendimento cadastrado (R4).
+        datas = banco.datas_agendamento(data_inicio, total, frequencia, banco._dias_atendimento(conn))
+
+        # Verificar se já tem agendamento em qualquer uma das datas
+        for d in datas:
             ja_tem = conn.execute(
                 """SELECT 1 FROM agendamentos a
                    JOIN planos_tratamento pt ON pt.id = a.plano_id
                    JOIN plano_pessoas pp ON pp.plano_id = pt.id
                    WHERE pp.pessoa_id = %s AND a.data = %s AND a.status = 'agendado'
                    LIMIT 1""",
-                (pessoa_id, data_atual.isoformat())
+                (pessoa_id, d)
             ).fetchone()
             if ja_tem:
-                msg = urllib.parse.quote(
-                    f"Pessoa já possui agendamento em {data_atual.strftime('%d/%m/%Y')}."
+                return _voltar(
+                    f"Pessoa já possui agendamento em {date.fromisoformat(d).strftime('%d/%m/%Y')}."
                 )
-                params = f"medium_id={medium_id}&de={data_de}&ate={data_ate}&dia_semana={dia_semana}&pessoa_nome={urllib.parse.quote(pessoa_nome, safe='')}"
-                return RedirectResponse(url=f"/agenda?{params}&erro={msg}", status_code=303)
-            datas.append(data_atual.isoformat())
-            data_atual += timedelta(days=delta_dias)
 
-        # Cria plano avulso para a pessoa + médium
+        # Cria o plano da Agenda. `sessoes_com_passe = 0` significa "somente o
+        # piso obrigatório do centro" (as 3 primeiras sessões); a partir da 4ª
+        # o passe é opcional, conforme R4.
         cur = conn.execute(
             """INSERT INTO planos_tratamento
                (medium_id, sessoes_total, sessoes_realizadas, data_inicio,
                 frequencia, status, sessoes_com_passe)
                VALUES (%s, %s, 0, %s, %s, 'ativo', 0)
                RETURNING id""",
-            (medium_id, qtd_sessoes, data_inicio.isoformat(), frequencia)
+            (medium_id, total, inicio.isoformat(), frequencia)
         )
         plano_id = cur.fetchone()["id"]
         conn.execute(
@@ -217,14 +225,9 @@ async def novo_agendamento(
             (plano_id, pessoa_id)
         )
 
-        # Criar agendamentos
-        for d in datas:
-            conn.execute(
-                "INSERT INTO agendamentos (plano_id, data, status, requer_passe, encaixe) VALUES (%s,%s,%s,%s,%s)",
-                (plano_id, d, "agendado", requer_passe, encaixe)
-            )
+        # Fonte única da regra do passe e do calendário
+        banco.gerar_agendamentos_plano(conn, plano_id, inicio, frequencia, total, 0)
 
-    params = f"medium_id={medium_id}&de={data_de}&ate={data_ate}&dia_semana={dia_semana}&pessoa_nome={urllib.parse.quote(pessoa_nome, safe='')}"
     return RedirectResponse(url=f"/agenda?{params}", status_code=303)
 
 

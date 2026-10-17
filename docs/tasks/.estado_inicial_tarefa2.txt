@@ -1,0 +1,16 @@
+# Estado inicial registrado em 2026-10-14 (sessao da TASK_TRES_PASSES)
+## Git
+HEAD: e3324c2603dda6686b2d9025633af46f5cd6d272
+branch: main [github/main: ahead 13]
+stash: 1 entrada(s)
+arquivos modificados (tracked): 0
+## Banco de DEV
+planos=1855 agendamentos=2867 pessoas=664 checkins=2807
+## md5 dos arquivos que serão afetados
+9a28fe6e2f56bbaeb33bace2f794feab  banco.py
+90b74ccd78b71736683941e7b79e2a0d  rotas/agenda.py
+ed52047d53cfb84db4b9ce796b7c9b0b  rotas/mediuns.py
+3f8eacca723f4c1effe51eb6942f92ee  rotas/pessoas.py
+1d79e05ffbe2fe52bb021ea699b136aa  rotas/dia.py
+## Hardening de segurança preexistente
+NÃO está aplicado na árvore (DEV = e3324c2 limpo); patch preservado em: /nc/projetos/shambala_backup_dev_20261014-193200/dev_uncommitted.patch

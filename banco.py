@@ -125,31 +125,95 @@ def _proxima_data_trabalho(a_partir: date, dias_semana: list = None) -> date:
     return d
 
 
+# Intervalo entre sessões por frequência. "avulso" (ou valor desconhecido) = 0,
+# isto é, uma única sessão na primeira data de atendimento disponível.
+_INTERVALO_FREQUENCIA = {
+    "semanal": 7,
+    "quinzenal": 14,
+    "mensal": 28,
+    "avulso": 0,
+}
+
+
+# ── Regra do passe magnético ──────────────────────────────────────────────────
+
+PASSE_CHAVE_VAZIA = "nenhum"
+
+
+def calcular_sessoes_com_passe(total: int, configurado: int) -> int:
+    """Quantas das `total` sessões exigem passe magnético.
+
+    Regra do centro (decidida pelo proprietário — ver
+    docs/investigacoes/INVESTIGACAO_TRES_PASSES_ACOLHIMENTO.md, R1/R4):
+    as TRÊS primeiras sessões de todo plano sempre exigem passe,
+    independentemente do valor configurado no plano. O valor configurado só
+    amplia a obrigatoriedade a partir da quarta sessão.
+
+    - plano com 1 ou 2 sessões: todas exigem passe (sem criar sessões extras);
+    - configuração 0 vinda de tela antiga: o piso de 3 vence;
+    - configuração negativa (legado): todas as sessões exigem passe.
+    """
+    if total <= 0:
+        return 0
+    if configurado < 0:
+        return total
+    return min(max(3, configurado), total)
+
+
+def datas_agendamento(inicio: date, quantidade: int,
+                      frequencia: str, dias_semana: list) -> list:
+    """Datas (ISO) das sessões, sempre em dias de atendimento cadastrados.
+
+    `frequencia` avulsa (ou desconhecida) gera UMA única data, na primeira data
+    de atendimento — não há série a repetir. É a fonte única do calendário de
+    agendamentos, usada pelo Acolhimento Fraterno, pelo cadastro de médium e
+    pela Agenda.
+    """
+    if quantidade <= 0:
+        return []
+    delta = _INTERVALO_FREQUENCIA.get(frequencia, 0)
+    if delta == 0:
+        return [_proxima_data_trabalho(inicio, dias_semana).isoformat()]
+    atual = _proxima_data_trabalho(inicio, dias_semana)
+    datas = []
+    for _ in range(quantidade):
+        datas.append(atual.isoformat())
+        atual = _proxima_data_trabalho(atual + timedelta(days=delta), dias_semana)
+    return datas
+
+
+def data_atendimento_valida(conn, valor: str) -> bool:
+    """A data informada cai em um dia de atendimento cadastrado?
+
+    O calendário é dinâmico: lido de `dias_atendimento` a cada chamada, nunca
+    fixado em segunda/quarta.
+    """
+    try:
+        data = date.fromisoformat(valor)
+    except (TypeError, ValueError):
+        return False
+    return data.weekday() in _dias_atendimento(conn)
+
+
 def gerar_agendamentos_plano(conn, plano_id: int, inicio: date,
                               frequencia: str, total: int, sessoes_com_passe: int):
-    """Gera agendamentos automáticos para um plano. avulso = sem geração."""
-    delta_map = {"semanal": 7, "quinzenal": 14, "mensal": 28}
-    delta = delta_map.get(frequencia, 0)
-    if delta == 0:
-        return
+    """Gera agendamentos automáticos de um plano (fonte única da regra).
+
+    - quantidade de sessões e quantidade de passes são conceitos diferentes;
+    - a obrigatoriedade de passe é calculada por `calcular_sessoes_com_passe`;
+    - as datas respeitam sempre os dias de atendimento cadastrados;
+    - frequência avulsa gera uma única sessão, na data de atendimento mais
+      próxima (o comportamento de "não gerar nada" escondia as sessões).
+    """
     dias = _dias_atendimento(conn)
-    atual = _proxima_data_trabalho(inicio, dias)
-    # As 3 primeiras sessões SEMPRE exigem passe (piso), independente de
-    # sessoes_com_passe. A partir da 4ª segue o valor configurado.
-    # sessoes_com_passe < 0 mantém o comportamento legado de "todas com passe".
-    minimo_passe = 3
-    if sessoes_com_passe < 0:
-        efetivas_com_passe = total
-    else:
-        efetivas_com_passe = max(minimo_passe, sessoes_com_passe)
-    for i in range(total):
-        requer_passe = 1 if i < efetivas_com_passe else 0
+    com_passe = calcular_sessoes_com_passe(total, sessoes_com_passe)
+    for i, data_iso in enumerate(datas_agendamento(inicio, total, frequencia, dias)):
         conn.execute(
             """INSERT INTO agendamentos (plano_id, data, status, requer_passe, encaixe)
                VALUES (%s, %s, 'agendado', %s, 0)""",
-            (plano_id, atual.isoformat(), requer_passe),
+            (plano_id, data_iso, 1 if i < com_passe else 0),
         )
-        atual = _proxima_data_trabalho(atual + timedelta(days=delta), dias)
+
 
 
 # ── Migrações incrementais ───────────────────────────────────────────────────
@@ -713,6 +777,18 @@ def criar_tabelas():
                 plano_id    INTEGER NOT NULL REFERENCES planos_tratamento(id),
                 pessoa_id   INTEGER NOT NULL REFERENCES pessoas(id),
                 UNIQUE(plano_id, pessoa_id)
+            )
+        """)
+
+        # ── Idempotência da criação de plano ──
+        # Evita que reenvio do formulário (duplo clique, retry HTTP, F5) crie
+        # planos e agendamentos duplicados. A chave representa a OPERAÇÃO de
+        # criação (ex.: acolhimento:{checkin}:{médium}:{data}), nunca a pessoa.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plano_chave_idempotencia (
+                chave       TEXT PRIMARY KEY,
+                plano_id    INTEGER REFERENCES planos_tratamento(id) ON DELETE CASCADE,
+                criado_em   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
 

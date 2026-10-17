@@ -7,6 +7,7 @@ import os
 import uuid
 from pathlib import Path
 from banco import conectar, _normalizar
+import banco
 from rotas.auth import obter_atendente_logado
 from templates_config import templates
 
@@ -507,7 +508,7 @@ async def editar_plano(
         if not row:
             return RedirectResponse(url=f"/cadastros/pessoas/{pessoa_id}", status_code=303)
         campos = {"sessoes_total": sessoes_total, "sessoes_realizadas": sessoes_realizadas,
-                  "frequencia": frequencia, "sessoes_com_passe": sessoes_com_passe}
+                  "frequencia": frequencia, "sessoes_com_passe": banco.calcular_sessoes_com_passe(sessoes_total, sessoes_com_passe)}
         if data_inicio:
             campos["data_inicio"] = data_inicio
         sets = ", ".join(f"{k} = %s" for k in campos)
@@ -515,6 +516,10 @@ async def editar_plano(
             f"UPDATE planos_tratamento SET {sets} WHERE id = %s",
             (*campos.values(), plano_id)
         )
+        # A edição não pode eliminar a obrigatoriedade das 3 primeiras sessões
+        # (defeito S11): reaplica o piso apenas ACRESCENTANDO marcações.
+        from rotas.mediuns import _reaplicar_piso_passe
+        _reaplicar_piso_passe(conn, plano_id)
     return RedirectResponse(url=f"/cadastros/pessoas/{pessoa_id}", status_code=303)
 
 

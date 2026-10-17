@@ -1448,7 +1448,7 @@ async def salvar_fraterno(
     if redir:
         return redir
     from datetime import date as _date
-    from banco import gerar_agendamentos_plano
+    import banco
     inicio = _date.fromisoformat(data_inicio) if data_inicio else _date.today()
     with conectar() as conn:
         checkin = conn.execute(
@@ -1458,20 +1458,47 @@ async def salvar_fraterno(
             return RedirectResponse(url="/dia/acolhimento", status_code=303)
 
         if medium_id:
-            cur = conn.execute(
-                """INSERT INTO planos_tratamento
-                   (medium_id, sessoes_total, data_inicio, frequencia, sessoes_com_passe, status)
-                   VALUES (%s,%s,%s,%s,%s,'ativo')
-                   RETURNING id""",
-                (medium_id, sessoes_total, inicio.isoformat(), frequencia, sessoes_com_passe)
-            )
-            plano_id = cur.fetchone()["id"]
-            conn.execute(
-                """INSERT INTO plano_pessoas (plano_id, pessoa_id)
-                   VALUES (%s,%s) ON CONFLICT DO NOTHING""",
-                (plano_id, checkin["pessoa_id"])
-            )
-            gerar_agendamentos_plano(conn, plano_id, inicio, frequencia, sessoes_total, sessoes_com_passe)
+            # Idempotência do acolhimento: a MESMA sessão de acolhimento (mesmo
+            # checkin + mesmo médium + mesma data de início) só pode originar UM
+            # plano. Reenvio por duplo clique ou retry HTTP não duplica o
+            # tratamento (defeito S2). Um acolhimento novo, em outro dia ou com
+            # outro médium, continua criando plano novo normalmente.
+            chave = f"acolhimento:{checkin_id}:{medium_id}:{inicio.isoformat()}"
+            # Trava por sessão de acolhimento: duas requisições concorrentes não
+            # criam dois planos — a 2ª espera e encontra a chave gravada.
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (int(checkin_id),))
+            existente = conn.execute(
+                "SELECT plano_id FROM plano_chave_idempotencia WHERE chave = %s",
+                (chave,)
+            ).fetchone()
+            if existente:
+                # Já existe plano para exatamente esta sessão de acolhimento:
+                # reaproveita em vez de duplicar.
+                plano_id = existente["plano_id"]
+            else:
+                com_passe = banco.calcular_sessoes_com_passe(sessoes_total, sessoes_com_passe)
+                cur = conn.execute(
+                    """INSERT INTO planos_tratamento
+                       (medium_id, sessoes_total, data_inicio, frequencia, sessoes_com_passe, status)
+                       VALUES (%s,%s,%s,%s,%s,'ativo')
+                       RETURNING id""",
+                    (medium_id, sessoes_total, inicio.isoformat(), frequencia, com_passe)
+                )
+                plano_id = cur.fetchone()["id"]
+                conn.execute(
+                    """INSERT INTO plano_pessoas (plano_id, pessoa_id)
+                       VALUES (%s,%s) ON CONFLICT DO NOTHING""",
+                    (plano_id, checkin["pessoa_id"])
+                )
+                # Plano e agendamentos na MESMA transação: falha intermediária
+                # não deixa plano sem agenda.
+                banco.gerar_agendamentos_plano(
+                    conn, plano_id, inicio, frequencia, sessoes_total, com_passe
+                )
+                conn.execute(
+                    "INSERT INTO plano_chave_idempotencia (chave, plano_id) VALUES (%s, %s)",
+                    (chave, plano_id)
+                )
 
         # Marcar acolhimento como realizado e salvar observações
         conn.execute(

@@ -3,11 +3,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+import os
 
-# Load environment variables from .env file
-load_dotenv()
+# Carrega variáveis de ambiente.
+# SHAMBALA_ENV_FILE permite apontar para um arquivo de configuração alternativo
+# (usado pelo ambiente de testes, que NUNCA deve ler o .env do projeto — foi a
+# ausência dessa separação que permitiu um teste atingir o banco de dev).
+_env_file = os.environ.get("SHAMBALA_ENV_FILE")
+if _env_file:
+    load_dotenv(_env_file)
+else:
+    load_dotenv()
 
-from banco import criar_tabelas, fechar_pool
+from banco import criar_tabelas, fechar_pool, conectar
 from rotas import auth, pessoas, mediuns, usuarios, dia, checkin, chamada, relatorios, agenda, configuracoes, mala_direta, trabalhadores, permissoes, financeiro, doacoes, biblioteca, compras, caixa
 from rotas import financeiro_mensalidades
 from rotas.auth import criar_atendente_inicial
@@ -15,6 +23,15 @@ from rotas.auth import criar_atendente_inicial
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Defesa em profundidade: no modo de teste, recusa iniciar se a conexão
+    # efetiva não for comprovadamente um banco descartável. Impede que um app
+    # de teste trunque o banco de desenvolvimento (incidente de 2026-10-14).
+    if os.environ.get("SHAMBALA_MODO_TESTE") == "1":
+        from tests.trava_isolamento import exigir_ambiente_de_teste
+        with conectar() as _conn:
+            info = exigir_ambiente_de_teste(_conn)
+        print(f"[TESTE] Ambiente descartável confirmado: {info}", flush=True)
+
     criar_tabelas()
     criar_atendente_inicial()
     permissoes.seed_permissoes()
