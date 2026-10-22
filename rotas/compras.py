@@ -22,13 +22,8 @@ FORMAS_PERMITIDAS = {"especie", "pix"}
 
 def _guard(request: Request):
     """Login + permissão 'financeiro.compras' (import lazy evita import circular)."""
-    from rotas.permissoes import usuario_pode
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
-    if not usuario_pode(atendente["id"], "financeiro.compras"):
-        return None, HTMLResponse(status_code=403, content="Acesso negado.")
-    return atendente, None
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "financeiro.compras")
 
 
 def _salvar_foto_nota(conteudo: bytes, mov_id: int, ext: str) -> str:

@@ -147,6 +147,17 @@
                         ✅ Dar Alta
                     </button>
                 </form>
+                {% if e_admin %}
+                <form method="post"
+                      action="/cadastros/pessoas/{{ pessoa.id }}/planos/{{ p.id }}/cancelar"
+                      style="flex:1"
+                      onsubmit="return confirm('Cancelar o plano de {{ pessoa.nome_completo }}?\n\nOs agendamentos pendentes serão cancelados e para retomar o tratamento será necessário novo acolhimento fraterno.')">
+                    <button type="submit" class="btn btn-perigo"
+                            style="width:100%;font-size:.8rem;padding:.3rem .5rem">
+                        🚫 Cancelar
+                    </button>
+                </form>
+                {% endif %}
             </div>
             {% endif %}
         </div>
@@ -228,6 +239,7 @@ document.getElementById('modal-plano').addEventListener('click', function(e) {
     {% if historico %}
     <div class="ficha-historico-timeline">
         {% for h in historico %}
+        {% if h.tipo == 'atendimento' %}
         <div class="ficha-historico-item">
             <div class="ficha-historico-data">
                 <span class="ficha-historico-dia">{{ h.data | data_br }}</span>
@@ -257,8 +269,37 @@ document.getElementById('modal-plano').addEventListener('click', function(e) {
                 <span class="servico-medium">→ {{ h.medium_nome }}</span>
                 {% endif %}
                 {% endif %}
+                {% if h.observacao_acolhimento %}
+                <div class="servico-observacao">📝 {{ h.observacao_acolhimento }}</div>
+                {% endif %}
             </div>
         </div>
+        {% elif h.tipo == 'falta' %}
+        <div class="ficha-historico-item ficha-historico-falta">
+            <div class="ficha-historico-data">
+                <span class="ficha-historico-dia">{{ h.data | data_br }}</span>
+            </div>
+            <div class="ficha-historico-servicos">
+                <span class="servico-badge servico-falta">✗ Falta</span>
+                {% if h.medium_nome %}
+                <span class="servico-medium">→ {{ h.medium_nome }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% elif h.tipo == 'cancelamento' %}
+        <div class="ficha-historico-item ficha-historico-cancelamento">
+            <div class="ficha-historico-data">
+                <span class="ficha-historico-dia">{{ h.data | data_br }}</span>
+            </div>
+            <div class="ficha-historico-servicos">
+                <span class="servico-badge servico-cancelado">⊘ Plano cancelado</span>
+                {% if h.medium_nome %}
+                <span class="servico-medium">→ {{ h.medium_nome }}</span>
+                {% endif %}
+                <span class="servico-medium">({{ h.sessoes_realizadas }}/{{ h.sessoes_total }} sessões)</span>
+            </div>
+        </div>
+        {% endif %}
         {% endfor %}
     </div>
     {% else %}

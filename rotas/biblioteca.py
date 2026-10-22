@@ -11,10 +11,8 @@ router = APIRouter(prefix="/biblioteca")
 
 
 def _guard(request: Request):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
-    return atendente, None
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "biblioteca")
 
 
 # ── Lista de livros ───────────────────────────────────────────────────────────
@@ -59,8 +57,11 @@ async def listar_livros(request: Request, busca: str = ""):
 # ── Busca ISBN na API ────────────────────────────────────────────────────────
 
 @router.get("/isbn/{isbn}")
-async def buscar_isbn(isbn: str):
+async def buscar_isbn(request: Request, isbn: str):
     """Busca dados do livro pela API Open Library."""
+    _atendente, redir = _guard(request)
+    if redir:
+        return redir
     dados = {"isbn": isbn, "titulo": "", "autor": "", "editora": "", "ano": None, "edicao": ""}
     try:
         resp = requests.get(f"https://openlibrary.org/isbn/{isbn}.json", timeout=5)

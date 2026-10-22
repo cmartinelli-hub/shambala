@@ -1427,6 +1427,36 @@ td.acoes { white-space: nowrap; text-align: right; }
     font-style: italic;
 }
 
+.ficha-historico-falta {
+    border-left-color: #dc2626;
+}
+
+.ficha-historico-cancelamento {
+    border-left-color: #9ca3af;
+}
+
+.servico-falta {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.servico-cancelado {
+    background: #e5e7eb;
+    color: #4b5563;
+}
+
+.servico-observacao {
+    width: 100%;
+    font-size: 0.85rem;
+    color: var(--cor-texto);
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    margin-top: 0.25rem;
+    white-space: pre-wrap;
+}
+
 /* Responsivo para ficha */
 @media (max-width: 768px) {
     .ficha-header-top {

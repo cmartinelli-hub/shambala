@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block titulo %}Agenda do Médium{% endblock %}
+
+{% block estilos %}
+<style>
+.medium-chips { display:flex; flex-wrap:wrap; gap:.5rem; margin:.75rem 0 1.25rem; }
+.medium-chip {
+    padding:.55rem 1.1rem; border-radius:2rem; border:2px solid var(--cor-borda, #ccc);
+    font-size:1.05rem; font-weight:600; text-decoration:none; color:inherit; background:var(--cor-card, #fff);
+}
+.medium-chip.ativo { border-color:var(--cor-primaria, #2563eb); background:var(--cor-primaria, #2563eb); color:#fff; }
+.medium-form {
+    border:2px solid var(--cor-borda, #ccc); border-radius:.75rem; padding:1.25rem;
+    margin-bottom:1.5rem; background:var(--cor-card, #fff);
+}
+.medium-form label { display:block; font-size:1rem; font-weight:600; margin-bottom:.3rem; }
+.medium-grid { display:grid; grid-template-columns:2fr 1fr 1fr; gap:1rem; align-items:end; }
+.medium-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem; }
+.medium-form input[type="text"], .medium-form input[type="date"],
+.medium-form input[type="number"], .medium-form select {
+    width:100%; padding:.6rem .75rem; font-size:1.05rem; border:1px solid var(--cor-borda, #ccc);
+    border-radius:.5rem;
+}
+.medium-sugestoes {
+    position:absolute; z-index:20; left:0; right:0; top:calc(100% + 2px);
+    background:#fff; border:1px solid var(--cor-borda, #ccc); border-radius:.5rem;
+    max-height:18rem; overflow-y:auto; display:none; box-shadow:0 4px 12px rgba(0,0,0,.15);
+}
+.medium-sugerido-medium { font-size:.85rem; opacity:.75; }
+.medium-status { margin-top:.75rem; font-size:1rem; min-height:1.2rem; }
+.medium-lancar-btn { font-size:1.15rem; padding:.7rem 2rem; margin-top:1rem; }
+.medium-dia-bloco { margin-bottom:1.25rem; }
+.medium-dia-titulo { font-size:1.2rem; margin-bottom:.5rem; }
+.medium-lista { display:grid; grid-template-columns:repeat(auto-fill,minmax(22rem,1fr)); gap:.75rem; }
+.medium-card {
+    border:1px solid var(--cor-borda, #ccc); border-radius:.6rem; padding:.75rem 1rem;
+    background:var(--cor-card, #fff); font-size:1.05rem;
+}
+.medium-card .pessoa { font-weight:600; }
+.medium-card .detalhe { font-size:.9rem; opacity:.8; margin-top:.2rem; }
+.medium-atendidos li { font-size:1rem; margin:.15rem 0; }
+.medium-sucesso {
+    background:#dcfce7; border:1px solid #16a34a; color:#14532d;
+    padding:.75rem 1rem; border-radius:.5rem; margin-bottom:1rem; font-size:1.05rem;
+}
+@media (max-width: 800px) { .medium-grid, .medium-grid-2 { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+
+{% block conteudo %}
+<a href="/menu" class="btn-voltar">← Menu</a>
+
+<div class="cabecalho-secao">
+    <div>
+        <h1>📅 Agenda do Médium</h1>
+        <p class="subtitulo">{{ total_sessoes }} atendimento(s) nos próximos 30 dias
+            {% if pode_agenda_completa %}
+            · <a href="/agenda">agenda completa</a>
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+{% if msg %}
+<div class="medium-sucesso">✅ {{ msg }}</div>
+{% endif %}
+{% if erro %}
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
+{% endif %}
+
+{% if not mediuns %}
+<div class="form-erro">
+    <span class="form-erro-icone">🔒</span>
+    <span>Você ainda não tem agenda de médium vinculada. Peça ao administrador para marcar
+        as agendas que você gerencia em <strong>Cadastros → Usuários → Agendas do Médium</strong>.</span>
+</div>
+{% else %}
+
+<!-- Seletor de médium -->
+<div class="medium-chips">
+    <a class="medium-chip {% if not medium_id %}ativo{% endif %}" href="/agenda/medium">
+        Todos os meus</a>
+    {% for m in mediuns %}
+    <a class="medium-chip {% if medium_id == m.id %}ativo{% endif %}"
+       href="/agenda/medium?medium_id={{ m.id }}">{{ m.nome_completo }}</a>
+    {% endfor %}
+</div>
+
+<!-- Lançamento -->
+<div class="medium-form">
+    <h2 style="margin-top:0">📝 Lançar na agenda</h2>
+    <form method="post" action="/agenda/medium/lancar" id="form-lancar">
+        <input type="hidden" name="pessoa_id" id="lancar-pessoa-id" value="">
+        <div class="medium-grid">
+            <div>
+                <label>Pessoa *</label>
+                <div style="position:relative">
+                    <input type="text" id="lancar-busca" placeholder="Digite o nome…"
+                           autocomplete="off">
+                    <div id="lancar-sugestoes" class="medium-sugestoes"></div>
+                </div>
+            </div>
+            <div>
+                <label for="lancar-medium">Médium *</label>
+                <select id="lancar-medium" name="medium_id" required>
+                    {% for m in mediuns %}
+                    <option value="{{ m.id }}" {% if medium_id == m.id %}selected{% endif %}>
+                        {{ m.nome_completo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="lancar-data">Data *</label>
+                <input type="date" id="lancar-data" name="data" value="{{ data_sugerida }}" required>
+            </div>
+        </div>
+        <div class="medium-grid-2" id="lancar-novoplano">
+            <div>
+                <label for="lancar-qtd">Qtde de sessões</label>
+                <input type="number" id="lancar-qtd" name="qtd_sessoes" value="10" min="1" max="52">
+            </div>
+            <div>
+                <label for="lancar-freq">Frequência</label>
+                <select id="lancar-freq" name="frequencia">
+                    <option value="semanal">Semanal</option>
+                    <option value="quinzenal">Quinzenal</option>
+                    <option value="mensal">Mensal</option>
+                </select>
+            </div>
+        </div>
+        <div class="medium-status" id="lancar-status"></div>
+        <button type="submit" class="btn btn-primario medium-lancar-btn" id="lancar-btn" disabled>
+            ✔ Lançar
+        </button>
+    </form>
+</div>
+
+<!-- Próximos atendimentos -->
+<h2 style="font-size:1.3rem">🗓️ Próximos atendimentos</h2>
+{% if not por_data %}
+<div class="vazio">
+    <div class="vazio-icone">📅</div>
+    <h3>Nenhum atendimento agendado</h3>
+    <p>Use o formulário acima para lançar a agenda de papel.</p>
+</div>
+{% else %}
+{% for data, sessoes in por_data.items() %}
+<div class="medium-dia-bloco">
+    <h3 class="medium-dia-titulo">
+        {{ data | data_br }}
+        {% if data == hoje %}<span class="agenda-hoje"> — hoje</span>{% endif %}
+        <span class="agenda-dia-count">({{ sessoes|length }})</span>
+    </h3>
+    <div class="medium-lista">
+        {% for ag in sessoes %}
+        <div class="medium-card">
+            <div class="pessoa">{{ ag.pessoas or '—' }}</div>
+            <div class="detalhe">
+                🧘 {{ ag.medium_nome }} ·
+                sessão {{ ag.sessoes_realizadas + 1 }}/{{ ag.sessoes_total }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<!-- Atendidos no último dia -->
+{% if dia_anterior %}
+<h2 style="font-size:1.3rem">🕐 Atendidos em {{ dia_anterior.data | data_br }}</h2>
+{% if atendidos_dia %}
+<ul class="medium-atendidos">
+    {% for a in atendidos_dia %}
+    <li>{{ a.hora_checkin or '—' }} · <strong>{{ a.nome_completo }}</strong>
+        {% if not medium_id %}<span style="opacity:.7">({{ a.medium_nome }})</span>{% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>Nenhum atendimento registrado nesse dia{% if medium_id %} para este médium{% endif %}.</p>
+{% endif %}
+{% endif %}
+
+{% endif %}{# mediuns vinculados #}
+{% endblock %}
+
+{% block scripts %}
+{% if mediuns %}
+<script>
+const inputBusca = document.getElementById('lancar-busca');
+const hiddenId   = document.getElementById('lancar-pessoa-id');
+const divSug     = document.getElementById('lancar-sugestoes');
+const elStatus   = document.getElementById('lancar-status');
+const elBtn      = document.getElementById('lancar-btn');
+const elNovo     = document.getElementById('lancar-novoplano');
+const elMedium   = document.getElementById('lancar-medium');
+let timer = null;
+
+function atualizarSituacao() {
+    const pid = hiddenId.value, mid = elMedium.value;
+    if (!pid || !mid) return;
+    fetch(`/agenda/medium/situacao?pessoa_id=${pid}&medium_id=${mid}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(s => {
+            if (!s) { elStatus.textContent = ''; elNovo.style.display = ''; return; }
+            if (!s.tem_plano) {
+                elStatus.textContent = 'Sem plano ativo — será criado um plano novo com as opções acima.';
+                elNovo.style.display = '';
+            } else if (s.mesmo_medium) {
+                elStatus.textContent = `Tem plano ativo com este médium — será acrescentada 1 sessão na data.`;
+                elNovo.style.display = 'none';
+            } else {
+                elStatus.textContent = `⚠️ Tem plano ativo com ${s.medium_nome}. Valide com a recepção antes de lançar aqui.`;
+                elNovo.style.display = 'none';
+            }
+        });
+}
+
+inputBusca.addEventListener('input', () => {
+    clearTimeout(timer);
+    hiddenId.value = '';
+    elBtn.disabled = true;
+    elStatus.textContent = '';
+    divSug.style.display = 'none';
+    const q = inputBusca.value.trim();
+    if (q.length < 2) return;
+    timer = setTimeout(() => buscar(q), 250);
+});
+inputBusca.addEventListener('blur', () => setTimeout(() => divSug.style.display = 'none', 200));
+elMedium.addEventListener('change', atualizarSituacao);
+
+async function buscar(q) {
+    const res = await fetch(`/cadastros/pessoas/buscar?nome=${encodeURIComponent(q)}&excluir=0`);
+    const lista = await res.json();
+    if (!lista.length) { divSug.style.display = 'none'; return; }
+    divSug.innerHTML = '';
+    lista.forEach(p => {
+        const el = document.createElement('div');
+        el.style.cssText = 'padding:.6rem .9rem;cursor:pointer;font-size:1.05rem';
+        const nome = document.createElement('div');
+        nome.textContent = p.nome;
+        el.appendChild(nome);
+        const sub = document.createElement('div');
+        sub.className = 'medium-sugerido-medium';
+        sub.textContent = p.medium ? `🩺 ${p.medium}` : 'sem plano ativo';
+        el.appendChild(sub);
+        el.addEventListener('mouseenter', () => el.style.background = 'var(--cor-fundo)');
+        el.addEventListener('mouseleave', () => el.style.background = '');
+        el.addEventListener('mousedown', () => selecionar(p.id, p.nome));
+        divSug.appendChild(el);
+    });
+    divSug.style.display = 'block';
+}
+
+function selecionar(id, nome) {
+    hiddenId.value = id;
+    inputBusca.value = nome;
+    divSug.style.display = 'none';
+    elBtn.disabled = false;
+    atualizarSituacao();
+}
+</script>
+{% endif %}{# mediuns vinculados #}
+{% endblock %}

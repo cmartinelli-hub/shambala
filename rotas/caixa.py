@@ -19,10 +19,8 @@ router = APIRouter(prefix="/caixa")
 
 
 def _guard(request: Request):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
-    return atendente, None
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "caixa")
 
 
 # ── WebSocket: segundo monitor (QR Code PIX) ──────────────────────────────────

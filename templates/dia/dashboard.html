@@ -53,6 +53,12 @@
 .col-cabecalho.reiki       { background: #6b3fa0; }
 .col-cabecalho a { color: #fff; text-decoration: none; }
 .col-cabecalho a:hover { text-decoration: underline; }
+.col-entidade {
+    font-size: .7rem;
+    font-weight: normal;
+    opacity: .9;
+    margin-top: 1px;
+}
 
 .col-vazia {
     padding: 1rem .6rem;
@@ -356,6 +362,9 @@
         <div class="col-cabecalho" title="{{ col.nome }}">
             <a href="/dia/mediuns/{{ col.medium_id }}" title="Abrir fila de {{ col.nome }}">
                 {{ col.nome.split(' ')[0] }}&nbsp;({{ col.fila|length }})
+                {% if col.entidade %}
+                <div class="col-entidade">{{ col.entidade }}</div>
+                {% endif %}
                 {% if col.vagas_restantes is not none %}
                 <div style="font-size:.65rem;font-weight:normal;opacity:.85;margin-top:1px">
                     {{ col.vagas_restantes }}/{{ col.vagas_restantes + col.fila|length }} vagas

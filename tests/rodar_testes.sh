@@ -110,16 +110,21 @@ fi
 echo "  app no ar e ambiente confirmado pelo próprio app"
 grep "Ambiente descartável confirmado" "$LOG" | sed 's/^/  /'
 
-# ── 4. Rodar a suíte (que valida o ambiente novamente antes de destruir) ────
-echo "== Executando a suíte =="
+# ── 4. Rodar as suítes (cada uma valida o ambiente antes de destruir) ────────
+echo "== Executando as suítes =="
 set +e
-SHAMBALA_ENV_FILE="$ARQ_ENV" \
-SHAMBALA_MODO_TESTE=1 \
-SHAMBALA_TEST_BASE="http://127.0.0.1:$PORTA" \
-SHAMBALA_TEST_DB="$BANCO_TESTE" \
-PYTHONPATH="$PWD" \
-.venv/bin/python3 tests/test_tres_passes.py
-RC=$?
+RC=0
+for SUITE in test_tres_passes.py test_plano_unico.py test_permissoes.py test_agenda_medium.py; do
+  echo "-- $SUITE"
+  SHAMBALA_ENV_FILE="$ARQ_ENV" \
+  SHAMBALA_MODO_TESTE=1 \
+  SHAMBALA_TEST_BASE="http://127.0.0.1:$PORTA" \
+  SHAMBALA_TEST_DB="$BANCO_TESTE" \
+  PYTHONPATH="$PWD" \
+  .venv/bin/python3 "tests/$SUITE"
+  RC_SUITE=$?
+  if [ "$RC_SUITE" -ne 0 ]; then RC=$RC_SUITE; fi
+done
 set -e
 
 # ── 5. Encerrar o app e conferir que o DEV não mudou ───────────────────────

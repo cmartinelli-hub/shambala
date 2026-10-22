@@ -37,15 +37,10 @@ _MODULO_DIA = [
 
 
 def _guard(request: Request):
-    from rotas.permissoes import usuario_pode
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
+    from rotas.permissoes import guarda_modulo
     path = request.url.path
     modulo = next((m for p, m in _MODULO_DIA if path.startswith(p)), "dia.painel")
-    if not usuario_pode(atendente["id"], modulo):
-        return None, HTMLResponse(status_code=403, content="Acesso negado.")
-    return atendente, None
+    return guarda_modulo(request, modulo)
 
 
 def _hoje():
@@ -284,6 +279,7 @@ async def encerrar_dia(request: Request):
     if redir:
         return redir
     hoje = _hoje()
+    import banco
     with conectar() as conn:
         conn.execute("UPDATE dias_trabalho SET aberto = 0 WHERE data = %s", (hoje,))
 
@@ -300,23 +296,9 @@ async def encerrar_dia(request: Request):
             )
             planos_afetados.add(ag["plano_id"])
 
-        # Verificar 3 faltas consecutivas por plano
+        # 2 faltas consecutivas encerram o plano automaticamente
         for plano_id in planos_afetados:
-            ultimos = conn.execute(
-                """SELECT status FROM agendamentos
-                   WHERE plano_id = %s AND data <= %s
-                   ORDER BY data DESC LIMIT 3""",
-                (plano_id, hoje)
-            ).fetchall()
-            if len(ultimos) >= 3 and all(r["status"] == "faltou" for r in ultimos[:3]):
-                conn.execute(
-                    "UPDATE planos_tratamento SET status='cancelado' WHERE id=%s",
-                    (plano_id,)
-                )
-                conn.execute(
-                    "UPDATE agendamentos SET status='cancelado' WHERE plano_id=%s AND status='agendado'",
-                    (plano_id,)
-                )
+            banco.faltas_consecutivas_encerram(conn, plano_id, hoje)
 
     # Ao fechar o dia, limpar a tela de chamada (monitores do auditório)
     await gerenciador.limpar()
@@ -1066,6 +1048,9 @@ async def dashboard(request: Request):
             colunas_mediuns.append({
                 "medium_id": m["id"],
                 "nome": m["nome_completo"],
+                # formato legado: "Eglaudio / Pai José" — entidade após a barra
+                "entidade": m["nome_completo"].partition("/")[2].strip()
+                            if "/" in m["nome_completo"] else None,
                 "fila": [dict(r) for r in fila],
                 "vagas_restantes": vagas_restantes,
             })
@@ -1438,7 +1423,7 @@ async def salvar_fraterno(
     request: Request,
     checkin_id: int,
     medium_id: int = Form(None),
-    sessoes_total: int = Form(1),
+    sessoes_total: int = Form(10),
     frequencia: str = Form("semanal"),
     sessoes_com_passe: int = Form(1),
     data_inicio: str = Form(""),
@@ -1498,6 +1483,12 @@ async def salvar_fraterno(
                 conn.execute(
                     "INSERT INTO plano_chave_idempotencia (chave, plano_id) VALUES (%s, %s)",
                     (chave, plano_id)
+                )
+                # Regra do plano único: um novo acolhimento significa que o
+                # tratamento anterior não vale mais (faltas, desistência ou
+                # retomada). Planos ainda ativos da pessoa são invalidados.
+                banco.encerrar_planos_ativos(
+                    conn, checkin["pessoa_id"], exceto_plano_id=plano_id
                 )
 
         # Marcar acolhimento como realizado e salvar observações

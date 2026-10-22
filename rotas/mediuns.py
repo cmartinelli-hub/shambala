@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 import os
 import uuid
+import urllib.parse
 from banco import conectar, gerar_agendamentos_plano
 from rotas.auth import obter_atendente_logado
 
@@ -60,10 +61,8 @@ async def foto_placeholder_medium(inicial: str):
 
 
 def _guard(request: Request):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
-    return atendente, None
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "cadastros.mediuns")
 
 
 # ── Regra do passe nas sessões do plano ───────────────────────────────────────
@@ -270,7 +269,7 @@ async def salvar_editar(
 # ── Planos de tratamento ──────────────────────────────────────────────────────
 
 @router.get("/{id}/planos", response_class=HTMLResponse)
-async def listar_planos(request: Request, id: int):
+async def listar_planos(request: Request, id: int, erro: str = Query("")):
     atendente, redir = _guard(request)
     if redir:
         return redir
@@ -318,6 +317,7 @@ async def listar_planos(request: Request, id: int):
         "planos": planos_com_pessoas,
         "todas_pessoas": [dict(p) for p in todas_pessoas],
         "hoje": date.today().isoformat(),
+        "erro": urllib.parse.unquote(erro) if erro else None,
     })
 
 
@@ -336,8 +336,28 @@ async def novo_plano(
     if redir:
         return redir
     from datetime import date as _date
+    import banco
     inicio = _date.fromisoformat(data_inicio) if data_inicio else _date.today()
+    destino = next.strip() or f"/cadastros/mediuns/{id}/planos"
     with conectar() as conn:
+        # Regra do plano único: quem já tem plano ativo só pode receber
+        # sessões por aquele plano (editar/reagendar/encaixe) — um plano novo
+        # exige encerrar o anterior (alta/cancelar) ou novo acolhimento.
+        com_plano = []
+        for pid in pessoas_ids:
+            if banco.planos_ativos_da_pessoa(conn, pid):
+                p = conn.execute(
+                    "SELECT nome_completo FROM pessoas WHERE id = %s", (pid,)
+                ).fetchone()
+                com_plano.append(p["nome_completo"] if p else str(pid))
+        if com_plano:
+            return RedirectResponse(
+                url=destino + "?erro=" + urllib.parse.quote(
+                    "Já tem plano ativo: " + ", ".join(com_plano)
+                    + ". Encerre o plano atual (alta/cancelar) ou faça novo acolhimento fraterno."
+                ),
+                status_code=303,
+            )
         cur = conn.execute(
             """INSERT INTO planos_tratamento
                (medium_id, sessoes_total, data_inicio, frequencia, sessoes_com_passe, status)
@@ -353,7 +373,6 @@ async def novo_plano(
                 (plano_id, pessoa_id)
             )
         gerar_agendamentos_plano(conn, plano_id, inicio, frequencia, sessoes_total, sessoes_com_passe)
-    destino = next.strip() or f"/cadastros/mediuns/{id}/planos"
     return RedirectResponse(url=destino, status_code=303)
 
 
@@ -534,27 +553,15 @@ async def registrar_falta(request: Request, id: int, plano_id: int, ag_id: int):
     if redir:
         return redir
     from datetime import date as _date
+    import banco
     hoje = _date.today().isoformat()
     with conectar() as conn:
         conn.execute(
             "UPDATE agendamentos SET status='faltou' WHERE id=%s AND plano_id=%s",
             (ag_id, plano_id)
         )
-        # Verificar 3 faltas consecutivas
-        ultimos = conn.execute(
-            """SELECT status FROM agendamentos
-               WHERE plano_id = %s AND data <= %s
-               ORDER BY data DESC LIMIT 3""",
-            (plano_id, hoje)
-        ).fetchall()
-        if len(ultimos) >= 3 and all(r["status"] == "faltou" for r in ultimos[:3]):
-            conn.execute(
-                "UPDATE planos_tratamento SET status='cancelado' WHERE id=%s", (plano_id,)
-            )
-            conn.execute(
-                "UPDATE agendamentos SET status='cancelado' WHERE plano_id=%s AND status='agendado'",
-                (plano_id,)
-            )
+        # 2 faltas consecutivas encerram o plano automaticamente
+        banco.faltas_consecutivas_encerram(conn, plano_id, hoje)
     return RedirectResponse(url=f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda", status_code=303)
 
 

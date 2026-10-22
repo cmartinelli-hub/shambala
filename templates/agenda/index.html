@@ -233,16 +233,21 @@ async function buscar(q) {
     const res = await fetch(`/cadastros/pessoas/buscar?nome=${encodeURIComponent(q)}&excluir=0`);
     const lista = await res.json();
     if (!lista.length) { divSugestoes.style.display = 'none'; return; }
-    divSugestoes.innerHTML = lista.map(p =>
-        `<div data-id="${p.id}" data-nome="${p.nome}"
-              style="padding:.45rem .7rem;cursor:pointer;font-size:.88rem"
-              onmousedown="selecionar(${p.id}, '${p.nome.replace(/'/g, "\\'")}')">
-           ${p.nome}
-         </div>`
-    ).join('');
-    divSugestoes.querySelectorAll('div').forEach(el => {
+    divSugestoes.innerHTML = '';
+    lista.forEach(p => {
+        const el = document.createElement('div');
+        el.style.cssText = 'padding:.45rem .7rem;cursor:pointer;font-size:.88rem';
+        const nome = document.createElement('div');
+        nome.textContent = p.nome;
+        el.appendChild(nome);
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:.75rem;opacity:.7';
+        sub.textContent = p.medium ? `🩺 ${p.medium}` : 'sem plano ativo';
+        el.appendChild(sub);
         el.addEventListener('mouseenter', () => el.style.background = 'var(--cor-fundo)');
         el.addEventListener('mouseleave', () => el.style.background = '');
+        el.addEventListener('mousedown', () => selecionar(p.id, p.nome));
+        divSugestoes.appendChild(el);
     });
     divSugestoes.style.display = 'block';
 }

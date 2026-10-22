@@ -100,7 +100,8 @@ bcrypt>=4.0.0
 | Plano avulso | Criado automaticamente ao agendar avulso na Agenda; sem geração de sessões futuras |
 | Sessões com passe | Configurável por plano (primeiras N sessões exigem passe, 0=nunca, -1=sempre) |
 | Vagas por médium | Cada médium tem um limite de atendimentos por dia (`vagas_dia`, padrão 10) |
-| Falta | 3 faltas consecutivas → plano cancelado automaticamente |
+| Falta | 2 faltas consecutivas → plano cancelado automaticamente |
+| Plano por pessoa | Um plano de tratamento ativo por vez; novo plano exige novo acolhimento fraterno |
 | Prioridade na fila | Idosos 70+, deficientes, prioridade manual (flag na pessoa) |
 | Senha única no dia | Não se pode reutilizar uma senha já em uso por outra pessoa no mesmo dia |
 | Pessoa + passe no mesmo dia | Sim — recebe dois cartões |
@@ -216,13 +217,31 @@ grupos_permissoes:
   ler (BOOLEAN), escrever (BOOLEAN), apagar (BOOLEAN)
   UNIQUE(grupo_id, modulo)
 ```
-Modelo Unix de permissões (ler/escrever/apagar) por módulo.
+Modelo Unix de permissões (ler/escrever/apagar) por módulo. A cobrança é
+feita em todas as rotas por `guarda_modulo()` (`rotas/permissoes.py`):
+**GET exige `ler`, POST/PUT/DELETE exigem `escrever`** — **negação por
+padrão**: quem não tem a linha em `grupos_permissoes` não acessa nem vê o
+card no menu. Membros do grupo **Admin (id=1)** têm bypass total. Chaves de
+módulo: `ROTULOS_ROTA` em `rotas/permissoes.py` (fonte da tela de
+Permissões). Seed de migração dos grupos antigos: `semear_permissoes.py`.
 
 ### `usuarios_grupos`
 ```
 id, usuario_id (FK atendentes), grupo_id (FK grupos)
 UNIQUE(usuario_id, grupo_id)
 ```
+
+### `atendentes_mediuns`
+```
+id, atendente_id (FK atendentes, ON DELETE CASCADE),
+medium_id (FK mediuns, ON DELETE CASCADE)
+UNIQUE(atendente_id, medium_id)
+```
+Vínculo N:N entre o usuário e os médiuns cuja agenda ele gerencia, marcado em
+Cadastros → Usuários → "Agendas do Médium". **É o escopo da `/agenda/medium`**:
+o usuário só vê (e só lança) nas agendas marcadas; sem vínculo, a tela fica
+vazia e pede para falar com o administrador. Admin é exceção — vê todas, para
+conferir e corrigir.
 
 ### `configuracoes_smtp`
 ```
@@ -426,6 +445,52 @@ POST      /doacoes/{id}/apagar          ← remover registro
 
 ---
 
+## Agenda do Médium (`/agenda/medium`)
+
+Quem gerencia a agenda de um médium (o **cambona**, grupo Cambonas) mantém a
+agenda **em papel**; o trabalho no sistema é transcrever essa papelada, sem
+celular à mão. A tela é otimizada para esse lançamento rápido (tipografia
+maior, um botão só) e tem módulo de permissão **próprio**: `agenda.medium`
+("Agenda do Médium") — quem tem só essa permissão não entra na `/agenda` geral
+nem em `cadastros.mediuns`.
+
+**Escopo = vínculo** (`atendentes_mediuns`, marcado em Cadastros → Usuários):
+a tela mostra e aceita lançamento **apenas** nas agendas dos médiuns do usuário.
+Sem vínculo, a tela fica vazia com um aviso para falar com o administrador.
+Admin é exceção: vê todas as agendas, para conferir e corrigir.
+
+Blocos da tela:
+- **Chips de médium** — só os médiuns do usuário; "Todos os meus" reúne as
+  agendas dele (nunca as dos demais).
+- **Próximos atendimentos** — sessões `agendado` dos próximos 30 dias,
+  agrupadas por data, com a pessoa e o progresso `sessão n/total`.
+- **Atendidos no último dia** — quem o médium atendeu na última
+  `dias_trabalho ≤ hoje` (check-ins com `atendimento_realizado = 1` e
+  `codigo_atendimento`, um titular por código de atendimento).
+- **Lançar na agenda** — busca de pessoa, médium e data; quando a pessoa
+  **não** tem plano ativo, entram qtde de sessões (padrão 10) e frequência.
+
+`POST /agenda/medium/lancar` resolve o caso no servidor (a tela não precisa
+conhecer as regras):
+1. **plano ativo no médium escolhido** → acrescenta 1 sessão naquela data
+   (mesma validação da agenda do plano: `data_atendimento_valida`, recusa
+   data duplicada, `_reaplicar_piso_passe` depois);
+2. **plano ativo em OUTRO médium** → recusa orientando ("já tem plano ativo
+   com X — valide com a recepção"); nunca duplica plano (regra do plano único);
+3. **sem plano ativo** → cria o plano no médium (`datas_agendamento` +
+   `gerar_agendamentos_plano`, `sessoes_com_passe = 0` = piso do centro),
+   exatamente como `POST /agenda/novo`.
+
+A data precisa cair em dia de atendimento (`data_atendimento_valida`) — a tela
+recusa com aviso em vez de deslocar a data da papelada silenciosamente.
+
+A busca de pessoas devolve `{id, nome, medium}` — `medium` é o médium do plano
+ativo (NULL se não houver). Serve para desfazer **homônimos** ("maria cristina"
+há quatro), o erro mais comum da transcrição; o dropdown mostra o médium em
+segunda linha. Os demais chamadores ignoram o campo extra.
+
+---
+
 ## Rotas completas
 
 ```
@@ -491,6 +556,11 @@ GET/POST  /dia/fraterno/{checkin_id}    ← criar plano a partir do acolhimento
 
 GET       /agenda                       ← agenda geral por médium e período
 POST      /agenda/novo                  ← cria plano avulso + agendamento
+GET       /agenda/imprimir              ← agenda do médium em um dia (impressão)
+
+GET       /agenda/medium                ← Agenda do Médium (módulo agenda.medium)
+GET       /agenda/medium/situacao       ← JSON: plano ativo da pessoa p/ o formulário
+POST      /agenda/medium/lancar         ← lança na agenda de papel (3 casos)
 
 GET       /chamada                      ← tela fullscreen WebSocket
 GET       /chamada/ultimo               ← JSON {"codigo": "..."}

@@ -33,24 +33,22 @@ ROTULOS_ROTA = {
     "cadastros.trabalhadores": "Cadastros → Trabalhadores",
     "cadastros.permissoes": "Cadastros → Permissões",
     "agenda": "Agenda",
+    "agenda.medium": "Agenda do Médium",
     "chamada": "Tela de Chamada",
     "relatorios": "Relatórios",
     "configuracoes": "Configurações",
     "mala.direta": "Mala Direta",
     "financeiro": "Financeiro",
     "financeiro.compras": "Compras",
+    "caixa": "Caixa / PDV",
+    "checkin.trabalhadores": "Check-in Trabalhadores",
     "biblioteca": "Biblioteca",
     "doacoes": "Doações",
 }
 
 
 def _guard(request: Request):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
-    if not usuario_pode(atendente["id"], "cadastros.permissoes"):
-        return None, HTMLResponse(status_code=403, content="Acesso negado.")
-    return atendente, None
+    return guarda_modulo(request, "cadastros.permissoes")
 
 
 _ACOES_VALIDAS = {"ler", "escrever", "apagar"}
@@ -76,6 +74,23 @@ def usuario_pode(usuario_id: int, modulo: str, acao: str = "ler") -> bool:
         ).fetchone():
             return True
         return conn.execute(_SQL_USUARIO_PODE[acao], (usuario_id, modulo)).fetchone() is not None
+
+
+def guarda_modulo(request: Request, modulo: str):
+    """Guard padrão de módulo — negação por padrão.
+
+    GET/HEAD exige a permissão 'ler' do módulo; qualquer outro método exige
+    'escrever'. Admin (grupo 1) tem bypass via usuario_pode.
+    Retorna (atendente, None) se autorizado, ou (None, resposta) para
+    redirecionar ao login / negar acesso.
+    """
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return None, RedirectResponse(url="/login", status_code=303)
+    acao = "ler" if request.method in ("GET", "HEAD") else "escrever"
+    if not usuario_pode(atendente["id"], modulo, acao):
+        return None, HTMLResponse(status_code=403, content="Acesso negado.")
+    return atendente, None
 
 
 def pode_acessar(grupo_id: int, modulo: str, acao: str = "ler") -> bool:

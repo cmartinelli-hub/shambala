@@ -7,6 +7,13 @@
     <a href="/cadastros/mediuns" class="btn btn-secundario">← Voltar</a>
 </div>
 
+{% if erro %}
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
+{% endif %}
+
 {% set ativos     = planos | selectattr("status", "equalto", "ativo")    | list %}
 {% set encerrados = planos | rejectattr("status", "equalto", "ativo")    | list %}
 

@@ -61,13 +61,8 @@ async def foto_placeholder_trab(inicial: str):
 
 
 def _guard(request: Request):
-    from rotas.permissoes import usuario_pode
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
-    if not usuario_pode(atendente["id"], "cadastros.trabalhadores"):
-        return None, HTMLResponse(status_code=403, content="Acesso negado.")
-    return atendente, None
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "cadastros.trabalhadores")
 
 
 _NOMES_DIA = {
@@ -537,16 +532,22 @@ async def marcar_ausente(request: Request, id: int):
         )
     return RedirectResponse(url="/cadastros/trabalhadores/dia/trabalhador-checkin", status_code=303)
 
-# ── Check-in de Trabalhadores (Menu Principal - acesso geral) ────────────────
+# ── Check-in de Trabalhadores (Menu Principal) ───────────────────────────────
 router_checkin_trab = APIRouter(prefix="/checkin-trabalhador")
+
+
+def _guard_checkin(request: Request):
+    """Check-in de trabalhadores exige a permissão 'checkin.trabalhadores'."""
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "checkin.trabalhadores")
 
 
 @router_checkin_trab.get("", response_class=HTMLResponse)
 async def checkin_trabalhador_page(request: Request):
-    """Página de check-in de trabalhadores (acessível a todos os logados)."""
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return RedirectResponse(url="/login", status_code=303)
+    """Página de check-in de trabalhadores."""
+    atendente, redir = _guard_checkin(request)
+    if redir:
+        return redir
 
     from datetime import date as _date
     hoje = _date.today().isoformat()
@@ -593,9 +594,9 @@ async def checkin_trabalhador_page(request: Request):
 
 @router_checkin_trab.post("/{id}/presente", response_class=HTMLResponse)
 async def marcar_presente(request: Request, id: int):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return RedirectResponse(url="/login", status_code=303)
+    atendente, redir = _guard_checkin(request)
+    if redir:
+        return redir
 
     from datetime import datetime as _dt
     hoje = _dt.now().strftime("%Y-%m-%d")
@@ -621,9 +622,9 @@ async def marcar_presente(request: Request, id: int):
 
 @router_checkin_trab.post("/{id}/ausente", response_class=HTMLResponse)
 async def marcar_ausente(request: Request, id: int):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return RedirectResponse(url="/login", status_code=303)
+    atendente, redir = _guard_checkin(request)
+    if redir:
+        return redir
 
     from datetime import date as _date
     hoje = _date.today().isoformat()

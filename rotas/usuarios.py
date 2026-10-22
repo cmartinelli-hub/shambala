@@ -24,6 +24,45 @@ def _guard(request: Request):
     return atendente, None
 
 
+def _mediuns_ativos():
+    with conectar() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT id, nome_completo FROM mediuns WHERE ativo = 1 ORDER BY nome_completo"
+        ).fetchall()]
+
+
+def _mediuns_do_usuario(usuario_id: int) -> List[int]:
+    with conectar() as conn:
+        return [r["medium_id"] for r in conn.execute(
+            "SELECT medium_id FROM atendentes_mediuns WHERE atendente_id = %s", (usuario_id,)
+        ).fetchall()]
+
+
+def salvar_mediuns_usuario(usuario_id: int, medium_ids: List[int]):
+    """Agendas do médium que o usuário gerencia (N:N) — é o escopo da tela."""
+    with conectar() as conn:
+        conn.execute("DELETE FROM atendentes_mediuns WHERE atendente_id = %s", (usuario_id,))
+        for mid in medium_ids:
+            conn.execute(
+                "INSERT INTO atendentes_mediuns (atendente_id, medium_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                (usuario_id, mid)
+            )
+
+
+def _form_ctx(request, atendente, registro, grupos, grupos_sel, mediuns_sel, erro=None):
+    return templates.TemplateResponse("usuarios/form.html", {
+        "request": request,
+        "atendente": atendente,
+        "registro": registro,
+        "grupos": grupos,
+        "grupos_selecionados": grupos_sel,
+        "mediuns": _mediuns_ativos(),
+        "mediuns_selecionados": mediuns_sel,
+        "erro": erro,
+    })
+
+
 # ── Lista ────────────────────────────────────────────────────────────────────
 
 @router.get("", response_class=HTMLResponse)
@@ -57,14 +96,7 @@ async def form_novo_usuario(request: Request):
         return redir
     with conectar() as conn:
         grupos = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
-    return templates.TemplateResponse("usuarios/form.html", {
-        "request": request,
-        "atendente": usuario,
-        "registro": None,
-        "grupos": [dict(g) for g in grupos],
-        "grupos_selecionados": [],
-        "erro": None,
-    })
+    return _form_ctx(request, usuario, None, [dict(g) for g in grupos], [], [])
 
 
 @router.post("/novo", response_class=HTMLResponse)
@@ -76,22 +108,19 @@ async def salvar_novo_usuario(
     telefone: str = Form(""),
     email: str = Form(""),
     grupos: List[int] = Form(default=[]),
+    mediuns: List[int] = Form(default=[]),
 ):
     usuario, redir = _guard(request)
     if redir:
         return redir
 
+    with conectar() as conn:
+        grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
+    grupos_lista = [dict(g) for g in grupos_lista]
+
     if not senha.strip():
-        with conectar() as conn:
-            grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
-        return templates.TemplateResponse("usuarios/form.html", {
-            "request": request,
-            "atendente": usuario,
-            "registro": None,
-            "grupos": [dict(g) for g in grupos_lista],
-            "grupos_selecionados": grupos,
-            "erro": "A senha é obrigatória.",
-        })
+        return _form_ctx(request, usuario, None, grupos_lista, grupos, mediuns,
+                         "A senha é obrigatória.")
 
     try:
         with conectar() as conn:
@@ -103,33 +132,18 @@ async def salvar_novo_usuario(
             ).fetchone()
             novo_id = row["id"]
 
-        # Salva grupos
+        # Salva grupos e médiuns vinculados
         salvar_grupos_usuario(novo_id, grupos)
+        salvar_mediuns_usuario(novo_id, mediuns)
 
         return RedirectResponse(url="/cadastros/atendentes", status_code=303)
     except psycopg2.errors.UniqueViolation:
-        with conectar() as conn:
-            grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
-        return templates.TemplateResponse("usuarios/form.html", {
-            "request": request,
-            "atendente": usuario,
-            "registro": None,
-            "grupos": [dict(g) for g in grupos_lista],
-            "grupos_selecionados": grupos,
-            "erro": "Nome de usuário já existe.",
-        })
+        return _form_ctx(request, usuario, None, grupos_lista, grupos, mediuns,
+                         "Nome de usuário já existe.")
     except Exception:
         logger.exception("Erro ao criar usuário")
-        with conectar() as conn:
-            grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
-        return templates.TemplateResponse("usuarios/form.html", {
-            "request": request,
-            "atendente": usuario,
-            "registro": None,
-            "grupos": [dict(g) for g in grupos_lista],
-            "grupos_selecionados": grupos,
-            "erro": "Erro interno ao salvar. Contate o administrador.",
-        })
+        return _form_ctx(request, usuario, None, grupos_lista, grupos, mediuns,
+                         "Erro interno ao salvar. Contate o administrador.")
 
 
 # ── Editar ───────────────────────────────────────────────────────────────────
@@ -144,15 +158,8 @@ async def form_editar_usuario(request: Request, id: int):
         if not registro:
             return RedirectResponse(url="/cadastros/atendentes", status_code=303)
         grupos = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
-        grupos_do_usuario = obter_grupos_usuario(id)
-    return templates.TemplateResponse("usuarios/form.html", {
-        "request": request,
-        "atendente": usuario,
-        "registro": dict(registro),
-        "grupos": [dict(g) for g in grupos],
-        "grupos_selecionados": [g["id"] for g in grupos_do_usuario],
-        "erro": None,
-    })
+    return _form_ctx(request, usuario, dict(registro), [dict(g) for g in grupos],
+                     [g["id"] for g in obter_grupos_usuario(id)], _mediuns_do_usuario(id))
 
 
 @router.post("/{id}/editar", response_class=HTMLResponse)
@@ -165,6 +172,7 @@ async def salvar_edicao_usuario(
     telefone: str = Form(""),
     email: str = Form(""),
     grupos: List[int] = Form(default=[]),
+    mediuns: List[int] = Form(default=[]),
 ):
     usuario, redir = _guard(request)
     if redir:
@@ -185,35 +193,26 @@ async def salvar_edicao_usuario(
                      telefone.strip() or None, email.strip() or None, id)
                 )
 
-        # Salva grupos
+        # Salva grupos e médiuns vinculados
         salvar_grupos_usuario(id, grupos)
+        salvar_mediuns_usuario(id, mediuns)
 
         return RedirectResponse(url="/cadastros/atendentes", status_code=303)
     except psycopg2.errors.UniqueViolation:
         with conectar() as conn:
-            registro = conn.execute("SELECT * FROM atendentes WHERE id=%s", (id,)).fetchone()
+            registro = conn.execute("SELECT id, nome_usuario, nome_completo, telefone, email, ativo FROM atendentes WHERE id=%s", (id,)).fetchone()
             grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
-        return templates.TemplateResponse("usuarios/form.html", {
-            "request": request,
-            "atendente": usuario,
-            "registro": dict(registro) if registro else None,
-            "grupos": [dict(g) for g in grupos_lista],
-            "grupos_selecionados": grupos,
-            "erro": "Nome de usuário já existe.",
-        })
+        return _form_ctx(request, usuario, dict(registro) if registro else None,
+                         [dict(g) for g in grupos_lista], grupos, mediuns,
+                         "Nome de usuário já existe.")
     except Exception:
         logger.exception("Erro ao editar usuário id=%s", id)
         with conectar() as conn:
-            registro = conn.execute("SELECT * FROM atendentes WHERE id=%s", (id,)).fetchone()
+            registro = conn.execute("SELECT id, nome_usuario, nome_completo, telefone, email, ativo FROM atendentes WHERE id=%s", (id,)).fetchone()
             grupos_lista = conn.execute("SELECT id, nome, descricao FROM grupos ORDER BY nome").fetchall()
-        return templates.TemplateResponse("usuarios/form.html", {
-            "request": request,
-            "atendente": usuario,
-            "registro": dict(registro) if registro else None,
-            "grupos": [dict(g) for g in grupos_lista],
-            "grupos_selecionados": grupos,
-            "erro": "Erro interno ao salvar. Contate o administrador.",
-        })
+        return _form_ctx(request, usuario, dict(registro) if registro else None,
+                         [dict(g) for g in grupos_lista], grupos, mediuns,
+                         "Erro interno ao salvar. Contate o administrador.")
 
 
 # ── Ativar/Desativar ─────────────────────────────────────────────────────────

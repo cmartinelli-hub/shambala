@@ -215,6 +215,68 @@ def gerar_agendamentos_plano(conn, plano_id: int, inicio: date,
         )
 
 
+def planos_ativos_da_pessoa(conn, pessoa_id: int) -> list:
+    """Planos de tratamento com status='ativo' nos quais a pessoa está vinculada."""
+    return conn.execute(
+        """SELECT pt.id, pt.medium_id, pt.data_inicio, pt.sessoes_total,
+                  pt.sessoes_realizadas, pt.status
+           FROM planos_tratamento pt
+           JOIN plano_pessoas pp ON pp.plano_id = pt.id
+           WHERE pp.pessoa_id = %s AND pt.status = 'ativo'
+           ORDER BY pt.data_inicio DESC, pt.id DESC""",
+        (pessoa_id,),
+    ).fetchall()
+
+
+def encerrar_planos_ativos(conn, pessoa_id: int, exceto_plano_id: int = None) -> list:
+    """Invalida os planos ativos da pessoa (regra: um plano por pessoa por vez).
+
+    Chamada quando um NOVO plano é criado pelo Acolhimento Fraterno: os planos
+    antigos ainda marcados como ativos deixam de valer — status 'cancelado' e
+    agendamentos pendentes cancelados. O histórico (realizado/faltou) é
+    preservado. Retorna os ids encerrados.
+    """
+    rows = planos_ativos_da_pessoa(conn, pessoa_id)
+    encerrados = [r["id"] for r in rows if r["id"] != exceto_plano_id]
+    for plano_id in encerrados:
+        conn.execute(
+            "UPDATE planos_tratamento SET status='cancelado' WHERE id = %s",
+            (plano_id,),
+        )
+        conn.execute(
+            "UPDATE agendamentos SET status='cancelado' WHERE plano_id = %s AND status='agendado'",
+            (plano_id,),
+        )
+    return encerrados
+
+
+def faltas_consecutivas_encerram(conn, plano_id: int, hoje: str, limite: int = 2) -> bool:
+    """Verifica a regra de encerramento automático do plano.
+
+    `limite` faltas consecutivas NAS ÚLTIMAS sessões vencidas (só datas <=
+    hoje; agendamentos futuros não contam) encerram o plano e cancelam os
+    agendamentos pendentes. Fonte única — usada pelo encerramento do dia e
+    pelo registro manual de falta na agenda do médium.
+    """
+    ultimos = conn.execute(
+        """SELECT status FROM agendamentos
+           WHERE plano_id = %s AND data <= %s
+           ORDER BY data DESC, id DESC LIMIT %s""",
+        (plano_id, hoje, limite),
+    ).fetchall()
+    if len(ultimos) >= limite and all(r["status"] == "faltou" for r in ultimos[:limite]):
+        conn.execute(
+            "UPDATE planos_tratamento SET status='cancelado' WHERE id = %s AND status='ativo'",
+            (plano_id,),
+        )
+        conn.execute(
+            "UPDATE agendamentos SET status='cancelado' WHERE plano_id = %s AND status='agendado'",
+            (plano_id,),
+        )
+        return True
+    return False
+
+
 
 # ── Migrações incrementais ───────────────────────────────────────────────────
 
@@ -335,6 +397,19 @@ def _migrar(conn):
             cidade      TEXT,
             ativa       BOOLEAN NOT NULL DEFAULT TRUE,
             criado_em   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Usuário↔Médium: quais agendas do médium a pessoa gerencia (flexível N:N —
+    # um cambona pode cuidar de vários médiuns e um médium pode ter vários).
+    # É também o ESCOPO da tela "Agenda do Médium": quem não tem vínculo não vê
+    # nenhuma agenda.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS atendentes_mediuns (
+            id            SERIAL PRIMARY KEY,
+            atendente_id  INTEGER NOT NULL REFERENCES atendentes(id) ON DELETE CASCADE,
+            medium_id     INTEGER NOT NULL REFERENCES mediuns(id) ON DELETE CASCADE,
+            UNIQUE(atendente_id, medium_id)
         )
     """)
 

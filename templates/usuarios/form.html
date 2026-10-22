@@ -96,6 +96,28 @@
         {% endif %}
     </div>
 
+    <!-- Agendas do médium que este usuário gerencia -->
+    <div class="form-secao">
+        <h2 class="form-secao-titulo">📅 Agendas do Médium</h2>
+        <p class="form-grupo-desc" style="margin-bottom:.5rem;">Agendas que este usuário gerencia. Marca o que ele vê e lança em <strong>Agenda do Médium</strong> — sem nenhum marcado, a tela fica vazia.</p>
+        {% if mediuns %}
+        <div class="form-grupos-grid">
+            {% for m in mediuns %}
+            <label class="form-grupo-card {% if m.id in mediuns_selecionados %}grupo-selecionado{% endif %}">
+                <input type="checkbox" name="mediuns" value="{{ m.id }}"
+                       {% if m.id in mediuns_selecionados %}checked{% endif %}
+                       class="form-grupo-input">
+                <div class="form-grupo-info">
+                    <span class="form-grupo-nome">{{ m.nome_completo }}</span>
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="form-vazio-grupos">Nenhum médium ativo cadastrado.</p>
+        {% endif %}
+    </div>
+
     <!-- Botões de ação -->
     <div class="form-acoes">
         <button type="submit" class="btn btn-primario btn-grande">💾 Salvar</button>

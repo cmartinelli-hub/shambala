@@ -100,10 +100,8 @@ def _validar_nome(nome_completo: str) -> tuple:
 
 
 def _guard(request: Request):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return None, RedirectResponse(url="/login", status_code=303)
-    return atendente, None
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "cadastros.pessoas")
 
 
 def _parse_data(texto: str):
@@ -136,18 +134,34 @@ async def buscar_json(request: Request, nome: str = Query(""), excluir: int = Qu
     with conectar() as conn:
         termo = f"%{_normalizar(nome.strip())}%"
         rows = conn.execute(
-            """SELECT id, nome_completo FROM pessoas
-               WHERE norm(nome_completo) LIKE %s AND id != %s
-               ORDER BY nome_completo LIMIT 10""",
+            """SELECT p.id, p.nome_completo, mp.nome_completo AS medium
+               FROM pessoas p
+               LEFT JOIN LATERAL (
+                   SELECT m.nome_completo
+                   FROM planos_tratamento pt
+                   JOIN plano_pessoas pp ON pp.plano_id = pt.id
+                   JOIN mediuns m ON m.id = pt.medium_id
+                   WHERE pp.pessoa_id = p.id AND pt.status = 'ativo'
+                   ORDER BY pt.data_inicio DESC, pt.id DESC
+                   LIMIT 1
+               ) mp ON TRUE
+               WHERE norm(p.nome_completo) LIKE %s AND p.id != %s
+               ORDER BY p.nome_completo LIMIT 10""",
             (termo, excluir)
         ).fetchall()
-    return JSONResponse([{"id": r["id"], "nome": r["nome_completo"]} for r in rows])
+    return JSONResponse([
+        {"id": r["id"], "nome": r["nome_completo"], "medium": r["medium"]}
+        for r in rows
+    ])
 
 
 # ── Autocomplete ──────────────────────────────────────────────────────────────
 
 @router.get("/api/similares", response_class=JSONResponse)
-async def api_similares(q: str = Query("")):
+async def api_similares(request: Request, q: str = Query("")):
+    _atendente, redir = _guard(request)
+    if redir:
+        return redir
     if len(q.strip()) < 2:
         return JSONResponse([])
     with conectar() as conn:
@@ -462,6 +476,7 @@ async def ficha_pessoa(request: Request, id: int):
                       c.codigo_passe, c.passe_realizado,
                       c.codigo_reiki, c.reiki_realizado,
                       c.codigo_acolhimento, c.acolhimento_realizado,
+                      c.observacao_acolhimento,
                       c.codigo_atendimento, c.atendimento_realizado,
                       m.nome_completo as medium_nome
                FROM checkins c
@@ -471,13 +486,51 @@ async def ficha_pessoa(request: Request, id: int):
                ORDER BY dt.data DESC, c.hora_checkin DESC""",
             (id,)
         ).fetchall()
+        faltas = conn.execute(
+            """SELECT a.data, m.nome_completo as medium_nome
+               FROM agendamentos a
+               JOIN plano_pessoas pp ON pp.plano_id = a.plano_id
+               JOIN planos_tratamento pt ON pt.id = a.plano_id
+               LEFT JOIN mediuns m ON m.id = pt.medium_id
+               WHERE pp.pessoa_id = %s AND a.status = 'faltou'
+               ORDER BY a.data DESC""",
+            (id,)
+        ).fetchall()
+        cancelamentos = conn.execute(
+            """SELECT COALESCE(
+                       (SELECT max(a.data) FROM agendamentos a
+                        WHERE a.plano_id = pt.id AND a.status IN ('faltou','realizado')),
+                       pt.data_inicio) as data,
+                   pt.data_inicio, pt.sessoes_total, pt.sessoes_realizadas,
+                   m.nome_completo as medium_nome
+               FROM planos_tratamento pt
+               JOIN plano_pessoas pp ON pp.plano_id = pt.id
+               LEFT JOIN mediuns m ON m.id = pt.medium_id
+               WHERE pp.pessoa_id = %s AND pt.status = 'cancelado'
+               ORDER BY data DESC""",
+            (id,)
+        ).fetchall()
+    eventos = []
+    for h in historico:
+        e = dict(h)
+        e["tipo"] = "atendimento"
+        eventos.append(e)
+    for f in faltas:
+        e = dict(f)
+        e["tipo"] = "falta"
+        eventos.append(e)
+    for c in cancelamentos:
+        e = dict(c)
+        e["tipo"] = "cancelamento"
+        eventos.append(e)
+    eventos.sort(key=lambda e: (e["data"] or "", e.get("hora_checkin") or ""), reverse=True)
     return templates.TemplateResponse("pessoas/ficha.html", {
         "request": request,
         "atendente": atendente,
         "pessoa": dict(pessoa),
         "lacos": [dict(l) for l in lacos],
         "planos": [dict(p) for p in planos],
-        "historico": [dict(h) for h in historico],
+        "historico": eventos,
         "e_admin": obter_atendente_logado(request) and _e_admin(request),
     })
 
@@ -538,6 +591,32 @@ async def alta_plano(request: Request, pessoa_id: int, plano_id: int):
         if row:
             conn.execute(
                 "UPDATE planos_tratamento SET status='alta', concluido=1 WHERE id=%s",
+                (plano_id,)
+            )
+            conn.execute(
+                "UPDATE agendamentos SET status='cancelado' WHERE plano_id=%s AND status='agendado'",
+                (plano_id,)
+            )
+    return RedirectResponse(url=f"/cadastros/pessoas/{pessoa_id}", status_code=303)
+
+
+@router.post("/{pessoa_id}/planos/{plano_id}/cancelar")
+async def cancelar_plano(request: Request, pessoa_id: int, plano_id: int):
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _e_admin(request):
+        return HTMLResponse(status_code=403, content="Acesso negado.")
+    with conectar() as conn:
+        row = conn.execute(
+            """SELECT 1 FROM planos_tratamento pt
+               JOIN plano_pessoas pp ON pp.plano_id = pt.id
+               WHERE pt.id = %s AND pp.pessoa_id = %s AND pt.status = 'ativo'""",
+            (plano_id, pessoa_id)
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE planos_tratamento SET status='cancelado' WHERE id=%s",
                 (plano_id,)
             )
             conn.execute(
