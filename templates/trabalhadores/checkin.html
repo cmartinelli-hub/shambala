@@ -6,11 +6,15 @@
 <div class="cabecalho-secao">
     <div>
         <h1>Check-in de Trabalhadores</h1>
-        {% if dia %}
-        <p class="subtitulo">📅 {{ dia.data | data_br }}</p>
-        {% endif %}
+        <p class="subtitulo">📅 {{ dia.data | data_br }} — registre a chegada; não é preciso abrir o dia de atendimento</p>
     </div>
 </div>
+
+{% if aviso %}
+<div class="form-aviso" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
+    <span>{{ aviso }}</span>
+</div>
+{% endif %}
 
 {% if erro %}
 <div class="form-erro">
@@ -19,23 +23,17 @@
 </div>
 {% endif %}
 
-{% if not dia %}
-<div class="vazio">
-    <div class="vazio-icone">📅</div>
-    <h3>Nenhum dia de trabalho aberto hoje</h3>
-    <p>Abra o dia primeiro em <a href="/dia" class="btn btn-primario">Dia de Trabalho</a></p>
-</div>
-{% elif not trabalhadores_agenda %}
+{% if not trabalhadores_agenda %}
 <div class="vazio">
     <div class="vazio-icone">🤝</div>
-    <h3>Nenhum trabalhador com agenda para hoje</h3>
-    <p>Configure os dias de funcionamento na agenda de cada trabalhador.</p>
+    <h3>Nenhum trabalhador ativo cadastrado</h3>
+    <p>Cadastre os trabalhadores em Cadastros → Trabalhadores.</p>
 </div>
 {% else %}
 
 {% set presenca_map = {} %}
 {% for p in presencas %}
-{{ presenca_map.__setitem__(p.trabalhador_id, p.presente) }}
+{% set _ = presenca_map.__setitem__(p.trabalhador_id, p) %}
 {% endfor %}
 
 <!-- Barra de busca -->
@@ -61,14 +59,17 @@
             </div>
             <div class="trab-checkin-info">
                 <h3 class="trab-checkin-nome">{{ t.nome_completo }}</h3>
+                {% if t.na_agenda %}
+                <span class="trab-checkin-status status-aguardando">📌 agenda de hoje</span>
+                {% endif %}
                 {% if t.id in presenca_map %}
-                    {% if presenca_map[t.id] %}
-                    <span class="trab-checkin-status status-presente">✔ Presente</span>
+                    {% if presenca_map[t.id].presente %}
+                    <span class="trab-checkin-status status-presente">✔ Presente{% if presenca_map[t.id].hora_chegada %} — {{ presenca_map[t.id].hora_chegada }}{% endif %}</span>
                     {% else %}
                     <span class="trab-checkin-status status-ausente">✕ Ausente</span>
                     {% endif %}
                 {% else %}
-                <span class="trab-checkin-status status-aguardando">⏳ Aguardando</span>
+                <span class="trab-checkin-status status-aguardando">⏳ Sem registro</span>
                 {% endif %}
             </div>
         </div>

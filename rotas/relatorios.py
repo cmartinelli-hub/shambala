@@ -270,8 +270,10 @@ async def presenca_geral_trabalhadores(
         filtro_dia = ""
         params: list = [data_ini, data_fim]
         if dia_semana != "":
-            filtro_dia = " AND EXTRACT(ISODOW FROM dt.data::date) = %s"
-            params.append(int(dia_semana))
+            # dias_atendimento usa 0=Segunda..6=Domingo (weekday Python);
+            # o filtro SQL é ISODOW (1=Segunda..7=Domingo)
+            filtro_dia = " AND EXTRACT(ISODOW FROM tp.data) = %s"
+            params.append(int(dia_semana) + 1)
 
         rows = conn.execute(
             f"""
@@ -282,9 +284,9 @@ async def presenca_geral_trabalhadores(
                 SUM(CASE WHEN tp.presente = 1 THEN 1 ELSE 0 END)            AS presencas,
                 SUM(CASE WHEN tp.presente = 0 THEN 1 ELSE 0 END)            AS faltas
             FROM trabalhadores t
-            LEFT JOIN trabalhador_presenca tp ON tp.trabalhador_id = t.id
-            LEFT JOIN dias_trabalho dt ON dt.id = tp.dia_trabalho_id
-                AND dt.data BETWEEN %s AND %s {filtro_dia}
+            LEFT JOIN trabalhador_presenca tp
+                ON tp.trabalhador_id = t.id
+                AND tp.data BETWEEN %s::date AND %s::date {filtro_dia}
             WHERE t.ativo = 1
             GROUP BY t.id, t.nome_completo
             ORDER BY t.nome_completo
@@ -355,16 +357,18 @@ async def presenca_individual(
                 filtro_dia = ""
                 params: list = [trabalhador_id, data_ini, data_fim]
                 if dia_semana != "":
-                    filtro_dia = " AND EXTRACT(ISODOW FROM dt.data::date) = %s"
-                    params.append(int(dia_semana))
+                    # dias_atendimento usa 0=Segunda..6=Domingo (weekday Python);
+                    # o filtro SQL é ISODOW (1=Segunda..7=Domingo)
+                    filtro_dia = " AND EXTRACT(ISODOW FROM tp.data) = %s"
+                    params.append(int(dia_semana) + 1)
 
                 hist = conn.execute(
-                    f"""SELECT tp.presente, tp.hora_chegada, tp.hora_saida, dt.data,
-                              TO_CHAR(dt.data::date, 'Day') AS dia_nome
+                    f"""SELECT tp.presente, tp.hora_chegada, tp.hora_saida,
+                              tp.data::text AS data, to_char(tp.data, 'Day') AS dia_nome
                        FROM trabalhador_presenca tp
-                       JOIN dias_trabalho dt ON dt.id = tp.dia_trabalho_id
-                       WHERE tp.trabalhador_id = %s AND dt.data BETWEEN %s AND %s{filtro_dia}
-                       ORDER BY dt.data DESC""",
+                       WHERE tp.trabalhador_id = %s
+                         AND tp.data BETWEEN %s::date AND %s::date{filtro_dia}
+                       ORDER BY tp.data DESC""",
                     params,
                 ).fetchall()
                 registros = [dict(r) for r in hist]

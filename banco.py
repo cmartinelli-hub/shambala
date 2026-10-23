@@ -280,6 +280,150 @@ def faltas_consecutivas_encerram(conn, plano_id: int, hoje: str, limite: int = 2
 
 # ── Migrações incrementais ───────────────────────────────────────────────────
 
+def _presenca_tem_constraint(conn, colunas: list[str]) -> bool:
+    """Há constraint UNIQUE exatamente sobre `colunas` em trabalhador_presenca?"""
+    rows = conn.execute(
+        """SELECT c.conname AS conname, a.attname AS col
+           FROM pg_constraint c
+           JOIN pg_class rel ON rel.oid = c.conrelid
+           JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+           JOIN pg_attribute a ON a.attrelid = rel.oid AND a.attnum = k.attnum
+           WHERE rel.relname = 'trabalhador_presenca' AND c.contype = 'u'
+           ORDER BY c.conname, k.ord"""
+    ).fetchall()
+    atuais: dict[str, list[str]] = {}
+    for r in rows:
+        atuais.setdefault(r["conname"], []).append(r["col"])
+    return any(sorted(v) == sorted(colunas) for v in atuais.values())
+
+
+def _migrar_presenca_data(conn):
+    """Presença de trabalhadores ganha data própria (TASK_001).
+
+    Modelo antigo: a data só existia via dias_trabalho (presença exigia dia de
+    atendimento). Modelo novo: coluna `data` (DATE) na própria presença, com
+    UNIQUE (trabalhador_id, data); `dia_trabalho_id` vira vínculo histórico
+    opcional.
+
+    Segurança: audita ANTES de alterar qualquer coisa. Dados ambíguos (data
+    ilegível, linha órfã, trabalhador duplicado na mesma data derivada) são
+    relatados caso a caso e a migração NÃO mexe no schema — nada é descartado
+    ou mesclado em silêncio. Idempotente: pode rodar de novo no startup.
+    """
+    existe_tabela = conn.execute(
+        """SELECT COUNT(*) AS c FROM information_schema.tables
+           WHERE table_name = 'trabalhador_presenca'"""
+    ).fetchone()["c"]
+    if existe_tabela == 0:
+        return
+
+    # ── 1. Auditoria (somente leitura) ──────────────────────────────────────
+    tem_data = conn.execute(
+        """SELECT COUNT(*) AS c FROM information_schema.columns
+           WHERE table_name = 'trabalhador_presenca' AND column_name = 'data'"""
+    ).fetchone()["c"] > 0
+
+    problemas = []
+    if not tem_data:
+        candidatas = conn.execute(
+            """SELECT tp.id, tp.trabalhador_id, tp.dia_trabalho_id, dt.data AS data_texto
+               FROM trabalhador_presenca tp
+               LEFT JOIN dias_trabalho dt ON dt.id = tp.dia_trabalho_id
+               ORDER BY tp.id"""
+        ).fetchall()
+        derivadas: dict[tuple, list[int]] = {}
+        from datetime import date as _date
+        for r in candidatas:
+            if r["dia_trabalho_id"] is None:
+                problemas.append(f"linha {r['id']}: sem vínculo com dia de trabalho — "
+                                 "não é possível derivar a data")
+                continue
+            texto = r["data_texto"] or ""
+            try:
+                derivada = _date.fromisoformat(texto).isoformat()
+            except ValueError:
+                problemas.append(f"linha {r['id']} (trabalhador {r['trabalhador_id']}): "
+                                 f"data do dia de trabalho ilegível: {texto!r}")
+                continue
+            chave = (r["trabalhador_id"], derivada)
+            derivadas.setdefault(chave, []).append(r["id"])
+        for (trab, dia), ids in sorted(derivadas.items()):
+            if len(ids) > 1:
+                problemas.append(f"trabalhador {trab} tem {len(ids)} registros na data "
+                                 f"{dia} (linhas {ids}) — duplicidade na unicidade nova")
+        if problemas:
+            print("[MIGRACAO PRESENCA] DADOS AMBIGUOS — schema NAO alterado:", flush=True)
+            for p in problemas:
+                print(f"  - {p}", flush=True)
+            return
+
+    # ── 2. Aplicação (idempotente) ──────────────────────────────────────────
+    if not tem_data:
+        conn.execute("ALTER TABLE trabalhador_presenca ADD COLUMN data DATE")
+        # Deriva a data dos registros antigos a partir do dia de trabalho
+        # vinculado (mesma validação da auditoria — valores já confirmados).
+        antigas = conn.execute(
+            """SELECT tp.id, dt.data AS data_texto
+               FROM trabalhador_presenca tp
+               JOIN dias_trabalho dt ON dt.id = tp.dia_trabalho_id
+               WHERE tp.data IS NULL ORDER BY tp.id"""
+        ).fetchall()
+        for r in antigas:
+            conn.execute(
+                "UPDATE trabalhador_presenca SET data = %s::date WHERE id = %s",
+                (r["data_texto"], r["id"]),
+            )
+
+    # Vínculo com o dia de atendimento passa a ser histórico/opcional
+    nullable_dia = conn.execute(
+        """SELECT is_nullable AS n FROM information_schema.columns
+           WHERE table_name = 'trabalhador_presenca' AND column_name = 'dia_trabalho_id'"""
+    ).fetchone()
+    if nullable_dia and nullable_dia["n"] == "NO":
+        conn.execute(
+            "ALTER TABLE trabalhador_presenca ALTER COLUMN dia_trabalho_id DROP NOT NULL"
+        )
+
+    # `data` só vira NOT NULL quando não houver linha sem data
+    sem_data = conn.execute(
+        "SELECT COUNT(*) AS c FROM trabalhador_presenca WHERE data IS NULL"
+    ).fetchone()["c"]
+    if sem_data > 0:
+        print(f"[MIGRACAO PRESENCA] {sem_data} linha(s) sem data derivável — "
+              "unicidade nova NÃO criada; registre a data manualmente e "
+              "reinicie.", flush=True)
+        return
+    nullable_data = conn.execute(
+        """SELECT is_nullable AS n FROM information_schema.columns
+           WHERE table_name = 'trabalhador_presenca' AND column_name = 'data'"""
+    ).fetchone()
+    if nullable_data and nullable_data["n"] == "YES":
+        conn.execute("ALTER TABLE trabalhador_presenca ALTER COLUMN data SET NOT NULL")
+
+    # Troca a unicidade (trabalhador_id, dia_trabalho_id) por (trabalhador_id, data)
+    if not _presenca_tem_constraint(conn, ["trabalhador_id", "data"]):
+        antigas_u = conn.execute(
+            """SELECT c.conname AS nome
+               FROM pg_constraint c
+               JOIN pg_class rel ON rel.oid = c.conrelid
+               JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+               JOIN pg_attribute a ON a.attrelid = rel.oid AND a.attnum = k.attnum
+               WHERE rel.relname = 'trabalhador_presenca' AND c.contype = 'u'
+               GROUP BY c.conname, c.conkey
+               HAVING array_agg(a.attname::text ORDER BY k.ord) =
+                      ARRAY['trabalhador_id', 'dia_trabalho_id']"""
+        ).fetchall()
+        for r in antigas_u:
+            conn.execute(
+                f"ALTER TABLE trabalhador_presenca DROP CONSTRAINT {r['nome']}"
+            )
+        conn.execute(
+            "ALTER TABLE trabalhador_presenca "
+            "ADD CONSTRAINT trabalhador_presenca_data_unique "
+            "UNIQUE (trabalhador_id, data)"
+        )
+
+
 def _migrar(conn):
     """Migrações incrementais — seguras para rodar múltiplas vezes."""
     para_adicionar = [
@@ -375,17 +519,8 @@ def _migrar(conn):
            WHERE ler = FALSE AND escrever = FALSE AND apagar = FALSE"""
     )
 
-    # Adiciona UNIQUE em trabalhador_presenca se não existir
-    existe_constraint = conn.execute(
-        """SELECT COUNT(*) AS c FROM information_schema.table_constraints
-           WHERE table_name = 'trabalhador_presenca'
-             AND constraint_type = 'UNIQUE'"""
-    ).fetchone()["c"]
-    if existe_constraint == 0:
-        conn.execute(
-            "ALTER TABLE trabalhador_presenca "
-            "ADD CONSTRAINT trabalhador_presenca_unique UNIQUE (trabalhador_id, dia_trabalho_id)"
-        )
+    # Presença de trabalhadores: data própria + unicidade (trabalhador_id, data)
+    _migrar_presenca_data(conn)
 
     # Cria tabela chaves_pix se não existir (bancos existentes sem ela)
     conn.execute("""
@@ -955,11 +1090,12 @@ def criar_tabelas():
             CREATE TABLE IF NOT EXISTS trabalhador_presenca (
                 id                  SERIAL PRIMARY KEY,
                 trabalhador_id      INTEGER NOT NULL REFERENCES trabalhadores(id),
-                dia_trabalho_id     INTEGER NOT NULL REFERENCES dias_trabalho(id),
+                data                DATE NOT NULL,
+                dia_trabalho_id     INTEGER REFERENCES dias_trabalho(id),
                 presente            INTEGER NOT NULL DEFAULT 0,
                 hora_chegada        TEXT,
                 hora_saida          TEXT,
-                UNIQUE(trabalhador_id, dia_trabalho_id)
+                UNIQUE(trabalhador_id, data)
             )
         """)
 

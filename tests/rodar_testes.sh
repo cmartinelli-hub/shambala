@@ -114,7 +114,7 @@ grep "Ambiente descartável confirmado" "$LOG" | sed 's/^/  /'
 echo "== Executando as suítes =="
 set +e
 RC=0
-for SUITE in test_tres_passes.py test_plano_unico.py test_permissoes.py test_agenda_medium.py; do
+for SUITE in test_tres_passes.py test_plano_unico.py test_permissoes.py test_agenda_medium.py test_presenca_trabalhadores.py; do
   echo "-- $SUITE"
   SHAMBALA_ENV_FILE="$ARQ_ENV" \
   SHAMBALA_MODO_TESTE=1 \
