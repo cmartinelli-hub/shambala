@@ -202,10 +202,43 @@ UNIQUE(trabalhador_id, dia_semana)
 
 ### `trabalhador_presenca`
 ```
-id, trabalhador_id (FK), dia_trabalho_id (FK)
-presente (0/1), hora_chegada (nullable), hora_saida (nullable)
-UNIQUE(trabalhador_id, dia_trabalho_id)
+id, trabalhador_id (FK), data (DATE), dia_trabalho_id (FK nullable)
+presente (0/1), hora_chegada (TEXT nullable), hora_saida (TEXT nullable)
+UNIQUE(trabalhador_id, data)   ← a data é própria; dia_trabalho é opcional
 ```
+A presença não depende de existir dia de atendimento; `data` é sempre a data
+de São Paulo calculada pelo servidor (`servico_presenca`).
+
+### `trabalhador_codigo`
+```
+codigo (TEXT PRIMARY KEY, CHECK codigo ~ '^[0-9]{4}$')
+trabalhador_id (FK, ON DELETE CASCADE)
+estado (TEXT: 'ativo' | 'retirado')
+atendente_id (FK nullable)     ← nulo quando a ação veio de script local
+origem (TEXT: 'tela' | 'preparacao_local')
+criado_em (TEXT 'AAAA-MM-DD HH:MM' São Paulo), retirado_em (TEXT nullable)
+```
+Uma linha por código **já emitido**. Índice único parcial
+`uq_trabalhador_codigo_atual ON (trabalhador_id) WHERE estado='ativo'` garante
+exatamente um código atual por pessoa. Um código `retirado` nunca volta à
+circulação — nem para o mesmo trabalhador — de modo que carteirinha antiga
+nunca passa a identificar outra pessoa. Os 4 caracteres são texto
+(`0047` é `0047` no banco, na tela, no QR e na resolução).
+
+Regra única em `servico_codigo_trabalhador.py`: `garantir_codigo` (idempotente),
+`trocar_codigo` (retira e insere na mesma transação),
+`preparar_codigos_pendentes` (ação explícita, transação única),
+`resolver_codigo` (somente leitura), `qr_data_uri` (PNG local, sem serviço
+externo). Emissão por sorteio controlado com `ON CONFLICT DO NOTHING` e até 8
+tentativas; `CodigosEsgotados` quando os 10.000 já saíram.
+
+**Contrato para o terminal de leitura (TASK_003):** o QR codifica
+exatamente a string de 4 dígitos — sem URL, nome, documento, id interno ou
+token. `resolver_codigo(conn, codigo)` devolve `estado` ∈ `invalido` (formato),
+`ativo`, `inativo`, `retirado`, `inexistente` e, quando `ativo`,
+`trabalhador_id` + `nome_completo`. Resolver **não** registra presença: quem
+resolve chama depois `servico_presenca.registrar_chegada()`. Não existe (e não
+se deve criar) endpoint público de busca por código.
 
 ### `grupos` e `grupos_permissoes`
 ```
@@ -521,13 +554,22 @@ GET/POST  /cadastros/usuarios/novo
 GET/POST  /cadastros/usuarios/{id}/editar
 POST      /cadastros/usuarios/{id}/toggle-ativo
 
-GET       /cadastros/trabalhadores             ← gestão de voluntários
+GET       /cadastros/trabalhadores             ← gestão de voluntários (módulo cadastros.trabalhadores)
 GET/POST  /cadastros/trabalhadores/novo
 GET/POST  /cadastros/trabalhadores/{id}/editar
 POST      /cadastros/trabalhadores/{id}/toggle-ativo
-GET       /cadastros/trabalhadores/{id}/dias
-GET       /cadastros/trabalhadores/checkin     ← registrar presença
-GET       /cadastros/trabalhadores/agenda      ← agenda de presença
+GET       /cadastros/trabalhadores/{id}/agenda    ← dias de trabalho do voluntário
+POST      /cadastros/trabalhadores/{id}/agenda
+GET       /cadastros/trabalhadores/{id}/presenca  ← histórico individual
+POST      /cadastros/trabalhadores/preparar-codigos  ← emite os códigos que faltam
+POST      /cadastros/trabalhadores/{id}/codigo/gerar
+POST      /cadastros/trabalhadores/{id}/codigo/trocar (confirmar=1)
+GET       /cadastros/trabalhadores/{id}/carteirinha   ← impressão individual
+GET       /cadastros/trabalhadores/carteirinhas?ids=… | ?todos=ativos  ← lote A4
+GET       /checkin-trabalhador                 ← presença (módulo checkin.trabalhadores)
+POST      /checkin-trabalhador/{id}/presente
+POST      /checkin-trabalhador/{id}/ausente
+GET       /relatorios/presenca-trabalhadores   ← relatório mensal por dia
 
 GET       /cadastros/permissoes                ← controle RBAC
 
@@ -687,6 +729,9 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `backup_pendrive.py` | Backup em pendrive/HD externo (montar, desmontar, pg_dump, histórico) |
 | `maiusculas.py` | Capitalização inteligente de nomes |
 | `normalizar_telefones.py` | Padronização de telefones para `(XX) XXXXX-XXXX` |
+| `servico_presenca.py` | Regra única da presença do trabalhador (chegada, ausência, data SP) |
+| `servico_codigo_trabalhador.py` | Regra única do código de 4 dígitos: emitir, trocar, preparar, resolver, QR |
+| `preparar_codigos_trabalhadores.py` | Operação local: emite os códigos que faltam (simulação / `--aplicar`) |
 | `requirements.txt` | Dependências Python do projeto |
 | `instalar.sh` | Script de instalação automatizada |
 | `atualizar.sh` | Script de atualização do sistema |
@@ -705,7 +750,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `rotas/agenda.py` | Agenda global, criação de plano avulso |
 | `rotas/relatorios.py` | Por dia, médium, pessoa, frequência |
 | `rotas/configuracoes.py` | Dias de atendimento, SMTP, backup remoto, centro, PIX, pendrive |
-| `rotas/trabalhadores.py` | Voluntários, presença, agenda |
+| `rotas/trabalhadores.py` | Voluntários: cadastro, presença, agenda, códigos e carteirinhas |
 | `rotas/financeiro.py` | Movimentações, mensalidades, PIX |
 | `rotas/biblioteca.py` | Acervo, ISBN/OpenLibrary, empréstimos, vendas |
 | `rotas/doacoes.py` | Cestas básicas, rastreamento |
@@ -848,7 +893,7 @@ shambala/
 │   ├── pessoas.py                   # /cadastros/pessoas
 │   ├── mediuns.py                   # /cadastros/mediuns
 │   ├── usuarios.py                  # /cadastros/usuarios (atendentes)
-│   ├── trabalhadores.py             # /cadastros/trabalhadores
+│   ├── trabalhadores.py             # /cadastros/trabalhadores, /checkin-trabalhador
 │   ├── dia.py                       # /dia — painel, dashboard, filas
 │   ├── checkin.py                   # /dia/checkin — entrada
 │   ├── chamada.py                   # /chamada — WebSocket
@@ -911,7 +956,8 @@ shambala/
 - ✅ Relatórios completos
 - ✅ Tela de chamada WebSocket em monitor dedicado
 - ✅ Dias de atendimento configuráveis
-- ✅ Gestão de trabalhadores com presença
+- ✅ Gestão de trabalhadores com presença (TASK_001)
+- ✅ Códigos de 4 dígitos e carteirinhas com QR imprimíveis (TASK_002)
 - ✅ Mala direta via WhatsApp e email
 - ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas

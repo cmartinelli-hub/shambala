@@ -1,0 +1,206 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Carteirinha do trabalhador — impressão (TASK_002)
+
+   Cartão 85,6 × 54 mm (CR80, orientação horizontal), dimensões FÍSICAS.
+   Folha A4 retrato, margem de 10 mm:
+       2 colunas × 5 linhas  =  10 cartões por folha
+       largura usada: 2×85,6 + 8 (coluna)            = 179,2 mm  (≤ 190 mm)
+       altura usada: 5×54,0 + 4×1 (entre linhas)     = 274,0 mm  (≤ 277 mm)
+   Imprimir em escala 100% (sem "ajudar à página"), senão as medidas físicas
+   deixam de valer.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@page {
+    size: A4 portrait;
+    margin: 10mm;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: #e9e9e4;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #1c1c1c;
+}
+
+/* ── Barra de tela (some na impressão) ── */
+.carteirinha-barra {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 20px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.carteirinha-barra h1 { font-size: 1rem; margin: 0 auto 0 0; }
+.carteirinha-barra .aviso-escala {
+    font-size: .8rem;
+    color: #666;
+}
+.carteirinha-barra .btn {
+    display: inline-block;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    background: #f5f5f0;
+    color: #1c1c1c;
+    text-decoration: none;
+    font-size: .9rem;
+    cursor: pointer;
+}
+.carteirinha-barra .btn-primario {
+    background: #1a5fa8;
+    border-color: #1a5fa8;
+    color: #fff;
+}
+.carteirinha-avisos {
+    margin: 12px 20px;
+    padding: 10px 14px;
+    border-left: 4px solid #d68910;
+    background: #fef9e7;
+    font-size: .85rem;
+}
+
+/* ── Folha A4 ── */
+.folha {
+    width: 190mm;
+    height: 274mm;
+    margin: 8mm auto;
+    padding: 0;
+    background: #fff;
+    display: grid;
+    grid-template-columns: repeat(2, 85.6mm);
+    grid-auto-rows: 54mm;
+    column-gap: 8mm;
+    row-gap: 1mm;
+    justify-content: center;
+    box-shadow: 0 1px 6px rgba(0,0,0,.18);
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+.folha + .folha {
+    break-before: page;
+    page-break-before: always;
+}
+
+/* ── Cartão ── */
+.cartao {
+    position: relative;
+    width: 85.6mm;
+    height: 54mm;
+    padding: 2.5mm 3mm;
+    background: #fff;
+    border: .2mm dashed #b5b5b5;   /* guia de corte, dentro da grade */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.cc-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2mm;
+}
+.cc-marca {
+    display: flex;
+    align-items: center;
+    gap: 1.5mm;
+    min-width: 0;
+}
+.cc-marca img { height: 6mm; width: auto; object-fit: contain; }
+.cc-marca span {
+    font-size: 5.8pt;
+    line-height: 1.15;
+    color: #333;
+    max-width: 45mm;
+}
+.cc-papel {
+    font-size: 6.4pt;
+    letter-spacing: .3mm;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: #1a5fa8;
+    white-space: nowrap;
+}
+
+.cc-corpo {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    margin-top: 1.5mm;
+}
+.cc-foto {
+    flex: none;
+    width: 17mm;
+    height: 17mm;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #eee;
+}
+.cc-foto img { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; }
+.cc-nome {
+    font-size: 12pt;
+    line-height: 1.12;
+    font-weight: 600;
+    word-break: normal;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+/* Escada para não truncar nomes compridos (nunca ellipsis) */
+.cc-nome.medio { font-size: 10.5pt; }
+.cc-nome.longo { font-size: 9pt; line-height: 1.08; }
+
+.cc-base {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 3mm;
+}
+.cc-codigo-rotulo {
+    font-size: 5.8pt;
+    letter-spacing: .25mm;
+    text-transform: uppercase;
+    color: #666;
+}
+.cc-codigo {
+    font-size: 15pt;
+    font-weight: 700;
+    letter-spacing: 1.4mm;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+.cc-qr {
+    width: 25mm;
+    height: 25mm;
+    flex: none;
+    image-rendering: pixelated;
+}
+
+/* ── Impressão ── */
+@media print {
+    body { background: #fff; }
+    .carteirinha-barra,
+    .carteirinha-voltar,
+    .aviso-escala { display: none !important; }
+    .carteirinha-avisos { display: none !important; }
+    .folha {
+        margin: 0;
+        box-shadow: none;
+        width: 190mm;
+        height: 274mm;
+    }
+    .folha:last-child {
+        break-after: auto;
+        page-break-after: auto;
+    }
+}

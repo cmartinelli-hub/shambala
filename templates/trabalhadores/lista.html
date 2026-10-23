@@ -10,8 +10,31 @@
     </div>
     <div class="acoes-cabecalho">
         <a href="/cadastros/trabalhadores/novo" class="btn btn-primario">➕ Novo trabalhador</a>
+        {% if sem_codigo %}
+        <form method="post" action="/cadastros/trabalhadores/preparar-codigos" style="display:inline">
+            <button type="submit" class="btn btn-secundario"
+                    title="Emite código apenas para os ativos que ainda não têm; os já emitidos são preservados.">
+                🔢 Preparar códigos que faltam ({{ sem_codigo }})
+            </button>
+        </form>
+        {% endif %}
+        <a href="/cadastros/trabalhadores/carteirinhas?todos=ativos" target="_blank"
+           class="btn btn-secundario">🖨️ Imprimir todos os ativos</a>
     </div>
 </div>
+
+{% if erro %}
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
+{% endif %}
+{% if ok %}
+<div class="form-sucesso">
+    <span>✔</span>
+    <span>{{ ok }}</span>
+</div>
+{% endif %}
 
 {% if trabalhadores %}
 <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
@@ -27,9 +50,24 @@
 </div>
 <p id="sem-resultado" style="display:none;color:var(--cor-texto-suave);margin:.5rem 0">Nenhum trabalhador encontrado.</p>
 
+{# O formulário do lote fica declarado fora da grade: os cartões já têm seus
+   próprios forms (POST) e form aninhado é HTML inválido. As checkboxes e o
+   botão de envio se ligam a ele pelo atributo `form`. #}
+<form id="lote-form" method="get" action="/cadastros/trabalhadores/carteirinhas" target="_blank"></form>
+<div class="trab-lote-barra">
+    <label class="trab-lote-todos">
+        <input type="checkbox" id="selecionar-todos" onchange="selecionarAtivos(this)">
+        Selecionar todos os ativos
+    </label>
+    <span id="trab-lote-contagem">0 selecionados</span>
+    <button type="submit" form="lote-form" class="btn btn-sm btn-secundario">
+        🖨️ Imprimir carteirinhas selecionadas
+    </button>
+</div>
+
 <div class="trabalhadores-grid" id="grid">
     {% for t in trabalhadores %}
-    <div class="trabalhador-card {% if not t.ativo %}trabalhador-inativo{% endif %}">
+    <div class="trabalhador-card {% if not t.ativo %}trabalhador-inativo{% endif %}" data-ativo="{{ 1 if t.ativo else 0 }}">
         <div class="trabalhador-header">
             <div class="trabalhador-avatar">
                 {% if t.foto_trabalhador %}
@@ -43,7 +81,17 @@
                 <span class="trabalhador-badge {% if t.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
                     {{ 'Ativo' if t.ativo else 'Inativo' }}
                 </span>
+                {% if t.codigo %}
+                <span class="trabalhador-codigo" title="Código da carteirinha">🔢 {{ t.codigo }}</span>
+                {% elif t.ativo %}
+                <span class="trabalhador-codigo trabalhador-codigo-falta" title="Sem código atual">sem código</span>
+                {% endif %}
             </div>
+            {% if t.ativo %}
+            <input type="checkbox" class="trab-lote-check" name="ids" value="{{ t.id }}"
+                   form="lote-form" aria-label="Selecionar {{ t.nome_completo }}"
+                   onchange="atualizarContagem()">
+            {% endif %}
         </div>
         <div class="trabalhador-contato">
             {% if t.telefone %}
@@ -60,6 +108,16 @@
             <a href="/cadastros/trabalhadores/{{ t.id }}/editar" class="btn btn-sm btn-editar">✏️ Editar</a>
             <a href="/cadastros/trabalhadores/{{ t.id }}/agenda" class="btn btn-sm btn-dias">📅 Dias</a>
             <a href="/cadastros/trabalhadores/{{ t.id }}/presenca" class="btn btn-sm btn-presenca">📋 Presença</a>
+            {% if t.ativo %}
+                {% if t.codigo %}
+                <a href="/cadastros/trabalhadores/{{ t.id }}/carteirinha" target="_blank"
+                   class="btn btn-sm btn-carteirinha">🪪 Carteirinha</a>
+                {% else %}
+                <form method="post" action="/cadastros/trabalhadores/{{ t.id }}/codigo/gerar" class="trabalhador-form-toggle">
+                    <button type="submit" class="btn btn-sm btn-carteirinha">🔢 Gerar código</button>
+                </form>
+                {% endif %}
+            {% endif %}
             <form method="post" action="/cadastros/trabalhadores/{{ t.id }}/toggle-ativo" class="trabalhador-form-toggle">
                 <button type="submit" class="btn-toggle {% if t.ativo %}btn-desativar{% else %}btn-ativar{% endif %}">
                     {{ 'Desativar' if t.ativo else 'Ativar' }}
@@ -102,5 +160,16 @@ function filtrar() {
     document.getElementById('sem-resultado').style.display = vis === 0 ? '' : 'none';
 }
 document.getElementById('busca')?.focus();
+
+function atualizarContagem() {
+    const marcados = document.querySelectorAll('.trab-lote-check:checked').length;
+    document.getElementById('trab-lote-contagem').textContent =
+        `${marcados} selecionado${marcados !== 1 ? 's' : ''}`;
+}
+
+function selecionarAtivos(origem) {
+    document.querySelectorAll('.trab-lote-check').forEach(cb => { cb.checked = origem.checked; });
+    atualizarContagem();
+}
 </script>
 {% endblock %}

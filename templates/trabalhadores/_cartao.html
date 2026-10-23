@@ -1,0 +1,26 @@
+{# Cartão da carteirinha — usado pela individual e pelo lote, para que nome,
+   foto e código nunca se misturem entre cartões. #}
+{% macro cartao(c, centro) -%}
+<div class="cartao" data-trabalhador="{{ c.id }}" data-codigo="{{ c.codigo }}">
+    <div class="cc-topo">
+        <div class="cc-marca">
+            <img src="{{ '/static/logos/' ~ centro.centro_logo if centro.centro_logo else '/static/logo.svg' }}"
+                 alt="">
+            <span>{{ centro.centro_nome }}</span>
+        </div>
+        <div class="cc-papel">Trabalhador · Voluntário</div>
+    </div>
+    <div class="cc-corpo">
+        <div class="cc-foto"><img src="{{ c.foto_url }}" alt=""></div>
+        {% set n = c.nome|length %}
+        <div class="cc-nome {% if n > 40 %}longo{% elif n > 24 %}medio{% endif %}">{{ c.nome }}</div>
+    </div>
+    <div class="cc-base">
+        <div>
+            <div class="cc-codigo-rotulo">Código</div>
+            <div class="cc-codigo">{{ c.codigo }}</div>
+        </div>
+        <img class="cc-qr" src="{{ c.qr }}" alt="QR {{ c.codigo }}">
+    </div>
+</div>
+{%- endmacro %}

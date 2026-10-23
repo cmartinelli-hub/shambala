@@ -48,6 +48,25 @@
                    class="foto-input" style="display:none">
         </div>
 
+        {% if registro %}
+        <!-- Código de identificação — somente leitura aqui: alterar o código é
+             ação à parte (fim da página). Salvar este formulário nunca muda o
+             código, a mensalidade nem o fiado por causa do código. -->
+        <div class="trab-codigo">
+            <span class="trab-codigo-rotulo">Código da carteirinha</span>
+            {% if registro.codigo_atual %}
+            <span class="trab-codigo-valor">{{ registro.codigo_atual }}</span>
+            <a href="/cadastros/trabalhadores/{{ registro.id }}/carteirinha" target="_blank"
+               class="btn btn-sm btn-secundario">🖨️ Imprimir carteirinha</a>
+            {% elif registro.ativo %}
+            <span class="trab-codigo-falta">sem código</span>
+            <a href="#trocar-codigo" class="btn btn-sm btn-secundario">🔢 Gerar código</a>
+            {% else %}
+            <span class="trab-codigo-falta">sem código (trabalhador inativo)</span>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <div class="form-grid">
             <div class="form-campo form-campo-largo">
                 <label for="nome_completo">Nome completo *</label>
@@ -191,6 +210,37 @@
         <a href="/cadastros/trabalhadores" class="btn btn-secundario">Cancelar</a>
     </div>
 </form>
+
+{% if registro %}
+<!-- Código: gerar e trocar são ações separadas do salvamento do cadastro. -->
+<div class="form-secao" id="trocar-codigo">
+    <h2 class="form-secao-titulo">🔢 Código da carteirinha</h2>
+    <p class="subtitulo">
+        O código tem exatamente quatro números (zeros incluídos) e é o conteúdo do QR
+        da carteirinha. Inativar preserva o código; reimprimir preserva o código.
+    </p>
+
+    {% if not registro.codigo_atual and registro.ativo %}
+    <form method="post" action="/cadastros/trabalhadores/{{ registro.id }}/codigo/gerar"
+          class="trab-codigo-acoes">
+        <button type="submit" class="btn btn-primario">🔢 Gerar código</button>
+    </form>
+    {% endif %}
+
+    {% if registro.codigo_atual and registro.ativo %}
+    <form method="post" action="/cadastros/trabalhadores/{{ registro.id }}/codigo/trocar"
+          class="trab-codigo-acoes"
+          onsubmit="return confirm('Trocar o código {{ registro.codigo_atual }}? A carteirinha anterior deixa de funcionar.');">
+        <label class="trab-codigo-confirmar">
+            <input type="checkbox" name="confirmar" value="1" required>
+            Confirmo que a carteirinha com o código <strong>{{ registro.codigo_atual }}</strong>
+            sai de circulação e <strong>não volta a ser usada</strong> — nem por esta pessoa.
+        </label>
+        <button type="submit" class="btn btn-atencao">🔁 Trocar código</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

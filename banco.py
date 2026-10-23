@@ -548,6 +548,38 @@ def _migrar(conn):
         )
     """)
 
+    # ── Código de identificação do trabalhador (TASK_002) ──
+    # Uma linha por código JÁ EMITIDO. `estado='ativo'` é o código atual do
+    # trabalhador; `retirado` fica reservado para sempre (nunca é reatribuído,
+    # nem à mesma pessoa), o que impede que uma carteirinha antiga identifique
+    # outra pessoa. Único lugar onde o código existe — não há coluna em
+    # `trabalhadores` (evita segunda fonte de verdade).
+    #
+    # DDL apenas: o startup NUNCA emite nem troca códigos. A emissão inicial dos
+    # ativos é ação explícita (servico_codigo_trabalhador).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trabalhador_codigo (
+            codigo          TEXT    PRIMARY KEY CHECK (codigo ~ '^[0-9]{4}$'),
+            trabalhador_id  INTEGER NOT NULL REFERENCES trabalhadores(id) ON DELETE CASCADE,
+            estado          TEXT    NOT NULL DEFAULT 'ativo'
+                                    CHECK (estado IN ('ativo', 'retirado')),
+            atendente_id    INTEGER REFERENCES atendentes(id),
+            origem          TEXT    NOT NULL DEFAULT 'tela',
+            criado_em       TEXT    NOT NULL,
+            retirado_em     TEXT
+        )
+    """)
+    # Exatamente um código atual por trabalhador (as linhas retiradas coexistem).
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_trabalhador_codigo_atual
+            ON trabalhador_codigo (trabalhador_id)
+            WHERE estado = 'ativo'
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS ix_trabalhador_codigo_trab
+            ON trabalhador_codigo (trabalhador_id)
+    """)
+
     # Índices para consultas de fiado
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_trab ON vendas_pdv(fiado_trabalhador_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_fiado_pendentes ON vendas_pdv(fiado_trabalhador_id) WHERE forma_pagamento = 'fiado' AND fiado_pago = FALSE")

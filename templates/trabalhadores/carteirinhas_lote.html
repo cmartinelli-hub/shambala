@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Carteirinhas — {{ cartoes|length }} trabalhador{{ 'es' if cartoes|length != 1 }}</title>
+    <link rel="stylesheet" href="/static/css/carteirinha.css">
+    {% from "trabalhadores/_cartao.html" import cartao as cc %}
+</head>
+<body>
+<div class="carteirinha-barra">
+    <a class="btn carteirinha-voltar" href="/cadastros/trabalhadores">← Voltar</a>
+    <h1>{{ cartoes|length }} carteirinha{{ 's' if cartoes|length != 1 }} · {{ folhas|length }} folha{{ 's' if folhas|length != 1 }} A4</h1>
+    <span class="aviso-escala">10 cartões por folha (2 × 5) · imprimir em escala 100%, sem “ajustar à página”</span>
+    <button type="button" class="btn btn-primario" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+</div>
+
+{% if inativos or sem_codigo %}
+<div class="carteirinha-avisos">
+    {% if inativos %}
+    <p>🚫 Não impressos (inativos — bloqueado nesta versão; reative no cadastro se for o caso):
+        {{ inativos|join(', ') }}</p>
+    {% endif %}
+    {% if sem_codigo %}
+    <p>🔢 Não impressos (sem código atual — use “Gerar código” ou “Preparar códigos que faltam”):
+        {{ sem_codigo|join(', ') }}</p>
+    {% endif %}
+</div>
+{% endif %}
+
+{% for folha in folhas %}
+<div class="folha">
+    {% for c in folha %}
+    {{ cc(c, centro) }}
+    {% endfor %}
+</div>
+{% endfor %}
+</body>
+</html>

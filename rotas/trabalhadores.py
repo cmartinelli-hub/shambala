@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from urllib.parse import urlencode
-from fastapi import APIRouter, Request, Form, UploadFile
+from fastapi import APIRouter, Request, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 import os
@@ -10,8 +10,10 @@ from rotas.auth import obter_atendente_logado
 from rotas.financeiro_mensalidades import sincronizar_mensalidades, atualizar_pendentes_futuras
 from servico_presenca import registrar_chegada, registrar_ausencia_explicita, \
     TrabalhadorInexistente, TrabalhadorInativo
+from servico_codigo_trabalhador import CodigosEsgotados, TrabalhadorSemCodigo, \
+    garantir_codigo, trocar_codigo, preparar_codigos_pendentes, qr_data_uri
 
-from templates_config import templates
+from templates_config import templates, centro_config
 router = APIRouter(prefix="/cadastros/trabalhadores")
 
 # Configuração de upload de fotos
@@ -19,6 +21,10 @@ FOTOS_TRAB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "stati
 os.makedirs(FOTOS_TRAB_DIR, exist_ok=True)
 EXTensoes_TRAB = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 TAMANHO_MAXIMO_TRAB = 5 * 1024 * 1024  # 5MB
+
+# Carteirinha A4: 2 colunas × 5 linhas de 85,6 × 54 mm (10 mm de margem,
+# 1 mm entre linhas, 8 mm entre colunas) — ver static/css/carteirinha.css.
+_CARTOES_POR_FOLHA = 10
 
 
 def _salvar_foto_trab(file: UploadFile, trab_id: int, foto_existente: str = None) -> str:
@@ -68,6 +74,19 @@ def _guard(request: Request):
     return guarda_modulo(request, "cadastros.trabalhadores")
 
 
+def _voltar_lista(erro: str = None, ok: str = None):
+    """Volta à lista com mensagem (a tela trata por query string)."""
+    params = {}
+    if erro:
+        params["erro"] = erro
+    if ok:
+        params["ok"] = ok
+    url = "/cadastros/trabalhadores"
+    if params:
+        url += "?" + urlencode(params)
+    return RedirectResponse(url=url, status_code=303)
+
+
 _NOMES_DIA = {
     0: "Segunda-feira",
     1: "Terça-feira",
@@ -100,18 +119,141 @@ def _parse_data(texto: str):
 # ── Lista ─────────────────────────────────────────────────────────────────────
 
 @router.get("", response_class=HTMLResponse)
-async def listar(request: Request):
+async def listar(request: Request, erro: str = "", ok: str = ""):
     atendente, redir = _guard(request)
     if redir:
         return redir
     with conectar() as conn:
         rows = conn.execute(
-            "SELECT id, nome_completo, cpf, telefone, email, ativo FROM trabalhadores ORDER BY nome_completo"
+            """SELECT t.id, t.nome_completo, t.cpf, t.telefone, t.email, t.ativo,
+                      c.codigo AS codigo
+                 FROM trabalhadores t
+                 LEFT JOIN trabalhador_codigo c
+                        ON c.trabalhador_id = t.id AND c.estado = 'ativo'
+                ORDER BY t.nome_completo"""
         ).fetchall()
+        sem_codigo = conn.execute(
+            """SELECT COUNT(*) AS n FROM trabalhadores t
+                WHERE t.ativo = 1
+                  AND NOT EXISTS (SELECT 1 FROM trabalhador_codigo c
+                                   WHERE c.trabalhador_id = t.id AND c.estado = 'ativo')"""
+        ).fetchone()["n"]
     return templates.TemplateResponse("trabalhadores/lista.html", {
         "request": request,
         "atendente": atendente,
         "trabalhadores": [dict(r) for r in rows],
+        "sem_codigo": sem_codigo,
+        "erro": erro or None,
+        "ok": ok or None,
+    })
+
+
+# ── Códigos: preparação em massa ──────────────────────────────────────────────
+
+@router.post("/preparar-codigos", response_class=HTMLResponse)
+async def preparar_codigos(request: Request):
+    """Ação explícita: emite os códigos que faltam nos trabalhadores ativos.
+
+    Idempotente — uma segunda execução não gera nada e não altera os já
+    emitidos. Escrita exige a permissão do cadastro (não da recepção).
+    """
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    try:
+        with conectar() as conn:
+            resumo = preparar_codigos_pendentes(conn, atendente_id=atendente["id"])
+    except CodigosEsgotados:
+        return _voltar_lista(erro="Não há códigos disponíveis (os 10.000 já foram "
+                                  "emitidos). Nenhum código foi criado.")
+    gerados = len(resumo["gerados"])
+    if gerados:
+        ok = (f"{gerados} código(s) gerados; {resumo['ja_existiam']} já tinham código "
+              f"e foram preservados.")
+    else:
+        ok = f"Nenhum código precisou ser gerado — {resumo['ja_existiam']} ativos já tinham código."
+    return _voltar_lista(ok=ok)
+
+
+def _foto_url(trab: dict) -> str:
+    if trab.get("foto_trabalhador"):
+        return f"/static/fotos/{trab['foto_trabalhador']}"
+    inicial = (trab["nome_completo"].strip()[:1] or "?")
+    return f"/cadastros/trabalhadores/foto-placeholder/{inicial}"
+
+
+def _montar_cartao(trab: dict) -> dict:
+    """Cartão de carteirinha: dados mínimos + QR do código atual.
+
+    O QR contém exatamente os quatro caracteres — nem nome, nem id, nem URL.
+    """
+    return {
+        "id": trab["id"],
+        "nome": trab["nome_completo"],
+        "foto_url": _foto_url(trab),
+        "codigo": trab["codigo"],
+        "qr": qr_data_uri(trab["codigo"]),
+    }
+
+
+_SQL_CARTEIRINHA = """
+    SELECT t.id, t.nome_completo, t.foto_trabalhador, t.ativo,
+           c.codigo AS codigo
+      FROM trabalhadores t
+      LEFT JOIN trabalhador_codigo c
+             ON c.trabalhador_id = t.id AND c.estado = 'ativo'
+"""
+
+
+@router.get("/carteirinhas", response_class=HTMLResponse)
+async def carteirinhas_lote(
+    request: Request,
+    ids: list[int] = Query(None),
+    todos: str = Query(""),
+):
+    """Impressão em lote (A4). Somente leitura: não gera nem altera código."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        if todos == "ativos":
+            rows = conn.execute(_SQL_CARTEIRINHA + " WHERE t.ativo = 1 ORDER BY t.nome_completo"
+                                ).fetchall()
+        elif ids:
+            rows = conn.execute(_SQL_CARTEIRINHA + " WHERE t.id = ANY(%s) ORDER BY t.nome_completo",
+                                (ids,)).fetchall()
+        else:
+            return _voltar_lista(erro="Selecione ao menos um trabalhador para imprimir.")
+
+    cartoes, inativos, sem_codigo = [], [], []
+    for r in rows:
+        trab = dict(r)
+        if not trab["ativo"]:
+            inativos.append(trab["nome_completo"])
+        elif not trab["codigo"]:
+            sem_codigo.append(trab["nome_completo"])
+        else:
+            cartoes.append(_montar_cartao(trab))
+
+    if not cartoes:
+        partes = []
+        if inativos:
+            partes.append(f"{len(inativos)} inativo(s) — a impressão de inativos está "
+                          f"bloqueada nesta versão")
+        if sem_codigo:
+            partes.append(f"{len(sem_codigo)} sem código atual — gere o código antes")
+        return _voltar_lista(erro="Nada para imprimir: " + "; ".join(partes) + ".")
+
+    return templates.TemplateResponse("trabalhadores/carteirinhas_lote.html", {
+        "request": request,
+        "atendente": atendente,
+        "cartoes": cartoes,
+        "folhas": [cartoes[i:i + _CARTOES_POR_FOLHA]
+                   for i in range(0, len(cartoes), _CARTOES_POR_FOLHA)],
+        "inativos": inativos,
+        "sem_codigo": sem_codigo,
+        "centro": centro_config(),
     })
 
 
@@ -175,6 +317,11 @@ async def salvar_novo(
             )
             trab_id = cur.fetchone()["id"]
 
+            # Código de identificação (TASK_002) — na MESMA transação do
+            # cadastro: se não houver código disponível, o cadastro não fica
+            # registrado pela metade.
+            garantir_codigo(conn, trab_id, atendente_id=atendente["id"])
+
             # Salvar foto se enviada
             if foto and getattr(foto, "filename", None):
                 try:
@@ -195,6 +342,14 @@ async def salvar_novo(
                     "dia_vencimento": int(dia_vencimento or 10),
                     "ativo": 1,
                 })
+    except CodigosEsgotados:
+        return templates.TemplateResponse("trabalhadores/form.html", {
+            "request": request,
+            "atendente": atendente,
+            "registro": None,
+            "erro": "Não há códigos disponíveis (os 10.000 já foram emitidos). "
+                    "O cadastro não foi gravado.",
+        })
     except Exception:
         return templates.TemplateResponse("trabalhadores/form.html", {
             "request": request,
@@ -213,7 +368,14 @@ async def form_editar(request: Request, id: int):
     if redir:
         return redir
     with conectar() as conn:
-        row = conn.execute("SELECT * FROM trabalhadores WHERE id = %s", (id,)).fetchone()
+        row = conn.execute(
+            """SELECT t.*, c.codigo AS codigo_atual
+                 FROM trabalhadores t
+                 LEFT JOIN trabalhador_codigo c
+                        ON c.trabalhador_id = t.id AND c.estado = 'ativo'
+                WHERE t.id = %s""",
+            (id,),
+        ).fetchone()
     if not row:
         return RedirectResponse(url="/cadastros/trabalhadores", status_code=303)
     return templates.TemplateResponse("trabalhadores/form.html", {
@@ -221,6 +383,7 @@ async def form_editar(request: Request, id: int):
         "atendente": atendente,
         "registro": dict(row),
         "erro": None,
+        "aviso": None,
     })
 
 
@@ -304,12 +467,20 @@ async def salvar_editar(
             )
         except Exception:
             with conectar() as conn2:
-                row = conn2.execute("SELECT * FROM trabalhadores WHERE id=%s", (id,)).fetchone()
+                row = conn2.execute(
+                    """SELECT t.*, c.codigo AS codigo_atual
+                         FROM trabalhadores t
+                         LEFT JOIN trabalhador_codigo c
+                                ON c.trabalhador_id = t.id AND c.estado = 'ativo'
+                        WHERE t.id = %s""",
+                    (id,),
+                ).fetchone()
             return templates.TemplateResponse("trabalhadores/form.html", {
                 "request": request,
                 "atendente": atendente,
                 "registro": dict(row) if row else None,
                 "erro": f"CPF '{cpf}' já cadastrado.",
+                "aviso": None,
             })
 
         # Mensalidades a receber: se valor/dia mudaram, atualiza as pendentes
@@ -344,8 +515,85 @@ async def toggle_ativo(request: Request, id: int):
     if redir:
         return redir
     with conectar() as conn:
+        antes = conn.execute("SELECT ativo FROM trabalhadores WHERE id = %s", (id,)).fetchone()
         conn.execute("UPDATE trabalhadores SET ativo = 1 - ativo WHERE id = %s", (id,))
+        # Reativou e não tem código atual? Emite agora (inativação nunca mexe
+        # no código — ele fica reservado com a pessoa).
+        if antes and not antes["ativo"]:
+            garantir_codigo(conn, id, atendente_id=atendente["id"])
     return RedirectResponse(url="/cadastros/trabalhadores", status_code=303)
+
+
+# ── Código de identificação (TASK_002) ────────────────────────────────────────
+
+@router.post("/{id}/codigo/gerar", response_class=HTMLResponse)
+async def codigo_gerar(request: Request, id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    try:
+        with conectar() as conn:
+            r = garantir_codigo(conn, id, atendente_id=atendente["id"])
+    except TrabalhadorInativo:
+        return _voltar_lista(erro="O trabalhador está inativo — reative-o antes de "
+                                  "emitir código.")
+    except CodigosEsgotados:
+        return _voltar_lista(erro="Não há códigos disponíveis (os 10.000 já foram "
+                                  "emitidos).")
+    except TrabalhadorInexistente:
+        return _voltar_lista(erro="Trabalhador não encontrado.")
+    msg = (f"Código {r['codigo']} gerado para {r['nome_completo']}."
+           if r["criado"] else
+           f"{r['nome_completo']} já tinha o código {r['codigo']} — preservado.")
+    return _voltar_lista(ok=msg)
+
+
+@router.post("/{id}/codigo/trocar", response_class=HTMLResponse)
+async def codigo_trocar(request: Request, id: int, confirmar: str = Form("")):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    if confirmar != "1":
+        return _voltar_lista(erro="A troca de código precisa ser confirmada — a "
+                                  "carteirinha anterior deixa de funcionar.")
+    try:
+        with conectar() as conn:
+            r = trocar_codigo(conn, id, atendente_id=atendente["id"])
+    except TrabalhadorSemCodigo:
+        return _voltar_lista(erro="Este trabalhador não tem código atual — gere um antes "
+                                  "de trocar.")
+    except CodigosEsgotados:
+        return _voltar_lista(erro="Não foi possível gerar o novo código (os 10.000 já "
+                                  "foram emitidos). O código atual continua válido.")
+    except TrabalhadorInexistente:
+        return _voltar_lista(erro="Trabalhador não encontrado.")
+    return _voltar_lista(ok=f"Código trocado: {r['anterior']} saiu de circulação e "
+                            f"{r['novo']} é o novo código de {r['nome_completo']}. "
+                            f"A carteirinha anterior não funciona mais.")
+
+
+@router.get("/{id}/carteirinha", response_class=HTMLResponse)
+async def carteirinha_individual(request: Request, id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    with conectar() as conn:
+        row = conn.execute(_SQL_CARTEIRINHA + " WHERE t.id = %s", (id,)).fetchone()
+    if not row:
+        return _voltar_lista(erro="Trabalhador não encontrado.")
+    trab = dict(row)
+    if not trab["ativo"]:
+        return _voltar_lista(erro=f"{trab['nome_completo']} está inativo — a impressão de "
+                                  f"carteirinha de inativo está bloqueada nesta versão.")
+    if not trab["codigo"]:
+        return _voltar_lista(erro=f"{trab['nome_completo']} ainda não tem código — gere um "
+                                  f"antes de imprimir.")
+    return templates.TemplateResponse("trabalhadores/carteirinha.html", {
+        "request": request,
+        "atendente": atendente,
+        "cartao": _montar_cartao(trab),
+        "centro": centro_config(),
+    })
 
 
 # ── Dias de trabalho (agenda) ─────────────────────────────────────────────────

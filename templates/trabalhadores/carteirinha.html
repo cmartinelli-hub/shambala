@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Carteirinha — {{ cartao.nome }}</title>
+    <link rel="stylesheet" href="/static/css/carteirinha.css">
+    {% from "trabalhadores/_cartao.html" import cartao as cc %}
+</head>
+<body>
+<div class="carteirinha-barra">
+    <a class="btn carteirinha-voltar" href="/cadastros/trabalhadores/{{ cartao.id }}/editar">← Voltar</a>
+    <h1>Carteirinha de {{ cartao.nome }}</h1>
+    <span class="aviso-escala">Código {{ cartao.codigo }} · imprimir em escala 100%, sem “ajustar à página”</span>
+    <button type="button" class="btn btn-primario" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+</div>
+
+<div class="folha">
+    {{ cc(cartao, centro) }}
+</div>
+</body>
+</html>

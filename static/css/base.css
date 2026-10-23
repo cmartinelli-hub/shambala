@@ -4777,3 +4777,114 @@ td.acoes { white-space: nowrap; text-align: right; }
 .estoque-baixo { color: #c0392b; }
 .estoque-medio { color: #d68910; }
 .estoque-alto  { color: #1da851; }
+
+/* ══ Código da carteirinha do trabalhador (TASK_002) ══════════════════════ */
+
+.form-sucesso {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: 1rem;
+    padding: .75rem 1rem;
+    border-left: 4px solid #1da851;
+    background: #eaf7ef;
+    color: #14532d;
+    border-radius: var(--raio);
+    font-size: .92rem;
+}
+
+.btn-atencao {
+    background: var(--cor-alerta);
+    border: 1px solid var(--cor-alerta);
+    color: #fff;
+}
+.btn-atencao:hover { filter: brightness(.92); }
+
+.btn-carteirinha {
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #1e3a8a;
+}
+
+.trabalhador-codigo {
+    display: inline-block;
+    margin-left: .4rem;
+    padding: .1rem .45rem;
+    border: 1px solid var(--cor-borda);
+    border-radius: 999px;
+    background: #f5f5f0;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    font-variant-numeric: tabular-nums;
+}
+.trabalhador-codigo-falta {
+    color: var(--cor-alerta);
+    font-weight: 600;
+    letter-spacing: normal;
+}
+
+.trab-codigo {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin: .75rem 0;
+    padding: .6rem .9rem;
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    background: #fafaf7;
+}
+.trab-codigo-rotulo {
+    font-size: .8rem;
+    color: var(--cor-texto-suave);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.trab-codigo-valor {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: .14em;
+    font-variant-numeric: tabular-nums;
+}
+.trab-codigo-falta { color: var(--cor-alerta); font-weight: 600; }
+
+.trab-codigo-acoes {
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+    margin-top: .5rem;
+}
+.trab-codigo-confirmar {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+    font-size: .9rem;
+    max-width: 60ch;
+}
+
+.trab-lote-barra {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: .9rem;
+    padding: .55rem .9rem;
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    background: #fff;
+    font-size: .9rem;
+}
+.trab-lote-todos {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    cursor: pointer;
+}
+.trab-lote-check {
+    width: 18px;
+    height: 18px;
+    margin-left: auto;
+    align-self: flex-start;
+    cursor: pointer;
+}
