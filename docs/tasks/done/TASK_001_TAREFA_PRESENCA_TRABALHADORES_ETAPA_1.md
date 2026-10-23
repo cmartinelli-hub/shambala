@@ -1,7 +1,7 @@
 # Shambala — Etapa 1: base de presença independente do atendimento
 
 Data: 23/10/2026
-Status: pronta para execução pelo Qoder, exclusivamente no DEV.
+Status: concluída no DEV (commit local `9e02aef`, sem push; produção intocada).
 Numeração: atribuir o próximo número disponível conforme as normas do repositório. Não presumir um número.
 
 ## Objetivo e autorização
@@ -153,7 +153,27 @@ Concluir conforme a convenção do repositório e mover a tarefa para docs/tasks
 
 ## 3. Preservação do histórico e segunda execução (evidências)
 
-**Comparação antiga × nova no DEV** — antes (baseline, 15 linhas listadas id a id neste relatório) e depois da migração: mesmas 15 linhas, mesmos `trabalhador_id`, `presente=1`, `hora_chegada` (inclusive os `00:00` legados — nada fabricado), vínculos `dia_trabalho_id` mantidos, datas derivadas exatamente do dia associado (`divergentes_do_dia=0`), sem perdas (`linhas=15`). Constraints finais no DEV: `trabalhador_presenca_data_unique UNIQUE (trabalhador_id, data)`; UNIQUE antiga removida; `dia_trabalho_id` nullable; `data` NOT NULL.
+**Comparação antiga × nova no DEV, linha a linha** — as 15 linhas do baseline (antes da migração) e após a migração, conferidas id a id:
+
+| id | trabalhador_id | nome_completo | dia_trabalho_id | data | presente | hora_chegada |
+|---|---|---|---|---|---|---|
+| 1 | 2 | MARIÂNGELA BRASILINA SANTANA CRUZ | 12 | 2026-04-06 | 1 | 00:00 |
+| 2 | 1 | RICARDO RIBEIRO CRUZ | 12 | 2026-04-06 | 1 | 00:00 |
+| 3 | 3 | STELA MACIEL E DAER | 12 | 2026-04-06 | 1 | 00:00 |
+| 4 | 4 | JOSÉ RODRIGO ROCHA PANÇARDES | 12 | 2026-04-06 | 1 | 00:00 |
+| 5 | 5 | EDMÁISSON FELIPE PORTO FLORÊNCIO | 12 | 2026-04-06 | 1 | 00:00 |
+| 6 | 3 | STELA MACIEL E DAER | 13 | 2026-04-08 | 1 | 00:00 |
+| 7 | 2 | MARIÂNGELA BRASILINA SANTANA CRUZ | 13 | 2026-04-08 | 1 | 00:00 |
+| 8 | 4 | JOSÉ RODRIGO ROCHA PANÇARDES | 13 | 2026-04-08 | 1 | 00:00 |
+| 9 | 7 | FERNANDO CAJAZEIRA DE REZENDE | 13 | 2026-04-08 | 1 | 00:00 |
+| 10 | 5 | EDMÁISSON FELIPE PORTO FLORÊNCIO | 16 | 2026-04-22 | 1 | 19:51 |
+| 11 | 7 | FERNANDO CAJAZEIRA DE REZENDE | 16 | 2026-04-22 | 1 | 19:51 |
+| 12 | 4 | JOSÉ RODRIGO ROCHA PANÇARDES | 16 | 2026-04-22 | 1 | 19:51 |
+| 13 | 2 | MARIÂNGELA BRASILINA SANTANA CRUZ | 16 | 2026-04-22 | 1 | 19:51 |
+| 14 | 3 | STELA MACIEL E DAER | 16 | 2026-04-22 | 1 | 19:51 |
+| 15 | 24 | Fabiana Alves de Souza Vieira | 21 | 2026-05-06 | 1 | 19:00 |
+
+O listing pós-migração produziu exatamente as mesmas 15 linhas — mesmos `id`, `trabalhador_id`, `dia_trabalho_id`, `data`, `presente=1` e `hora_chegada` (inclusive os `00:00` legados — nada fabricado), com `hora_saida` seguiu nulo — nada foi alterado nos valores. Verificações agregadas: `linhas=15 presentes=15 ausentes=0 sem_chegada=0` e `divergentes_do_dia=0` (cada `data` coincide com a data do dia associado). Constraints finais no DEV: `trabalhador_presenca_data_unique UNIQUE (trabalhador_id, data)`; UNIQUE antiga `(trabalhador_id, dia_trabalho_id)` removida; `dia_trabalho_id` nullable; `data` NOT NULL.
 
 **Segunda execução**: o servidor DEV foi reiniciado uma segunda vez com o schema já migrado — startup limpo, sem alertas de migração, contagem seguiu 15. Em testes automatizados: `M2` (criar_tabelas duas vezes sobre dados antigos → 1 linha, fatos intactos) e `M5` implícito no runner (cada suíte reinicializa o schema). Ambiguidade: `M3` prova que data ilegível faz a migração **relatar o caso concreto e não alterar o schema** (sem descartar nem mesclar). Banco novo: `M4` prova que o schema nasce no formato do fluxo novo e o serviço grava sem dia de atendimento.
 
@@ -162,10 +182,11 @@ Concluir conforme a convenção do repositório e mover a tarefa para docs/tasks
 ## 4. Testes executados e resultados
 
 - **Suíte nova: 19/19** (PostgreSQL nativo descartável, sem Docker, via `tests/rodar_testes.sh`): U1 data sem dias_trabalho (não cria dia) · U2/U3 inexistente/inativo recusados sem escrita · U4 repetição preserva primeira chegada e distingue "já registrada" · U5 ausência→chegada vira uma linha presente · U6 presença histórica sem horário não ganha horário · **U7 concorrência: 8 threads simultâneas → exatamente 1 registro e um único "novo"** · **U8 virada UTC/São Paulo: 02:30 UTC → data 22/10 23:30 e 03:30 UTC → 23/10 00:30, imune ao fuso da sessão (Tóquio)** · M1–M4 migração/ambiguidade/segunda execução/banco novo · H1–H9 fluxo HTTP (dia fechado registra e atendimento segue fechado; legadas 404; RBAC recepção × cadastro; período vazio zerado; filtro segunda/quarta/domingo correto; presença sem dia no histórico).
-- **Regressão completa: 76/76** — `test_tres_passes 27/27`, `test_plano_unico 12/12`, `test_permissoes 8/8`, `test_agenda_medium 10/10`, `test_presenca_trabalhadores 19/19`, com o runner recriando o banco descartável e confirmando DEV inalterado antes/depois (`pessoas=664 checkins=2807` idênticos). Mensalidades/fiado cobertos pelas suítes de regressão; abertura/encerramento intocado (nenhum writer novo em `dias_trabalho`).
+- **Regressão completa: 76/76** — `test_tres_passes 27/27`, `test_plano_unico 12/12`, `test_permissoes 8/8`, `test_agenda_medium 10/10`, `test_presenca_trabalhadores 19/19`, com o runner recriando o banco descartável e confirmando DEV inalterado antes/depois (`pessoas=664 checkins=2807` idênticos). Abertura/encerramento de atendimento intocado (nenhum writer novo em `dias_trabalho`).
+- **Mensalidades e fiado: NÃO validados funcionalmente nesta etapa.** Nenhuma suíte do runner exercita esses fluxos (os termos só aparecem em `tests/test_financeiro_integracao.py`, que não integra o runner). Essa suíte contratual foi executada à parte contra o banco descartável `shambala_fin_test` e **falha por desatualização pré-existente** (7 erros + 1 falha, entre eles `UndefinedTable: relação "auditoria_eventos" não existe` e `AssertionError: 0.02 != 25.0` no teste de PDV) — condição anterior a esta tarefa, sem relação com as mudanças daqui; o banco scratch foi removido em seguida. A garantia sobre mensalidades/fiado é estrutural: nenhuma tabela, rotina ou rota desses fluxos foi tocada (ver diff do commit) e as colunas de `trabalhadores` usadas por eles (`valor_mensalidade`, `dia_vencimento`) permanecem intactas.
 - **Navegador**: app real (instância de teste, código idêntico) dirigido via Chromium — login, tela sem nenhum dia aberto lista ativos, busca, clique em Presente → banner "Chegada … registrada às 13:35", reload mostra "✔ Presente — 13:35" sem os botões, relatório geral com filtro segunda renderiza. Capturas em `/tmp/task001_checkin_lista.png`, `/tmp/task001_checkin_pos_presente.png`, `/tmp/task001_relatorio_geral.png`.
 
-**Limitações reais de cobertura**: (a) o clique no navegador foi validado na instância de teste com login de teste — a porta 9000 do DEV foi validada por HTTP (rota viva, redireciona ao login, legada 404) porque não há credenciais do dono; (b) migração com **duplicidade real** trabalhador+data derivada não é reproduzível no modelo antigo (dias_trabalho.data é UNIQUE), o teste M3 cobre a ambiguidade por data ilegível; (c) não há testes funcionais anteriores desta área para herdar — a suíte nova é a cobertura primária; (d) `hora_saida` segue órfã (só existia como NULL) — saída pertence a etapa futura; (e) os scripts legados de importação SQLite→PG (`migrar_sqlite_postgres*.py`, `scripts/migrar_sqlite_pg.py`) copiam a tabela pelo formato antigo e não servem para o schema novo — fora do escopo, documentado aqui.
+**Limitações reais de cobertura**: (a) o clique no navegador foi validado na instância de teste com login de teste — a porta 9000 do DEV foi validada por HTTP (rota viva, redireciona ao login, legada 404) porque não há credenciais do dono; (b) migração com **duplicidade real** trabalhador+data derivada não é reproduzível no modelo antigo (dias_trabalho.data é UNIQUE), o teste M3 cobre a ambiguidade por data ilegível; (c) não há testes funcionais anteriores desta área para herdar — a suíte nova é a cobertura primária; (d) `hora_saida` segue órfã (só existia como NULL) — saída pertence a etapa futura; (e) os scripts legados de importação SQLite→PG (`migrar_sqlite_postgres*.py`, `scripts/migrar_sqlite_pg.py`) copiam a tabela pelo formato antigo e não servem para o schema novo — fora do escopo, documentado aqui; (f) `tests/test_financeiro_integracao.py` está desatualizado contra o schema atual (falha com erros pré-existentes, detalhados acima) — sua manutenção é trabalho separado, fora desta etapa.
 
 ## 5. Roteiro curto para conferir no DEV (chegada antes da abertura)
 
