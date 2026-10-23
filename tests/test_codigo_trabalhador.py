@@ -880,6 +880,19 @@ def k13(ctx):
     assert "Ângela Boaventura de Souza" in html, "nome ausente do cartão"
     assert f'data-codigo="{ca}"' in html, "código errado no cartão"
     assert f'data-trabalhador="{a}"' in html, "id ausente (amarração do teste)"
+
+    # identidade fixa do cartão: estrela + "Shambala – Cidade de Luz"
+    assert "Shambala" in html and "Cidade de Luz" in html, "nome fixo da Casa ausente"
+    assert "/static/logos/" in html, "estrela/logo da Casa ausente"
+    assert "logo.svg" not in html, "cai no logo azul antigo em vez da reserva dourada"
+
+    # sem rótulo de papel e sem foto: o cartão tem exatamente estrela + QR
+    assert "Trabalhador · Voluntário" not in html, "rótulo de papel deveria ter saído"
+    assert "cc-papel" not in html and "cc-foto" not in html, "sobrou estrutura antiga"
+    assert "/static/fotos/" not in html and "foto-placeholder" not in html, \
+        "carteirinha ainda referencia foto"
+    assert_eq(html.count("<img"), 2, "cartão deveria ter exatamente 2 imagens (estrela e QR)")
+
     for vedado in ("123.456.789-01", "9999999", "(11) 4444-5555", "angela@exemplo.teste",
                    "77.77", "55.50", "fiado", "mensalidade"):
         assert vedado not in html, f"dado sensível vazou na carteirinha: {vedado}"
@@ -981,6 +994,26 @@ def k15(ctx):
     assert "column-gap: 8mm" in css and "row-gap: 1mm" in css, "vazamentos da grade"
     assert "break-before: page" in css, "quebra de folha"
     assert "@media print" in css, "CSS de impressão"
+
+    # aritmética das faixas, lida das declarações (não de comentário)
+    def _decl(bloco, chave):
+        corpo = re.search(r"\." + bloco + r"\s*\{(.*?)\}", css, re.S).group(1)
+        valor = re.search(chave + r":\s*([\d.]+)mm", corpo)
+        assert valor, f".{bloco} perdeu {chave}"
+        return float(valor.group(1))
+
+    topo = _decl("cc-topo", "height")
+    folga_qr = _decl("cc-qr-faixa", "margin-top")
+    qr = _decl("cc-qr-faixa", "height")
+    folga_rodape = _decl("cc-rodape", "margin-top")
+    rodape = _decl("cc-rodape", "height")
+    assert_eq(qr, _decl("cc-qr", "width"), "QR ocupa a faixa inteira")
+    assert_eq(topo + folga_qr + qr + folga_rodape + rodape, 49.0,
+              f"faixas não fecham a altura útil: {topo}+{folga_qr}+{qr}+{folga_rodape}+{rodape}")
+    # o QR é a prioridade visual: nenhuma outra faixa pode ser maior que ele
+    assert qr >= 29.0, f"QR deveria ser a faixa dominante, mede {qr} mm"
+    assert topo < qr and rodape < qr, "faixa maior que o QR rouba a prioridade"
+    assert "cc-foto" not in css, "CSS ainda reserva espaço para foto"
 
 
 # ══════════════════════════════════════════════════════════════════════════

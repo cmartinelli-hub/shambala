@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Estrela dourada">
+    <!-- Reserva do cartão quando não há logo configurado. Paleta amostrada do logo
+         real da Casa (static/logos/logo_centro_8354a2b9.png). -->
+    <polygon points="50,2 63.86,26 91.57,26 77.71,50 91.57,74 63.86,74 50,98 36.14,74 8.43,74 22.29,50 8.43,26 36.14,26"
+             fill="#E8B22F" stroke="#4B3D19" stroke-width="4" stroke-linejoin="round"/>
+</svg>

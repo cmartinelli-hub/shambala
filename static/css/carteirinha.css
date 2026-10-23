@@ -103,87 +103,70 @@ body {
     print-color-adjust: exact;
 }
 
+/* Faixas do cartão — a altura fecha exatamente com a área útil (49,0 mm):
+   topo 6,0 + folga 1,0 + QR 30,5 + folga 1,0 + rodapé 10,5 = 49,0 mm.
+   O QR é a faixa dominante: 30,5 × 30,5 mm = 930 mm² = 23,8% da área útil.  */
 .cc-topo {
+    flex: none;
+    height: 6mm;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 2mm;
 }
-.cc-marca {
-    display: flex;
-    align-items: center;
-    gap: 1.5mm;
-    min-width: 0;
-}
-.cc-marca img { height: 6mm; width: auto; object-fit: contain; }
-.cc-marca span {
-    font-size: 5.8pt;
-    line-height: 1.15;
-    color: #333;
-    max-width: 45mm;
-}
-.cc-papel {
-    font-size: 6.4pt;
-    letter-spacing: .3mm;
-    text-transform: uppercase;
+.cc-estrela { height: 5.2mm; width: auto; object-fit: contain; }
+.cc-centro {
+    font-size: 8.5pt;
+    line-height: 1.1;
     font-weight: 600;
-    color: #1a5fa8;
+    letter-spacing: .2mm;
+    color: #4B3D19;
     white-space: nowrap;
 }
 
-.cc-corpo {
-    flex: 1;
-    min-height: 0;
+.cc-qr-faixa {
+    flex: none;
+    height: 30.5mm;
+    margin-top: 1mm;
     display: flex;
     align-items: center;
-    gap: 3mm;
-    margin-top: 1.5mm;
+    justify-content: center;
 }
-.cc-foto {
+.cc-qr {
+    width: 30.5mm;
+    height: 30.5mm;
+    image-rendering: pixelated;
+}
+
+.cc-rodape {
     flex: none;
-    width: 17mm;
-    height: 17mm;
-    border-radius: 50%;
-    overflow: hidden;
-    background: #eee;
+    height: 10.5mm;
+    margin-top: 1mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .4mm;
 }
-.cc-foto img { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; }
 .cc-nome {
-    font-size: 12pt;
-    line-height: 1.12;
-    font-weight: 600;
+    font-size: 9.5pt;
+    line-height: 1.05;
+    font-weight: 700;
+    text-align: center;
     word-break: normal;
     overflow-wrap: break-word;
     hyphens: auto;
 }
 /* Escada para não truncar nomes compridos (nunca ellipsis) */
-.cc-nome.medio { font-size: 10.5pt; }
-.cc-nome.longo { font-size: 9pt; line-height: 1.08; }
-
-.cc-base {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 3mm;
-}
-.cc-codigo-rotulo {
-    font-size: 5.8pt;
-    letter-spacing: .25mm;
-    text-transform: uppercase;
-    color: #666;
-}
+.cc-nome.medio { font-size: 8.5pt; }
+.cc-nome.longo { font-size: 7.5pt; line-height: 1.02; }
 .cc-codigo {
-    font-size: 15pt;
-    font-weight: 700;
+    font-size: 12pt;
+    font-weight: 800;
     letter-spacing: 1.4mm;
-    line-height: 1.1;
+    line-height: 1;
+    color: #000;
     font-variant-numeric: tabular-nums;
-}
-.cc-qr {
-    width: 25mm;
-    height: 25mm;
-    flex: none;
-    image-rendering: pixelated;
 }
 
 /* ── Impressão ── */

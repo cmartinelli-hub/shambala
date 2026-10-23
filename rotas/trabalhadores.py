@@ -175,13 +175,6 @@ async def preparar_codigos(request: Request):
     return _voltar_lista(ok=ok)
 
 
-def _foto_url(trab: dict) -> str:
-    if trab.get("foto_trabalhador"):
-        return f"/static/fotos/{trab['foto_trabalhador']}"
-    inicial = (trab["nome_completo"].strip()[:1] or "?")
-    return f"/cadastros/trabalhadores/foto-placeholder/{inicial}"
-
-
 def _montar_cartao(trab: dict) -> dict:
     """Cartão de carteirinha: dados mínimos + QR do código atual.
 
@@ -190,14 +183,13 @@ def _montar_cartao(trab: dict) -> dict:
     return {
         "id": trab["id"],
         "nome": trab["nome_completo"],
-        "foto_url": _foto_url(trab),
         "codigo": trab["codigo"],
         "qr": qr_data_uri(trab["codigo"]),
     }
 
 
 _SQL_CARTEIRINHA = """
-    SELECT t.id, t.nome_completo, t.foto_trabalhador, t.ativo,
+    SELECT t.id, t.nome_completo, t.ativo,
            c.codigo AS codigo
       FROM trabalhadores t
       LEFT JOIN trabalhador_codigo c
