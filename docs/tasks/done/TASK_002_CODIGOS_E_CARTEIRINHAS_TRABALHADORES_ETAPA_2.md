@@ -258,6 +258,14 @@ padrão e escrita só com `--aplicar`, recusando execução sob
 9000 foi reiniciado (e somente ele) para aplicar o schema; o processo atual
 atende e o smoke anônimo das rotas novas devolve `303 → /login`.
 
+**Segunda subida do serviço DEV** (prova de que o `_migrar` é idempotente contra
+o schema já existente, e de que o startup não emite código): reinício extra com
+log limpo — `Application startup complete`, nenhum `error`/`traceback`/`warning`,
+HTTP 200 em `/login` — e, depois, as mesmas 70 linhas na `trabalhador_codigo`
+(70 `ativo`, 70 distintas, 70 com `origem='preparacao_local'`), **0** com
+`criado_em` posterior à preparação, com `pessoas` 664, `checkins` 2807 e
+`trabalhador_presenca` 15 inalterados.
+
 ## 4. Testes, evidência de impressão e decodificação
 
 Runner completo (`bash tests/rodar_testes.sh`), resultado exato:
@@ -396,5 +404,6 @@ com os 14 arquivos acima. Nenhum arquivo de outra tarefa foi staged — os
 arquivos não relacionados que já estavam no working tree (`.qoder/`,
 `.reasonix/`, `CONTINUAR.md`, `PLANO_*.md`, `RELATORIO_*.md/pdf`,
 `consolidar_planos.py`, `escola/`, `reasonix.toml`, `static/fotos/nota_*.jpg`)
-seguem intactos. Este arquivo, com o relatório e o status atualizados, entra no
-commit de documentação que o move para `docs/tasks/done/`.
+seguem intactos. Este arquivo, com o relatório e o status atualizados, foi para
+`docs/tasks/done/` no commit de documentação `5b0a11a`, mais um acompanhamento
+registrando a segunda subida do serviço DEV.
