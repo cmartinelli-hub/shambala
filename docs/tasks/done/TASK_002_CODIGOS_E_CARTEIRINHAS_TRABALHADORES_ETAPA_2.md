@@ -1,7 +1,7 @@
 # TASK_002 — Códigos e carteirinhas dos trabalhadores — Etapa 2
 
 Data: 23/10/2026
-Status: concluída no DEV em 23/10/2026 — implementação em 03014b5, relatório abaixo.
+Status: concluída no DEV em 23/10/2026 — implementação em 03014b5, relatório abaixo. Layout da carteirinha revisado no mesmo dia em 7f06841 (adendo nº 8, ao final).
 Dependência: TASK_001, implementação informada no commit local 9e02aef e ajustes documentais em 75d6f50. Confirmar o estado real no repositório.
 
 ## Objetivo e limites
@@ -407,3 +407,167 @@ arquivos não relacionados que já estavam no working tree (`.qoder/`,
 seguem intactos. Este arquivo, com o relatório e o status atualizados, foi para
 `docs/tasks/done/` no commit de documentação `5b0a11a`, mais um acompanhamento
 registrando a segunda subida do serviço DEV.
+
+---
+
+# Adendo — revisão do layout da carteirinha (23/10/2026)
+
+## 8. O que mudou no cartão, por quê e como foi validado
+
+### 8.1 Pedido e decisões
+
+O dono pediu, depois de ver as primeiras carteirinhas impressas: fora o rótulo
+"Trabalhador · Voluntário" e o círculo com a inicial; nenhum espaço reservado
+para foto; no alto a estrela dourada e "Shambala – Cidade de Luz"; QR com
+prioridade visual, preto sobre branco e com a margem livre necessária; no rodapé
+o nome completo e o código de quatro dígitos, com os zeros iniciais visíveis.
+Cartão e grade não mudam: 85,6 × 54 mm, dez por folha A4, sem corte nem
+sobreposição.
+
+Duas rodadas:
+
+1. **Primeira versão** — três faixas, com o QR a 27,5 mm. Ao medir, ficou
+   evidente que o rodapé em faixa cheia de 12 mm não comportava os 50% de área
+   útil pedidos inicialmente: as faixas cheias só deixam 27,5 mm de altura para
+   o QR (19,4% dos 3.900,4 mm² úteis). Isso foi apresentado com a aritmética, e
+   o arranjo de faixas foi aprovado sabendo disso.
+2. **Ajuste aprovado** — "diminuir o nome do trabalhador e o código numérico no
+   rodapé e usar o espaço liberado para aumentar o QR; reduzir a altura do
+   rodapé e os espaçamentos". Aplicado: rodapé 12 → 10,5 mm e folgas
+   1,5 → 1,0 mm, devolvendo os 3 mm ao QR, que foi de 27,5 para **30,5 mm de
+   lado** (23,8% da área útil). O cabeçalho passou de 6,5 para 6,0 mm.
+
+Decisões registradas: o nome da Casa no cartão é **texto fixo** — não se lê
+`centro_nome`, que no DEV vale `--- Shambala --- Cidade de Luz` e continuará
+alimentando as outras telas; nenhuma linha de `configuracoes_centro` foi
+alterada. A estrela vem de **`centro_logo`** quando configurado e, se não
+houver logo, cai em `static/logos/estrela_dourada.svg` (asset novo, paleta
+amostrada do logo real: `#E8B22F` com contorno `#4B3D19`) — nunca mais no
+`static/logo.svg` azul que apareceu na primeira prévia.
+
+### 8.2 Geometria final
+
+```
+cartão 85,6 × 54 mm · padding 2,5 mm vertical / 3 mm horizontal
+área útil 79,6 × 49,0 mm = 3.900,4 mm²
+
+  topo      6,0 mm   (estrela 5,2 mm + "Shambala – Cidade de Luz" 8,5 pt)
+  folga     1,0 mm
+  QR       30,5 mm   (30,5² = 930 mm² = 23,8% da área útil)
+  folga     1,0 mm
+  rodapé   10,5 mm   (nome 9,5/8,5/7,5 pt + código 12 pt)
+  ─────────
+  total    49,0 mm   ← fecha exatamente com a altura útil
+```
+
+Rodapé: nome em 9,5 pt, 8,5 pt acima de 24 caracteres e 7,5 pt acima de 40, com
+quebra de linha — nunca ellipsis; código em 12 pt, peso 800,
+`font-variant-numeric: tabular-nums` e `letter-spacing: 1,4 mm`. Conteúdo e
+geração do QR não mudaram: os mesmos quatro caracteres, `version=1`,
+`border=4`, gerado localmente.
+
+Medidas tiradas **do PDF impresso** (cartão ampliado, 600 dpi):
+
+| Grandeza | Valor |
+|---|---|
+| Símbolo preto do QR | 21,99 × 21,99 mm (21 módulos de 1,047 mm) |
+| Zona de silêncio dentro da imagem | 4,21 mm por lado (4 módulos, como especificado) |
+| Branco livre do símbolo até o cabeçalho | 5,2 mm |
+| Branco livre do símbolo até o nome | 6,3 mm |
+| Branco livre à esquerda / direita do símbolo | 31,6 mm / 32,0 mm |
+| Altura dos dígitos do código | 3,04 mm, última linha a 3,0 mm da borda |
+
+Nada sobrepõe os módulos, e a margem livre exigida para leitura está preservada
+com folga mesmo depois de o QR ter crescido.
+
+### 8.3 Arquivos
+
+| Arquivo | Mudança |
+|---|---|
+| `templates/trabalhadores/_cartao.html` | macro reescrita em três faixas (`cc-topo`, `cc-qr-faixa`, `cc-rodape`); saem `.cc-papel` e `.cc-foto`; nome da Casa fixo; reserva dourada no `src` do logo |
+| `static/css/carteirinha.css` | alturas exatas das faixas acima; regras de foto removidas; escada do nome recalibrada para a faixa cheia; código 12 pt |
+| `static/logos/estrela_dourada.svg` | novo — reserva dourada para quando não há logo configurado |
+| `rotas/trabalhadores.py` | `_montar_cartao` deixa de calcular `foto_url`; `_foto_url`, sem outro uso, removida; `foto_trabalhador` saiu do `SELECT` das carteirinhas. A rota `foto-placeholder/{inicial}` fica — ainda serve a lista |
+
+Nada de banco, serviço de códigos, rotas ou permissões mudou; nenhuma escrita
+no DEV foi necessária para o layout.
+
+### 8.4 Testes
+
+- **K13** — passou a exigir o rótulo **ausente**, o nome fixo da Casa, a
+  estrela, exatamente **2 imagens** no cartão (estrela e QR) e que não sobre
+  nenhuma referência a foto (`/static/fotos/`, `foto-placeholder`), mantendo as
+  vedações de CPF/RG/telefone/e-mail/mensalidade/fiado e a ausência de URL
+  externa.
+- **K15** — além da grade A4, lê as **alturas das faixas do próprio CSS** e
+  exige que fechem 49,0 mm, que o QR tenha o lado da faixa e que seja a faixa
+  dominante (≥ 29 mm e maior que topo e rodapé), e que não tenha sobrado regra
+  `.cc-foto`.
+- **K16** — inalterado no enunciado: 70 carteirinhas fictícias → 7 folhas A4 →
+  raster 300 dpi → leitura **célula a célula** pela geometria física, com zbar
+  como leitor de referência e OpenCV como fallback. É o que prova que nenhum QR
+  vazou da sua célula.
+
+Runner completo no ambiente descartável (`bash tests/rodar_testes.sh`, log em
+`/tmp/runner_layout_final.log`), **exit 0**:
+
+| Suíte | Resultado |
+|---|---|
+| `test_tres_passes.py` | 27/27 |
+| `test_plano_unico.py` | 12/12 |
+| `test_permissoes.py` | 8/8 |
+| `test_agenda_medium.py` | 10/10 |
+| `test_presenca_trabalhadores.py` (TASK_001) | 19/19 |
+| `test_codigo_trabalhador.py` (TASK_002) | 16/16 |
+| **Total** | **92/92 — 0 falhas, 0 pulados** |
+
+Conferência de isolamento: `pessoas=664 checkins=2807` antes e depois —
+**DEV inalterado**. A limitação da TASK_001 sobre mensalidades/fiado permanece
+registrada no corpo deste relatório e não foi ampliada aqui.
+
+Evidência visual (nomes fictícios, identidade real da Casa reproduzida só no
+banco de teste): `~/Documentos/evidencias-task002-layout/` — `cartao_ampliado.png`
+(nome de 62 caracteres, duas linhas), `cartao_nome_medio.png`,
+`cartao_sem_logo.png` (a reserva dourada), `folha_completa.png`/`.pdf` e
+`README.txt` com o passo a passo. Decodificação da folha impressa, célula a
+célula: esperados `9634 7176 0952 4975 1800 0336 3219 7199 5031 0016` = lidos,
+na mesma ordem, com os três códigos de zero inicial preservados.
+
+### 8.5 Aplicação no DEV
+
+O layout mexe em Python (`rotas/trabalhadores.py`), então a troca exigiu
+reinício — não foi só hot-reload de template.
+
+| Item | Valor |
+|---|---|
+| Serviço | o **mesmo** da porta 9000, sem segunda instância persistente |
+| Comando | `.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 9000` (idêntico ao anterior) |
+| pid | 1968959 → **2723704** (gravado em `/tmp/shambala_dev.pid`) |
+| Log | `/tmp/uvicorn_dev2.log`, com marcador do reinício |
+| Parada | `SIGTERM` no pid do listener, com guarda fail-closed: não relança se a porta continuar ocupada |
+
+Depois do reinício:
+
+- Smoke anônimo: `/` → 303 `/menu`; `/menu` → 303 `/login`; `/login` → 200;
+  `/cadastros/trabalhadores` e `/checkin-trabalhador` → 303 `/login` (nenhum
+  acesso anônimo novo).
+- O CSS servido já traz o QR de 30,5 mm e `estrela_dourada.svg` responde
+  200 `image/svg+xml`.
+- **O startup não emitiu código** — a grava em `trabalhador_codigo` posterior ao
+  reinício está zerada; seguem 70 códigos emitidos e 0 ativos sem código.
+- Nada foi gravado no banco do DEV; o backup
+  `~/Documentos/backup-shamballa/shambala-DEV-pre-TASK002-2026-10-23.dump`
+  continua válido para esta mudança.
+- Produção intocada, sem push, sem alteração de túneis.
+
+Pendência que permanece a mesma do corpo do relatório: imprimir a carteirinha
+**clicando na tela do DEV** continua sem validação, por faltar credencial de
+teste — a validação do fluxo HTTP, das permissões e da impressão foi feita no
+ambiente descartável. O teste físico de leitura por câmera de aparelho continua
+não realizado, e pertence à TASK_003.
+
+Commit desta revisão: **7f06841** —
+`feat: layout da carteirinha em três faixas, com o QR de 30,5 mm como prioridade`
+(4 arquivos alterados + o asset novo). Nenhum arquivo de outra tarefa foi
+staged.
+
