@@ -1,7 +1,7 @@
 # TASK_002 — Códigos e carteirinhas dos trabalhadores — Etapa 2
 
 Data: 23/10/2026
-Status: concluída no DEV em 23/10/2026 — implementação em 03014b5, relatório abaixo. Layout da carteirinha revisado no mesmo dia em 7f06841 (adendo nº 8, ao final).
+Status: concluída no DEV em 23/10/2026 — implementação em 03014b5, relatório abaixo. Layout da carteirinha revisado no mesmo dia em 7f06841 (adendo nº 8, ao final). Pendência de integridade da FK corrigida no mesmo dia em a2f2e98 (adendo nº 9).
 Dependência: TASK_001, implementação informada no commit local 9e02aef e ajustes documentais em 75d6f50. Confirmar o estado real no repositório.
 
 ## Objetivo e limites
@@ -571,3 +571,208 @@ Commit desta revisão: **7f06841** —
 (4 arquivos alterados + o asset novo). Nenhum arquivo de outra tarefa foi
 staged.
 
+
+---
+
+# Adendo — correção da FK de `trabalhador_codigo` (23/10/2026)
+
+## 9. Correção de integridade: `ON DELETE CASCADE` → `ON DELETE RESTRICT`
+
+### 9.1 O desvio, conferido no código e no banco
+
+A tabela foi criada (seção 7 do corpo deste relatório, commit 03014b5) com
+
+```sql
+trabalhador_id  INTEGER NOT NULL REFERENCES trabalhadores(id) ON DELETE CASCADE
+```
+
+e o `pg_constraint` do DEV confirmava: `confdeltype = 'c'`.
+
+Consequência concreta: excluir fisicamente um trabalhador levaria embora as
+linhas dele em `trabalhador_codigo`. Como a reserva permanente de código vive
+nessas linhas — inclusive nas que estão em estado `retirado`, que jamais devem
+voltar a circular —,
+o CASCADE desfazia exatamente a garantia de que uma carteirinha antiga não passa
+a identificar outra pessoa: o código ficava livre e podia ser reemitido. Quem sai
+de circulação é **inativado** (`toggle-ativo`, que nunca mexe no código — K3/K4),
+não excluído. Nada no app fazia a exclusão, mas o banco permitia.
+
+Correção pedida pelo dono, exclusivamente no DEV: RESTRICT no DDL de instalação
+nova e em migração para bancos já criados, preservando integralmente os códigos
+emitidos.
+
+### 9.2 O que mudou
+
+**`banco.py`, DDL de instalação nova** (`_migrar`, linha 568):
+
+```sql
+trabalhador_id  INTEGER NOT NULL REFERENCES trabalhadores(id) ON DELETE RESTRICT
+```
+
+**`banco.py`, migração para banco existente** (linhas 584–606). A regra de
+exclusão mora na *constraint*, não numa `CHECK` — então `CREATE TABLE IF NOT
+EXISTS` não a corrigiria num banco já criado. O startup consulta o catálogo e,
+se a FK existir com `confdeltype <> 'r'`, troca a constraint pelo mesmo nome,
+sem tocar em nenhuma linha:
+
+```sql
+DO $mig$ ... 
+    IF nome IS NOT NULL AND regra <> 'r' THEN
+        EXECUTE format('ALTER TABLE trabalhador_codigo DROP CONSTRAINT %%I', nome);
+        EXECUTE format('ALTER TABLE trabalhador_codigo '
+                       'ADD CONSTRAINT %%I FOREIGN KEY (trabalhador_id) '
+                       'REFERENCES trabalhadores(id) ON DELETE RESTRICT', nome);
+```
+
+Propriedades: **transacional** (está dentro do mesmo `with conectar()` de todo o
+schema; se falhar, nada fica pela metade), **idempotente** (reexecutar não
+encontra mais o desvio) e **preservadora** (não apaga, regenera, reordena nem
+recupera código; o nome da constraint é mantido, o que mantém estáveis as
+mensagens de erro e as consultas ao catálogo). O `RAISE NOTICE` registra a troca
+quando ela ocorre.
+
+Detalhe que quase derrubou o startup: os `%%` são `%` literais. Todo texto passa
+pela interpolação do psycopg2 (`_ConnCompat.execute` sempre envia `params=()`),
+então `%I` dentro do `format()` era tratado como marcador de parâmetro e a
+execução morria com `IndexError: tuple index out of range`. É a mesma armadilha
+de sempre, agora documentada em comentário no próprio bloco.
+
+Nada mais mudou: serviço, rotas, permissões, templates, CSS e layout aprovado
+dos cartões permanecem como em 7f06841.
+
+### 9.3 Validação no PostgreSQL descartável
+
+Dois testes novos em `tests/test_codigo_trabalhador.py` (a suíte passou de 16
+para 18; helper `_fk_trabalhador()` lê nome + `confdeltype` do catálogo):
+
+- **K18** — instalação nova: a FK nasce `'r'`. Depois o teste **reproduz o estado
+  antigo do banco**: refaz a constraint como `ON DELETE CASCADE` à mão, semeia um
+  trabalhador com 1 código `ativo` + 1 `retirado`, tira o snapshot e roda
+  `criar_tabelas()`. Resultado: regra vira `'r'`, **o mesmo nome** de constraint,
+  snapshot idêntico byte a byte. Roda `criar_tabelas()` uma segunda vez: continua
+  `'r'`, dados idênticos, nenhum erro (a segunda execução da migração é
+  exatamente o cenário pedido). E o `DELETE` físico é recusado com
+  `ForeignKeyViolation`, com o snapshot e o dono preservados.
+- **K19** — pelo HTTP da tela: trabalhador com código atual e trabalhador com
+  **somente códigos retirados** (linhas inseridas por SQL direto, com o
+  comentário de que nenhum caminho da tela produz esse estado) são ambos
+  recusados na exclusão. Inativar → 303 e o código **não muda**, resolvendo como
+  `inativo`; reativar → 303, mesmo código, `ativo`. Trinta emissões novas nunca
+  devolvem um código retirado, e quem só tem retirados continua sem código ativo.
+
+Cobertura dos cinco cenários exigidos: exclusão com código atual recusada (K19),
+exclusão com só retirados recusada (K19), inativação/reativação funcionando
+(K19), retirados indisponíveis para nova emissão (K19), segunda execução da
+migração sem alterar dados nem apresentar erro (K18).
+
+**Runner completo** (`bash tests/rodar_testes.sh`, log
+`/tmp/runner_fk_restrict.log`, saída 0):
+
+| Suíte | Resultado |
+|---|---|
+| `test_tres_passes.py` | 27/27 |
+| `test_plano_unico.py` | 12/12 |
+| `test_permissoes.py` | 8/8 |
+| `test_agenda_medium.py` | 10/10 |
+| `test_presenca_trabalhadores.py` (TASK_001) | 19/19 — regressão preservada |
+| `test_codigo_trabalhador.py` (TASK_002) | **18/18** |
+| **Total** | **94/94** |
+
+Conferência do DEV antes e depois do runner: `pessoas=664 checkins=2807` nos dois
+momentos — o runner não tocou no DEV (trava de isolamento em vigor). O banco
+descartável da migração (`shambala_codigo_mig_test`) foi removido pelo próprio
+teste; restam apenas `shambala` (DEV) e `shambala_test_passes` (suíte).
+
+### 9.4 Aplicação no DEV e prova de que nenhum código mudou
+
+**Backup antes da escrita** — `pg_dump -Fc` do DEV para
+`~/Documentos/backup-shamballa/shambala-DEV-pre-FKRESTRICT-2026-10-23.dump`
+(335.735 bytes). Destino conferido antes do dump: o `SHAMBALA_DB_NAME` do `.env` do DEV
+(`shambala`, em `/var/run/postgresql`) — o mesmo banco que atende o serviço da
+porta 9000. Este relatório registra apenas metadados — tamanho,
+contagens e o hash do snapshot —, sem segredos e sem a lista de códigos.
+Recuperabilidade comprovada **por restauração**: o dump foi restaurado num banco
+de conferência (`shambala_verifica_backup_fk`) e comparado com o DEV —
+fingerprint de contagem das 42 tabelas `975faf3c64ac76e4ad9213ba244e4ac6`
+idêntico dos dois lados, e snapshot de códigos idêntico. O banco de conferência
+foi descartado em seguida.
+
+**Estado antes** (catálogo e dados do DEV): `confdeltype='c'`, snapshot de
+códigos `8b23c4308ac8dd2e49aae934cf0c0189`, 70 códigos.
+
+**Aplicação** — nenhum serviço novo, nenhuma instância persistente: reiniciou-se
+**somente** o serviço da porta 9000 (mesmo procedimento do adendo nº 8 — SIGTERM
+no pid do listener com guarda fail-closed, espera por linha nova no log a partir
+do offset de bytes gravado antes). pid **2723704 → 3363620**. A migração do
+`_migrar()` rodou no startup e trocou a constraint.
+
+**Estado depois:**
+
+| Conferência | Antes | Depois |
+|---|---|---|
+| `pg_constraint` (`contype='f'` da coluna `trabalhador_id`) | `c` (CASCADE) | **`r` (RESTRICT)**, mesmo nome `trabalhador_codigo_trabalhador_id_fkey` |
+| snapshot md5 dos códigos | `8b23c4308ac8dd2e49aae934cf0c0189` | **idêntico** |
+| `trabalhador_codigo` | 70 linhas (70 ativos, 0 retirados) | 70 linhas (70 ativos, 0 retirados) |
+| `trabalhadores` | 70 (70 ativos) | 70 (70 ativos) |
+
+O md5 cobre `codigo`, `trabalhador_id`, `estado`, `criado_em`, `retirado_em`,
+`origem` e `atendente_id` de todas as linhas, ordenado pelo código — não é
+contagem, é conteúdo.
+
+**Comportamento no DEV**, sem escrita: para isolar a FK dos códigos (o primeiro
+ensaio em `BEGIN…ROLLBACK` foi barrado por
+`financeiro_movimentacoes_trabalhador_id_fkey`, porque aquele trabalhador tem
+mensalidades), listaram-se as seis FKs que apontam para `trabalhadores` e
+escolheu-se uma pessoa referenciada **só** por `trabalhador_codigo` (id 9). No
+DEV, dentro de transação com rollback:
+
+```
+ERRO:  atualização ou exclusão em tabela "trabalhadores" viola restrição de
+       chave estrangeira "trabalhador_codigo_trabalhador_id_fkey" em "trabalhador_codigo"
+DETALHE: Chave (id)=(9) ainda é referenciada pela tabela "trabalhador_codigo".
+```
+
+Recusada pela FK certa. Depois do rollback: `worker9=1`, 70 pessoas, 70 códigos,
+mesmo md5. As demais FKs para `trabalhadores` continuam com `NO ACTION`
+(`fiado_credito_mov`, `financeiro_movimentacoes`, `trabalhador_dias`,
+`trabalhador_presenca`, `vendas_pdv`) — não são escopo desta correção e nada
+nelas foi alterado.
+
+**Smoke anônimo** (servidor real, sem credenciais): `/` → 303 `/menu`; `/menu` →
+303 `/login`; `/login` → 200; `/cadastros/trabalhadores`,
+`/checkin-trabalhador` e `/cadastros/trabalhadores/carteirinhas` → 303 `/login`.
+`carteirinha.css` 200 (4.871 b) e `estrela_dourada.svg` 200 (473 b). Nenhuma
+rota nova ficou acessível anonimamente.
+
+**SHAMBALA_CONTEXTO.md**: a linha da FK passou a `ON DELETE RESTRICT` e ganhou o
+parágrafo explicando por que a exclusão física não é a saída (quem sai de
+circulação é inativado) e como o startup troca CASCADE por RESTRICT de forma
+transacional e idempotente.
+
+### 9.5 Arquivos e commit
+
+| Arquivo | Mudança |
+|---|---|
+| `banco.py` | +36/−1 — DDL novo com `ON DELETE RESTRICT` e bloco `DO` de migração no `_migrar` |
+| `tests/test_codigo_trabalhador.py` | +138 — helper `_fk_trabalhador()` e testes K18/K19 |
+| `SHAMBALA_CONTEXTO.md` | +9/−1 — FK RESTRICT e a regra de preservação |
+| este relatório | adendo nº 9 |
+
+Dois commits locais, **sem push**, apenas com arquivos desta correção (os
+demais arquivos já presentes no working tree, de outras tarefas, não foram
+staged):
+
+1. **implementação** — commit **a2f2e98**: `fix: FK de trabalhador_codigo passa a RESTRICT, com migração idempotente`
+   (`banco.py`, `tests/test_codigo_trabalhador.py`, `SHAMBALA_CONTEXTO.md`);
+2. **documentação** — este adendo, no commit seguinte.
+
+Produção intocada, nenhum túnel alterado, TASK_003 não iniciada.
+
+### 9.6 Limitações que continuam valendo
+
+As deste relatório não mudam: o clique na tela do DEV para imprimir e para
+preparar códigos continua sem validação por faltar credencial de teste (a
+validação é do fluxo HTTP e do serviço, no descartável); a leitura por câmera de
+aparelho físico não foi feita; mensalidades/fiado permanecem sem validação
+funcional aprovada (limitação documentada da TASK_001, não ampliada aqui); e o
+terminal de leitura é a TASK_003.
