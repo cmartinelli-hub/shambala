@@ -37,3 +37,6 @@ node_modules/
 
 # Claude
 .claude/
+
+# Backups e artefatos de operação (dados reais — nunca versionar)
+docs/tasks/backups/

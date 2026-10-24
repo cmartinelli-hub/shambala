@@ -20,7 +20,7 @@ Conjunto exato aplicado — 30 arquivos de código/templates/estáticos via `git
 
 ## 2. Backup e recuperação
 
-Em `shambala:/root/backups/publicacao-2026-10-24/` (espelhado em `~/backups/shambala/publicacao-2026-10-24/` no posto de trabalho, sha256 conferidos iguais entre as duas cópias):
+Em `shambala:/root/backups/publicacao-2026-10-24/` (espelhado no projeto em `docs/tasks/backups/publicacao-2026-10-24/`, ignorado pelo git por conter dados reais; sha256 conferidos iguais entre as duas cópias):
 
 | Arquivo | sha256 |
 |---|---|
