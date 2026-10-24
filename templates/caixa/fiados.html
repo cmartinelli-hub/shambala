@@ -111,7 +111,50 @@
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
     ⛔ Venda não encontrada ou já processada.
 </div>
+{% else %}
+{% set _msgs = {
+    'sessao_necessaria': '⛔ Recebimento em espécie exige escolher a sessão aberta na barra de destino acima.',
+    'sessao_invalida': '⛔ A sessão escolhida não está aberta agora — nada foi registrado.',
+    'conta_invalida': '⛔ Falta uma conta válida de destino para a forma escolhida.',
+    'ja_pago': 'Esta dívida já consta como paga — nada foi registrado.',
+    'sem_divida': 'Este trabalhador não tem dívidas de fiado em aberto.',
+    'valor_invalido': '⛔ Valor inválido.',
+    'venda_nao_encontrada': '⛔ Venda de fiado não encontrada.',
+    'trabalhador_nao_encontrado': '⛔ Trabalhador não encontrado.',
+} %}
+{% if _erro in _msgs %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    {{ _msgs[_erro] }}
+</div>
 {% endif %}
+{% endif %}
+
+{# ── Barra de destino do dinheiro (TASK_008) ── #}
+<div class="card-form" style="margin-bottom:1.2rem;padding:.8rem 1rem">
+    <div style="font-weight:700;font-size:.9rem;margin-bottom:.5rem">📥 Destino do dinheiro recebido</div>
+    <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;font-size:.85rem">
+        <label style="font-weight:600">Sessão para espécie (gaveta):</label>
+        <select id="dest-sessao" style="padding:.35rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:.85rem">
+            <option value="">— nenhuma —</option>
+            {% for s in sessoes %}
+            <option value="{{ s.id }}"{% if sessoes | length == 1 %} selected{% endif %}>
+                {{ s.caixa_nome }} — sessão #{{ s.id }}{% if s.versao != 'eventos' %} (regra antiga){% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        <label style="font-weight:600">Conta PIX:</label>
+        <select id="dest-conta-pix" style="padding:.35rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:.85rem">
+            <option value="">— selecione —</option>
+            {% for c in contas_pix %}
+            <option value="{{ c.id }}"{% if contas_pix | length == 1 %} selected{% endif %}>{{ c.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div style="font-size:.75rem;color:var(--cor-texto-suave);margin-top:.4rem">
+        Espécie é lançada NA sessão escolhida; PIX vai para a conta escolhida e não entra na gaveta.
+    </div>
+</div>
 
 {% if not fiados %}
 <div class="card-form" style="text-align:center;padding:2rem">
@@ -194,7 +237,13 @@
 
     {# ── Painel de crédito ── #}
     <div class="credito-form" id="credito-form-{{ tid }}">
-        <form method="post" action="/caixa/fiados/credito/{{ tid }}" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+        <form method="post" action="/caixa/fiados/credito/{{ tid }}" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap"
+              onsubmit="return handleCredito(event, this)">
+            <label style="font-size:.8rem;font-weight:600">Forma</label>
+            <select name="forma_pagamento" style="padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
+                <option value="especie">Espécie</option>
+                <option value="pix">PIX</option>
+            </select>
             <input type="number" name="valor" step="0.01" min="0.01" placeholder="Valor (R$)" required
                    style="width:100px;padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
             <input type="text" name="descricao" placeholder="Descrição (opcional)"
@@ -318,10 +367,45 @@ function toggleCredito(tid) {
     document.getElementById('pagar-form-' + tid).classList.remove('ativo');
 }
 
+function lerDestino(forma) {
+    const sessao = (document.getElementById('dest-sessao') || {}).value || '';
+    const conta = (document.getElementById('dest-conta-pix') || {}).value || '';
+    if (forma === 'especie' && !sessao) {
+        alert('Pagamento em espécie exige uma sessão aberta na gaveta — ' +
+              'escolha o destino na barra “Destino do dinheiro recebido”.');
+        return null;
+    }
+    if (forma === 'pix' && !conta) {
+        alert('Escolha a conta PIX de destino na barra “Destino do dinheiro recebido”.');
+        return null;
+    }
+    return { sessao: sessao, conta: conta };
+}
+
+function injetarDestino(form, dest) {
+    let h = form.querySelector('input[name="sessao_id"]');
+    if (!h) { h = document.createElement('input'); h.type = 'hidden'; h.name = 'sessao_id'; form.appendChild(h); }
+    h.value = dest.sessao || '0';
+    let h2 = form.querySelector('input[name="conta_pix_id"]');
+    if (!h2) { h2 = document.createElement('input'); h2.type = 'hidden'; h2.name = 'conta_pix_id'; form.appendChild(h2); }
+    h2.value = dest.conta || '0';
+}
+
+function handleCredito(event, form) {
+    const fp = form.querySelector('select[name="forma_pagamento"]').value;
+    const dest = lerDestino(fp);
+    if (!dest) { event.preventDefault(); return false; }
+    injetarDestino(form, dest);
+    return true;
+}
+
 function handlePagarDivida(event, form, total) {
     const fp = form.querySelector('select[name="forma_pagamento"]').value;
     const val = parseFloat(form.querySelector('input[name="valor"]').value);
     if (!val || val <= 0) { event.preventDefault(); return false; }
+    const dest = lerDestino(fp);
+    if (!dest) { event.preventDefault(); return false; }
+    injetarDestino(form, dest);
     if (val < total) {
         if (!confirm(
             `Pagamento parcial: R$ ${val.toFixed(2)} de R$ ${total.toFixed(2)}.\n` +
@@ -339,6 +423,9 @@ function handlePagarDivida(event, form, total) {
 
 function handleQuitarEsta(event, form, vendaId, devido) {
     const fp = form.querySelector('select[name="forma_pagamento"]').value;
+    const dest = lerDestino(fp);
+    if (!dest) { event.preventDefault(); return false; }
+    injetarDestino(form, dest);
     if (fp === 'pix') {
         event.preventDefault();
         if (!confirm(`Quitar apenas a compra #${vendaId} (R$ ${devido.toFixed(2)})?`)) return false;

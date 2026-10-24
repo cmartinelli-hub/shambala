@@ -23,10 +23,11 @@
 </div>
 {% endif %}
 
-{% if not caixa_aberto %}
+{% if not sessoes %}
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:var(--raio);
      padding:.8rem 1.2rem;color:#856404;margin-bottom:1rem">
-    ⚠️ Nenhum caixa aberto — a doação será registrada no financeiro mas não somará ao caixa.
+    ⚠️ Nenhuma sessão de caixa aberta — não há gaveta para receber dinheiro físico.
+    Abra uma sessão no PDV ou registre a doação via PIX.
 </div>
 {% endif %}
 
@@ -43,6 +44,26 @@
     <!-- Formulário dinheiro -->
     <form id="form-especie" method="post" action="/caixa/doacao">
         <input type="hidden" name="forma" value="especie">
+        <div class="campo">
+            <label>Dinheiro físico entra em qual sessão aberta?</label>
+            {% if sessoes | length == 1 %}
+            <input type="hidden" name="sessao_id" value="{{ sessoes[0].id }}">
+            <div style="padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio);background:var(--cor-fundo-suave, #f7f7f7)">
+                {{ sessoes[0].caixa_nome }} — sessão #{{ sessoes[0].id }}
+                {% if sessoes[0].versao != 'eventos' %}<span style="color:var(--cor-texto-suave)">(regra antiga)</span>{% endif %}
+            </div>
+            {% elif sessoes | length > 1 %}
+            <select name="sessao_id" required style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                <option value="">— selecione a sessão —</option>
+                {% for s in sessoes %}
+                <option value="{{ s.id }}">{{ s.caixa_nome }} — sessão #{{ s.id }}{% if s.versao != 'eventos' %} (regra antiga){% endif %}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <input type="hidden" name="sessao_id" value="">
+            <div style="color:var(--cor-texto-suave)">Sem sessão aberta: o registro em dinheiro será recusado.</div>
+            {% endif %}
+        </div>
         <div class="campo">
             <label>Valor recebido (R$)</label>
             <input type="number" name="valor" id="val-especie" step="0.01" min="0.01"
@@ -73,6 +94,23 @@
                    style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
         </div>
 
+        <div class="campo">
+            <label>Conta PIX de destino</label>
+            {% if contas_pix | length == 1 %}
+            <input type="hidden" id="sel-conta-pix" value="{{ contas_pix[0].id }}">
+            <div style="padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio);background:var(--cor-fundo-suave, #f7f7f7)">
+                {{ contas_pix[0].nome }}
+            </div>
+            {% else %}
+            <select id="sel-conta-pix" style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                <option value="">— selecione a conta —</option>
+                {% for c in contas_pix %}
+                <option value="{{ c.id }}">{{ c.nome }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+        </div>
+
         <button type="button" id="btn-gerar-qr" onclick="gerarQR()"
                 class="btn btn-secundario" style="width:100%;margin-bottom:.8rem">
             📱 Gerar QR Code PIX
@@ -89,6 +127,7 @@
             <input type="hidden" name="forma" value="pix">
             <input type="hidden" name="valor" id="f-val-pix">
             <input type="hidden" name="descricao" id="f-desc-pix">
+            <input type="hidden" name="conta_pix_id" id="f-conta-pix">
             <button type="submit" class="btn btn-primario" style="width:100%;font-size:1rem">
                 ✅ Confirmar Recebimento via PIX
             </button>
@@ -118,6 +157,8 @@ function resetQR() {
 async function gerarQR() {
     const val = parseFloat(document.getElementById('val-pix').value || '0');
     if (!val || val <= 0) { alert('Informe um valor válido.'); return; }
+    const conta = document.getElementById('sel-conta-pix').value;
+    if (!conta) { alert('Escolha a conta PIX de destino.'); return; }
 
     const btn = document.getElementById('btn-gerar-qr');
     btn.disabled = true;
@@ -134,6 +175,7 @@ async function gerarQR() {
 
         document.getElementById('f-val-pix').value  = val.toFixed(2);
         document.getElementById('f-desc-pix').value = document.getElementById('desc-pix').value;
+        document.getElementById('f-conta-pix').value = conta;
         document.getElementById('form-pix-submit').style.display = '';
     } catch(e) {
         alert('Não foi possível gerar o QR Code. Verifique se há chave PIX configurada.');

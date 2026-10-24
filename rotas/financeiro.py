@@ -233,6 +233,10 @@ async def mensalidades(
                         "valor": float(r["valor"]),
                     })
 
+        from servico_sessao import contas_por_tipo, sessoes_abertas
+        sessoes = [dict(s) for s in sessoes_abertas(conn)]
+        contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
+
     return templates.TemplateResponse("financeiro/mensalidades.html", {
         "request": request,
         "atendente": atendente,
@@ -245,6 +249,8 @@ async def mensalidades(
         "pago": pago,
         "total": total,
         "erro": erro,
+        "sessoes": sessoes,
+        "contas_pix": contas_pix,
     })
 
 
@@ -286,10 +292,27 @@ async def receber_mensalidades(
     mov_ids: str = Form(""),
     forma_pagamento: str = Form("especie"),
     pix_copiadecola: str = Form(""),
+    sessao_id: int = Form(0),
+    conta_pix_id: int = Form(0),
 ):
+    """Recebimento de mensalidades (TASK_008): destino explícito, sem
+    depósito implícito no caixa 2.
+
+    Espécie exige uma sessão de caixa aberta e identificada — o dinheiro
+    entra NAQUELA gaveta. PIX exige conta PIX válida e não toca gaveta
+    alguma. Em sessão 'eventos' cada mensalidade paga gera UM evento
+    `mensalidade:{mov_id}`: o banco recusa contar a mesma competência duas
+    vezes. Em sessão legado escolhida explicitamente vale o acumulador
+    antigo, agora só para espécie."""
     atendente, redir = _guard(request)
     if redir:
         return redir
+
+    from decimal import Decimal
+    from servico_sessao import (
+        SessaoInvalida, VERSAO_EVENTOS, registrar_evento,
+        sessao_para_recebimento, validar_conta_para_forma,
+    )
 
     if forma_pagamento not in ("especie", "pix"):
         forma_pagamento = "especie"
@@ -303,63 +326,81 @@ async def receber_mensalidades(
             status_code=303,
         )
 
-    with conectar() as conn:
-        trab = conn.execute(
-            "SELECT * FROM trabalhadores WHERE id = %s", (trabalhador_id,)
-        ).fetchone()
-        if not trab:
-            return _erro("trabalhador_nao_encontrado")
-
-        # Pendentes selecionadas (só as que ainda estão pendentes e do mesmo trabalhador)
-        a_pagar = []
-        vistos = set()
-        for sid in mov_ids.split(","):
-            sid = sid.strip()
-            if not sid.isdigit():
-                continue
-            mov = conn.execute(
-                """SELECT id, valor FROM financeiro_movimentacoes
-                   WHERE id = %s AND categoria = 'mensalidade'
-                     AND trabalhador_id = %s AND status = 'pendente'""",
-                (int(sid), trabalhador_id),
+    try:
+        with conectar() as conn:
+            trab = conn.execute(
+                "SELECT * FROM trabalhadores WHERE id = %s", (trabalhador_id,)
             ).fetchone()
-            if mov and mov["id"] not in vistos:
-                vistos.add(mov["id"])
-                a_pagar.append(mov)
+            if not trab:
+                return _erro("trabalhador_nao_encontrado")
 
-        if not a_pagar:
-            return _erro("sem_itens")
+            # Destino validado ANTES de baixar qualquer pendência — fora de
+            # PIX, o servidor ignora a conta enviada pelo navegador (a barra
+            # de destino injeta conta_pix_id mesmo quando a forma é espécie).
+            sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
+            cid = validar_conta_para_forma(
+                conn, forma_pagamento,
+                (conta_pix_id or None) if forma_pagamento == "pix" else None)
 
-        total = round(sum(float(m["valor"]) for m in a_pagar), 2)
-        cid = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
+            # Pendentes selecionadas (só as que ainda estão pendentes e do mesmo trabalhador)
+            a_pagar = []
+            vistos = set()
+            for sid in mov_ids.split(","):
+                sid = sid.strip()
+                if not sid.isdigit():
+                    continue
+                mov = conn.execute(
+                    """SELECT id, valor FROM financeiro_movimentacoes
+                       WHERE id = %s AND categoria = 'mensalidade'
+                         AND trabalhador_id = %s AND status = 'pendente'
+                       FOR UPDATE""",
+                    (int(sid), trabalhador_id),
+                ).fetchone()
+                if mov and mov["id"] not in vistos:
+                    vistos.add(mov["id"])
+                    a_pagar.append(mov)
 
-        ids_pagos = []
-        for m in a_pagar:
-            conn.execute(
-                """UPDATE financeiro_movimentacoes
-                   SET status = 'pago', forma_pagamento = %s, conta_id = %s,
-                       data_pagamento = %s, pix_copiadecola = %s
-                   WHERE id = %s""",
-                (forma_pagamento, cid, data_pgto, pix_copiadecola.strip(), m["id"]),
-            )
-            ids_pagos.append(m["id"])
+            if not a_pagar:
+                return _erro("sem_itens")
 
-        # Caixa Lanchonete somado UMA vez (lote inteiro); caixa fechado não falha
-        aviso = ""
-        mov_caixa = conn.execute(
-            "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        if mov_caixa:
-            conn.execute(
-                "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-                (total, mov_caixa["id"]),
-            )
-        else:
-            aviso = "&aviso=caixa_fechado"
+            total = sum((Decimal(str(m["valor"])) for m in a_pagar), Decimal("0.00"))
 
-    ids_str = ",".join(str(i) for i in ids_pagos)
+            for m in a_pagar:
+                conn.execute(
+                    """UPDATE financeiro_movimentacoes
+                       SET status = 'pago', forma_pagamento = %s, conta_id = %s,
+                           data_pagamento = %s, pix_copiadecola = %s
+                       WHERE id = %s""",
+                    (forma_pagamento, cid, data_pgto, pix_copiadecola.strip(), m["id"]),
+                )
+                if sessao is not None and sessao["versao"] == VERSAO_EVENTOS:
+                    registrar_evento(
+                        conn, identidade=f"mensalidade:{m['id']}",
+                        sessao_id=sessao["id"], tipo="mensalidade",
+                        natureza="recebimento",
+                        origem_tipo="financeiro_movimentacoes",
+                        origem_id=m["id"], financeiro_id=m["id"],
+                        forma=forma_pagamento, sentido="entrada",
+                        valor=Decimal(str(m["valor"])),
+                        efeito_fisico=Decimal(str(m["valor"]))
+                        if forma_pagamento == "especie" else Decimal("0.00"),
+                        conta_id=cid, atendente_id=atendente["id"])
+
+            if sessao is not None and sessao["versao"] != VERSAO_EVENTOS \
+                    and forma_pagamento == "especie":
+                # legado escolhido explicitamente: lote somado UMA vez
+                conn.execute(
+                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
+                    (total, sessao["id"]),
+                )
+
+        ids_str = ",".join(str(i) for i in vistos)
+    except SessaoInvalida as e:
+        # exceção vazou do with → nenhuma pendência baixada, nenhum evento
+        return _erro(e.chave)
+
     return RedirectResponse(
-        url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}&pago={ids_str}&total={total:.2f}{aviso}",
+        url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}&pago={ids_str}&total={total:.2f}",
         status_code=303,
     )
 

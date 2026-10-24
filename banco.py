@@ -497,6 +497,16 @@ def _migrar(conn):
         # que nunca é presumida. A recepção grava 'recepcao', o terminal grava
         # 'terminal_qr'/'terminal_codigo'.
         ("trabalhador_presenca", "origem_chegada", "TEXT"),
+        # TASK_008 / FIN-04: versão da sessão. Linhas antigas ficam 'legado'
+        # (regra antiga do total misto); sessões abertas após esta entrega são
+        # 'eventos' e vivem do detalhamento em caixa_sessao_eventos.
+        ("caixa_movimentos", "versao", "TEXT NOT NULL DEFAULT 'legado'"),
+        ("caixa_movimentos", "dinheiro_contado", "NUMERIC(12,2)"),
+        ("caixa_movimentos", "divergencia_contagem", "NUMERIC(12,2)"),
+        ("caixa_movimentos", "observacao_conferencia", "TEXT"),
+        # Sangria v2 = transferência interna: as duas movimentações (saída da
+        # gaveta e entrada no destino) compartilham este vínculo de par.
+        ("financeiro_movimentacoes", "sangria_id", "INTEGER REFERENCES caixa_sangrias(id)"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -983,6 +993,45 @@ def criar_tabelas():
             )
         """)
 
+        # ── Eventos detalhados da sessão de caixa (TASK_008 / FIN-04) ──
+        # Fonte única dos totais das sessões novas ('eventos'): cada operação
+        # que toca a sessão grava UM evento com identidade própria (UNIQUE —
+        # repetição do mesmo comando/documento é recusada pelo banco, não só
+        # pelo botão). `efeito_fisico` é a contribuição assinada para a gaveta:
+        # PIX, fiado não recebido e consumo de crédito entram com 0.
+        # O resumo, o fechamento e a impressão leem TODOS desta mesma tabela.
+        # Sessões 'legado' não recebem eventos: continuam nos acumuladores
+        # antigos e nunca são recalculadas nem "consertadas" retroativamente.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS caixa_sessao_eventos (
+                id              SERIAL PRIMARY KEY,
+                identidade      TEXT NOT NULL UNIQUE,
+                sessao_id       INTEGER NOT NULL REFERENCES caixa_movimentos(id),
+                tipo            TEXT NOT NULL CHECK (tipo IN
+                                ('venda','venda_doacao','venda_credito','cancelamento',
+                                 'doacao','mensalidade','recebimento_fiado',
+                                 'credito_anticipado','sangria')),
+                natureza        TEXT NOT NULL CHECK (natureza IN
+                                ('comercial','recebimento','retirada')),
+                origem_tipo     TEXT NOT NULL CHECK (origem_tipo IN
+                                ('vendas_pdv','financeiro_movimentacoes','caixa_sangrias',
+                                 'fiado_credito_mov','vendas_pdv_cancelamento')),
+                origem_id       INTEGER NOT NULL,
+                venda_id        INTEGER REFERENCES vendas_pdv(id),
+                financeiro_id   INTEGER REFERENCES financeiro_movimentacoes(id),
+                forma           TEXT NOT NULL CHECK (forma IN
+                                ('especie','pix','fiado','credito')),
+                sentido         TEXT NOT NULL CHECK (sentido IN ('entrada','saida')),
+                valor           NUMERIC(12,2) NOT NULL CHECK (valor > 0),
+                efeito_fisico   NUMERIC(12,2) NOT NULL DEFAULT 0,
+                conta_id        INTEGER REFERENCES contas_financeiras(id),
+                atendente_id    INTEGER REFERENCES atendentes(id),
+                observacao      TEXT,
+                criado_em       TEXT NOT NULL DEFAULT
+                                (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp(0)::text
+            )
+        """)
+
         # ── Doações de cestas ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS doacoes_cestas (
@@ -1174,6 +1223,26 @@ def criar_tabelas():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tipos_doacao_ativo ON tipos_doacao(ativo)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_caixa_movimentos_caixa_status ON caixa_movimentos(caixa_id, status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_caixa_sangrias_movimento ON caixa_sangrias(caixa_movimento_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_caixa_sessao_eventos_sessao ON caixa_sessao_eventos(sessao_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_caixa_sessao_eventos_venda ON caixa_sessao_eventos(venda_id)")
+
+        # TASK_008: uma única sessão aberta por caixa. O índice parcial único
+        # só é criado após diagnóstico de duplicidades legadas — duplicidade
+        # antiga nunca é fechada nem mesclada automaticamente; nesse caso o
+        # startup informa e a guarda do serviço (lock + checagem) continua
+        # valendo para aberturas novas.
+        duplicidades = conn.execute(
+            """SELECT caixa_id, COUNT(*) AS c FROM caixa_movimentos
+               WHERE status = 'aberto' GROUP BY caixa_id HAVING COUNT(*) > 1
+               ORDER BY caixa_id""").fetchall()
+        if duplicidades:
+            print("[startup] atenção: caixas com mais de uma sessão aberta no legado "
+                  f"{[(d['caixa_id'], d['c']) for d in duplicidades]} — índice único de "
+                  "sessão aberta NÃO foi criado (nenhuma sessão legada foi alterada).")
+        else:
+            conn.execute(
+                """CREATE UNIQUE INDEX IF NOT EXISTS uq_caixa_movimentos_aberto
+                   ON caixa_movimentos(caixa_id) WHERE status = 'aberto'""")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trabalhador_dias (

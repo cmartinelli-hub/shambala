@@ -12,11 +12,33 @@
 </div>
 
 {% set _erro = request.query_params.get('erro') %}
-{% if _erro == 'valor_invalido' %}
-<div class="erro" style="margin-bottom:1rem">Valor inválido. A sangria deve ser maior que zero.</div>
+{% set _msgs = {
+    'valor_invalido': 'Valor inválido. A sangria deve ser maior que zero.',
+    'destino_obrigatorio': 'Sangria exige destino: escolha a conta que receberá o valor retirado.',
+    'destino_invalido': 'A conta de destino não é válida (precisa ser ativa e diferente da conta espécie).',
+    'sessao_invalida': 'A sessão informada não está aberta — nada foi gravado.',
+} %}
+{% if _erro in _msgs %}
+<div class="erro" style="margin-bottom:1rem">{{ _msgs[_erro] }}</div>
 {% endif %}
 
 <div class="card-form" style="max-width:480px">
+    {% if esperado is not none %}
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem;margin-bottom:1.5rem">
+        <div style="text-align:center;padding:.5rem;background:var(--cor-fundo);border-radius:var(--raio)">
+            <div style="font-size:.8rem;color:var(--cor-texto-suave)">Saldo inicial</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--cor-primaria)">
+                R$ {{ "%.2f"|format(movimento.saldo_inicial) }}
+            </div>
+        </div>
+        <div style="text-align:center;padding:.5rem;background:var(--cor-fundo);border-radius:var(--raio)">
+            <div style="font-size:.8rem;color:var(--cor-texto-suave)">Dinheiro físico esperado</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#e67e22">
+                R$ {{ "%.2f"|format(esperado) }}
+            </div>
+        </div>
+    </div>
+    {% else %}
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;margin-bottom:1.5rem">
         <div style="text-align:center;padding:.5rem;background:var(--cor-fundo);border-radius:var(--raio)">
             <div style="font-size:.8rem;color:var(--cor-texto-suave)">Saldo Inicial</div>
@@ -37,11 +59,25 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <form method="post" action="/caixa/sangria">
         <input type="hidden" name="caixa_movimento_id" value="{{ movimento.id }}">
 
         <div class="form-grid">
+            <div class="form-campo form-campo-largo">
+                <label for="conta_destino_id">Destino do dinheiro retirado *</label>
+                <select id="conta_destino_id" name="conta_destino_id" required class="form-input">
+                    <option value="">— escolha a conta que recebe o valor —</option>
+                    {% for d in destinos %}
+                    <option value="{{ d.id }}">{{ d.nome }}{% if d.tipo != 'especie' %} ({{ d.tipo }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+                <div style="font-size:.75rem;color:var(--cor-texto-suave);margin-top:.3rem">
+                    A sangria é uma transferência interna: sai da gaveta e entra na conta escolhida.
+                </div>
+            </div>
+
             <div class="form-campo">
                 <label for="valor">Valor da retirada (R$) *</label>
                 <input type="number" id="valor" name="valor" step="0.01" min="0.01"

@@ -23,7 +23,85 @@
     </div>
 </div>
 
+{% set _erro = request.query_params.get('erro') %}
+{% set _msgs = {
+    'valor_contado_invalido': 'Valor contado inválido.',
+    'observacao_obrigatoria': 'A contagem diverge do esperado: descreva a diferença na observação antes de fechar.',
+    'sessao_invalida': 'Sessão não encontrada ou já fechada.',
+    'sessao_legada': 'Esta sessão é do fluxo antigo e não fecha pela regra nova.',
+} %}
+{% if _erro in _msgs %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">{{ _msgs[_erro] }}</div>
+{% endif %}
+{% if request.query_params.get('fechado') %}
+<div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
+    ✅ Sessão fechada. O dinheiro contado ficou registrado ao lado do esperado, com a divergência.
+</div>
+{% endif %}
+
 <!-- Cards de resumo -->
+{% if resumo %}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:1rem">
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Saldo Inicial</div>
+        <div style="font-size:1.4rem;font-weight:900;color:var(--cor-primaria)">R$ {{ "%.2f"|format(resumo.saldo_inicial) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Vendas espécie</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#1da851">R$ {{ "%.2f"|format(resumo.vendas_especie) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Vendas PIX (fora da gaveta)</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#2980b9">R$ {{ "%.2f"|format(resumo.vendas_pix) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Vendas fiado (a receber)</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#8e44ad">R$ {{ "%.2f"|format(resumo.vendas_fiado) }}</div>
+    </div>
+    {% if resumo.vendas_canceladas > 0 %}
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Canceladas</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#c0392b">R$ {{ "%.2f"|format(resumo.vendas_canceladas) }}</div>
+    </div>
+    {% endif %}
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Doações</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#16a085">R$ {{ "%.2f"|format(resumo.doacoes) }}</div>
+    </div>
+    {% if resumo.mensalidades > 0 or resumo.qtd_mensalidades > 0 %}
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Mensalidades ({{ resumo.qtd_mensalidades }})</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#16a085">R$ {{ "%.2f"|format(resumo.mensalidades) }}</div>
+    </div>
+    {% endif %}
+    {% if resumo.recebimentos_fiado > 0 %}
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Quitaciones de fiado</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#16a085">R$ {{ "%.2f"|format(resumo.recebimentos_fiado) }}</div>
+    </div>
+    {% endif %}
+    {% if resumo.creditos_anticipados > 0 %}
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Créditos antecipados</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#16a085">R$ {{ "%.2f"|format(resumo.creditos_anticipados) }}</div>
+    </div>
+    {% endif %}
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Sangrias</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#c0392b">R$ {{ "%.2f"|format(resumo.sangrias) }}</div>
+    </div>
+    <div class="card-form" style="text-align:center">
+        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Dinheiro físico esperado</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#e67e22">R$ {{ "%.2f"|format(resumo.saldo_fisico_esperado) }}</div>
+    </div>
+</div>
+<div style="font-size:.78rem;color:var(--cor-texto-suave);margin-bottom:1.5rem">
+    Esperado = saldo inicial + entradas em espécie − sangrias. PIX, fiado não recebido e
+    consumo de crédito não contam como dinheiro da gaveta.
+</div>
+{% else %}
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;margin-bottom:1.5rem">
     <div class="card-form" style="text-align:center">
         <div style="font-size:.8rem;color:var(--cor-texto-suave)">Saldo Inicial</div>
@@ -42,6 +120,7 @@
         <div style="font-size:1.4rem;font-weight:900;color:#e67e22">R$ {{ "%.2f"|format(saldo_esperado) }}</div>
     </div>
 </div>
+{% endif %}
 
 <!-- Informações do movimento -->
 <div class="card-form" style="margin-bottom:1.5rem">
@@ -187,6 +266,39 @@
 </div>
 {% endif %}
 
+{% if eventos %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <h3 style="margin:0 0 .8rem;font-size:1rem">Eventos da sessão (fonte dos totais)</h3>
+    <div style="overflow-x:auto">
+    <table class="tabela" style="font-size:.85rem">
+        <thead>
+            <tr>
+                <th>#</th><th>Tipo</th><th>Forma</th><th>Valor</th>
+                <th>Efeito na gaveta</th><th>Conta</th><th>Atendente</th><th>Instante</th><th>Observação</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in eventos %}
+            <tr>
+                <td>{{ e.id }}</td>
+                <td>{{ e.tipo }}</td>
+                <td>{{ e.forma }}</td>
+                <td>R$ {{ "%.2f"|format(e.valor) }}</td>
+                <td style="font-weight:700;color:{{ '#1da851' if e.efeito_fisico > 0 else ('#c0392b' if e.efeito_fisico < 0 else 'var(--cor-texto-suave)') }}">
+                    R$ {{ "%.2f"|format(e.efeito_fisico) }}
+                </td>
+                <td>{{ e.conta_nome or '—' }}</td>
+                <td>{{ e.atendente_nome or '—' }}</td>
+                <td>{{ e.criado_em[:19] }}</td>
+                <td style="max-width:260px">{{ e.observacao or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
 {% if movimento.status == 'aberto' %}
 <div class="card-form" style="text-align:center;border:2px solid #c0392b">
     <p style="font-size:1rem;margin-bottom:1rem;font-weight:600">
@@ -194,13 +306,52 @@
     </p>
     <form method="post" action="/caixa/fechar" onsubmit="return confirm('Tem certeza que deseja fechar o caixa? Esta ação não pode ser desfeita.')">
         <input type="hidden" name="caixa_movimento_id" value="{{ movimento.id }}">
+        {% if resumo %}
         <div style="margin-bottom:1rem;max-width:400px;margin-left:auto;margin-right:auto">
-            <label for="observacao" style="font-weight:600;display:block;margin-bottom:.3rem;font-size:.9rem">Observação (opcional)</label>
+            <label for="dinheiro_contado" style="font-weight:600;display:block;margin-bottom:.3rem;font-size:.9rem">
+                Dinheiro físico contado na gaveta (R$) *
+            </label>
+            <input type="number" id="dinheiro_contado" name="dinheiro_contado" step="0.01" min="0"
+                   placeholder="{{ '%.2f'|format(resumo.saldo_fisico_esperado) }}" required
+                   class="form-input" style="width:100%;font-size:1.2rem;font-weight:700">
+            <div style="font-size:.75rem;color:var(--cor-texto-suave);margin-top:.3rem">
+                Esperado na gaveta: R$ {{ "%.2f"|format(resumo.saldo_fisico_esperado) }}.
+                Se a contagem divergir, a observação abaixo passa a ser obrigatória —
+                o esperado não é sobrescrito.
+            </div>
+        </div>
+        {% endif %}
+        <div style="margin-bottom:1rem;max-width:400px;margin-left:auto;margin-right:auto">
+            <label for="observacao" style="font-weight:600;display:block;margin-bottom:.3rem;font-size:.9rem">
+                Observação{% if resumo %} (obrigatória se a contagem divergir){% else %} (opcional){% endif %}
+            </label>
             <input type="text" id="observacao" name="observacao" class="form-input"
                    placeholder="Ex: Caixa fechado, tudo ok..." style="width:100%">
         </div>
         <button type="submit" class="btn btn-perigo btn-grande">🔒 Fechar Caixa</button>
     </form>
+</div>
+{% elif movimento.dinheiro_contado is not none %}
+<div class="card-form" style="text-align:center;margin-bottom:1.5rem;border:2px solid var(--cor-primaria)">
+    <h3 style="margin:0 0 .8rem;font-size:1rem">Conferência do fechamento</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem">
+        <div>
+            <div style="font-size:.8rem;color:var(--cor-texto-suave)">Esperado (eventos)</div>
+            <div style="font-size:1.3rem;font-weight:900;color:#e67e22">R$ {{ "%.2f"|format(movimento.saldo_final) }}</div>
+        </div>
+        <div>
+            <div style="font-size:.8rem;color:var(--cor-texto-suave)">Contado</div>
+            <div style="font-size:1.3rem;font-weight:900;color:var(--cor-primaria)">R$ {{ "%.2f"|format(movimento.dinheiro_contado) }}</div>
+        </div>
+        <div>
+            <div style="font-size:.8rem;color:var(--cor-texto-suave)">Divergência</div>
+            <div style="font-size:1.3rem;font-weight:900;color:{{ '#c0392b' if movimento.divergencia_contagem else '#1da851' }}">
+                R$ {{ "%.2f"|format(movimento.divergencia_contagem) }}</div>
+        </div>
+    </div>
+    {% if movimento.observacao_conferencia %}
+    <div style="margin-top:.6rem;font-size:.85rem">Observação: {{ movimento.observacao_conferencia }}</div>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}

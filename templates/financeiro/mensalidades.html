@@ -86,18 +86,15 @@
 {% if erro %}
 {% set erros = {
     'trabalhador_nao_encontrado': 'Trabalhador não encontrado.',
-    'sem_itens': 'Nenhum item selecionado para receber.'
+    'sem_itens': 'Nenhum item selecionado para receber.',
+    'sessao_necessaria': 'Recebimento em espécie exige escolher a sessão aberta (gaveta) — nada foi registrado.',
+    'sessao_invalida': 'A sessão escolhida não está aberta agora — nada foi registrado.',
+    'conta_invalida': 'Escolha uma conta de destino válida para a forma escolhida.',
+    'valor_invalido': 'Valor inválido.',
 } %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
     ⚠️ {{ erros.get(erro, 'Erro desconhecido.') }}
-</div>
-{% endif %}
-
-{% if request.query_params.get('aviso') == 'caixa_fechado' %}
-<div style="background:#fff3cd;border:1px solid #f9a825;border-radius:var(--raio);
-     padding:.6rem 1rem;color:#856404;font-weight:600;margin-bottom:1rem">
-    ⚠️ Caixa Lanchonete fechado: pagamento registrado no financeiro, mas o valor NÃO entrou no caixa do dia.
 </div>
 {% endif %}
 
@@ -166,7 +163,30 @@
                 <option value="pix">📱 PIX</option>
             </select>
         </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+            <label style="font-weight:600;font-size:.9rem" for="dest-sessao">Gaveta (sessão aberta):</label>
+            <select id="dest-sessao" style="padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                <option value="">— nenhuma —</option>
+                {% for s in sessoes %}
+                <option value="{{ s.id }}"{% if sessoes | length == 1 %} selected{% endif %}>
+                    {{ s.caixa_nome }} — sessão #{{ s.id }}{% if s.versao != 'eventos' %} (regra antiga){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+            <label style="font-weight:600;font-size:.9rem" for="dest-conta-pix">Conta PIX:</label>
+            <select id="dest-conta-pix" style="padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                <option value="">— selecione —</option>
+                {% for c in contas_pix %}
+                <option value="{{ c.id }}"{% if contas_pix | length == 1 %} selected{% endif %}>{{ c.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
     </div>
+    <p style="font-size:.75rem;color:var(--cor-texto-suave);margin-top:.4rem">
+        Em espécie o dinheiro entra NA sessão escolhida; PIX vai para a conta escolhida e não passa pela gaveta.
+    </p>
 
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:1rem;margin-top:1rem;border-top:1px solid var(--cor-borda);padding-top:1rem">
         <div style="font-size:1rem">Total: <strong style="font-size:1.3rem">R$ <span id="total-resumo">0,00</span></strong></div>
@@ -307,12 +327,34 @@ let _pixGerado = false;
 
 if (formReceber) {
     formReceber.addEventListener('submit', (e) => {
-        if (selectForma.value === 'pix') {
+        const forma = selectForma.value;
+        const sessao = document.getElementById('dest-sessao').value;
+        const conta = document.getElementById('dest-conta-pix').value;
+        if (forma === 'especie' && !sessao) {
+            e.preventDefault();
+            alert('Recebimento em espécie exige escolher a sessão (gaveta) de destino.');
+            return;
+        }
+        if (forma === 'pix' && !conta) {
+            e.preventDefault();
+            alert('Escolha a conta PIX de destino.');
+            return;
+        }
+        for (const [n, v] of [['sessao_id', sessao || '0'], ['conta_pix_id', conta || '0']]) {
+            let h = formReceber.querySelector(`input[name="${n}"]`);
+            if (!h) {
+                h = document.createElement('input');
+                h.type = 'hidden'; h.name = n;
+                formReceber.appendChild(h);
+            }
+            h.value = v;
+        }
+        if (forma === 'pix') {
             if (!_pixGerado) {
                 e.preventDefault();
                 gerarPix(_totalAtual);
             }
-        } else if (!confirm(`Confirmar recebimento de R$ ${fmtVal(_totalAtual)}?`)) {
+        } else if (!confirm(`Confirmar recebimento de R$ ${fmtVal(_totalAtual)} na sessão escolhida?`)) {
             e.preventDefault();
         }
     });
@@ -320,7 +362,7 @@ if (formReceber) {
 
 async function gerarPix(valor) {
     try {
-        const res = await fetch(`/caixa/pix-qr?valor=${valor.toFixed(2)}&caixa_id=2`);
+        const res = await fetch(`/caixa/pix-qr?valor=${valor.toFixed(2)}&caixa_id=0`);
         if (!res.ok) {
             const err = await res.json();
             alert('Erro ao gerar QR Code PIX: ' + (err.erro || 'sem chave PIX configurada'));

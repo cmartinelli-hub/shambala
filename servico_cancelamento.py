@@ -10,7 +10,10 @@ Efeitos persistidos pela finalização (a56fb57) que esta reversão conhece:
   • produtos.quantidade_estoque −q + estoque_movimentos 'saida'
     (referencia_id = venda_id) por item agregado;
   • caixa_movimentos.total_vendas += (total + doacao_valor) da sessão
-    vinculada (quando há vínculo);
+    vinculada (quando há vínculo) — apenas em sessões LEGADO;
+  • em sessões 'eventos' (TASK_008) a reversão é um evento de
+    cancelamento (identidade `venda:{id}:cancelamento`), com efeito físico
+    negativo quando a venda havia entrado na gaveta em espécie;
   • crédito antecipado consumido (fiado_credito_usado > 0) — NÃO reversível
     por aqui (bloqueado);
   • fiado não pago sai da dívida atual POR STATUS (nenhum outro toque).
@@ -108,7 +111,7 @@ def avaliar(conn, venda_id: int) -> dict:
                        "não há como provar nem reverter sua contribuição.")
     else:
         sessao = conn.execute(
-            "SELECT id, caixa_id, status FROM caixa_movimentos WHERE id = %s",
+            "SELECT id, caixa_id, status, versao FROM caixa_movimentos WHERE id = %s",
             (venda["caixa_movimento_id"],)
         ).fetchone()
         if not sessao:
@@ -121,6 +124,7 @@ def avaliar(conn, venda_id: int) -> dict:
     if sessao and sessao["status"] == "aberto" and sessao["caixa_id"] == venda["caixa_id"]:
         efeitos["sessao"] = {
             "id": sessao["id"],
+            "versao": sessao["versao"],
             "valor": _moeda(venda["total"]) + efeitos["doacao"],
         }
 
@@ -235,7 +239,7 @@ def cancelar(conn, venda_id: int, motivo: str, atendente_id: int) -> dict:
     sessao = None
     if venda["caixa_movimento_id"] is not None:
         sessao = conn.execute(
-            """SELECT id, caixa_id, status, total_vendas FROM caixa_movimentos
+            """SELECT id, caixa_id, status, total_vendas, versao FROM caixa_movimentos
                WHERE id = %s FOR UPDATE""",
             (venda["caixa_movimento_id"],)
         ).fetchone()
@@ -278,14 +282,20 @@ def cancelar(conn, venda_id: int, motivo: str, atendente_id: int) -> dict:
         })
 
     valor_sessao = Decimal("0.00")
+    sessao_eventos = False
     if efeitos["sessao"]:
         valor_sessao = efeitos["sessao"]["valor"]
-        conn.execute(
-            """UPDATE caixa_movimentos
-               SET total_vendas = total_vendas - %s
-               WHERE id = %s AND status = 'aberto'""",
-            (valor_sessao, efeitos["sessao"]["id"])
-        )
+        sessao_eventos = efeitos["sessao"].get("versao") == "eventos"
+        if not sessao_eventos:
+            conn.execute(
+                """UPDATE caixa_movimentos
+                   SET total_vendas = total_vendas - %s
+                   WHERE id = %s AND status = 'aberto'""",
+                (valor_sessao, efeitos["sessao"]["id"])
+            )
+        # Sessão 'eventos' (TASK_008): nada de subtração em acumulador — a
+        # compensação é UM evento de cancelamento ligado à prova, com efeito
+        # físico negativo quando a venda havia entrado na gaveta.
 
     conn.execute(
         "UPDATE vendas_pdv SET status = 'cancelada' WHERE id = %s AND status = 'concluida'",
@@ -308,6 +318,19 @@ def cancelar(conn, venda_id: int, motivo: str, atendente_id: int) -> dict:
          venda["forma_pagamento"], json.dumps(estoque_revertido, ensure_ascii=False))
     )
     registro_id = cur.fetchone()["id"]
+
+    if sessao_eventos:
+        from servico_sessao import registrar_evento
+        forma = venda["forma_pagamento"]
+        registrar_evento(
+            conn, identidade=f"venda:{venda_id}:cancelamento",
+            sessao_id=efeitos["sessao"]["id"], tipo="cancelamento",
+            natureza="comercial", origem_tipo="vendas_pdv_cancelamento",
+            origem_id=registro_id, venda_id=venda_id, forma=forma,
+            sentido="saida", valor=valor_sessao,
+            efeito_fisico=-valor_sessao if forma == "especie" else Decimal("0.00"),
+            atendente_id=atendente_id,
+            observacao=f"Cancelamento — {motivo}")
 
     return {
         "registro_id": registro_id,

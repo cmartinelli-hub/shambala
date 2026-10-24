@@ -229,13 +229,11 @@ async def finalizar_venda(
         except CestaInvalida as e:
             return _url_erro(e.chave, e.item)
 
-        troco = max(Decimal("0.00"), recebido - total) \
-            if forma_pagamento == "especie" else Decimal("0.00")
-
         mov_id = None
+        sessao_eventos = False
         if caixa_movimento_id:
             movimento = conn.execute(
-                """SELECT id FROM caixa_movimentos
+                """SELECT id, versao FROM caixa_movimentos
                    WHERE id = %s AND caixa_id = %s AND status = 'aberto'
                    FOR UPDATE""",
                 (caixa_movimento_id, caixa_id)
@@ -243,6 +241,30 @@ async def finalizar_venda(
             if not movimento:
                 return _url_erro("sessao_caixa_invalida")
             mov_id = movimento["id"]
+            sessao_eventos = movimento["versao"] == "eventos"
+
+        conta_pix_solta = None
+        if forma_pagamento == "pix" and mov_id is None:
+            # PIX sem sessão de caixa é recebimento válido, mas precisa de
+            # conta financeira real — nunca destino indeterminado (TASK_008)
+            conta_pix_solta = conta_id_por_tipo(conn, "pix")
+            if conta_pix_solta is None:
+                return _url_erro("conta_invalido")
+
+        if forma_pagamento == "especie" and mov_id is None:
+            # dinheiro físico sem sessão aberta = destino indeterminável —
+            # vale para qualquer versão de sessão (TASK_008)
+            return _url_erro("sessao_necessaria")
+        if sessao_eventos:
+            # TASK_008: doação sai do TROCO (sobra de espécie entregue), nunca
+            # de dinheiro "a mais" invisível: recebido ≥ total + doação, e o
+            # efeito físico na gaveta é exatamente recebido − troco devolvido.
+            if forma_pagamento == "especie" and recebido < total + doacao:
+                return _url_erro("recebido_insuficiente")
+            troco = max(Decimal("0.00"), recebido - total - doacao)
+        else:
+            troco = max(Decimal("0.00"), recebido - total) \
+                if forma_pagamento == "especie" else Decimal("0.00")
 
         # ── validações concluídas: a partir daqui é transação única de escrita ──
         cur = conn.execute(
@@ -259,6 +281,18 @@ async def finalizar_venda(
              credito_usado, mov_id, doacao)
         )
         venda_id = cur.fetchone()["id"]
+
+        if conta_pix_solta is not None:
+            # PIX sem sessão: o lançamento nasce aqui (não há fechamento de
+            # gaveta que o crie depois) — UMA entrada, na conta PIX válida
+            conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, descricao, caixa_id, forma_pagamento,
+                    conta_id, status)
+                   VALUES ('entrada', 'venda_pdv', %s, %s, %s, 'pix', %s, 'pago')""",
+                (total, f"Venda PDV #{venda_id} — PIX sem sessão de caixa",
+                 caixa_id, conta_pix_solta)
+            )
 
         for linha in linhas:
             if linha["produto_id"] is None:
@@ -282,11 +316,44 @@ async def finalizar_venda(
                 (trabalhador_id, credito_usado, f"Compra #{venda_id}")
             )
 
-        if mov_id:
+        if mov_id and not sessao_eventos:
             conn.execute(
                 "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
                 (total + doacao, mov_id)
             )
+        elif mov_id and sessao_eventos:
+            # TASK_008: sessão 'eventos' — fonte única de verdade é o evento
+            # detalhado; os acumuladores antigos ficam intactos em 0.
+            from servico_sessao import registrar_evento
+            efeito = total if forma_pagamento == "especie" else Decimal("0.00")
+            conta_venda = (conta_id_por_tipo(conn, "especie")
+                           if forma_pagamento == "especie" else
+                           conta_id_por_tipo(conn, "pix")
+                           if forma_pagamento == "pix" else None)
+            registrar_evento(
+                conn, identidade=f"venda:{venda_id}:venda", sessao_id=mov_id,
+                tipo="venda", natureza="comercial", origem_tipo="vendas_pdv",
+                origem_id=venda_id, venda_id=venda_id, forma=forma_pagamento,
+                sentido="entrada", valor=total, efeito_fisico=efeito,
+                conta_id=conta_venda, atendente_id=atendente["id"])
+            if doacao > 0:
+                registrar_evento(
+                    conn, identidade=f"venda:{venda_id}:doacao", sessao_id=mov_id,
+                    tipo="venda_doacao", natureza="recebimento",
+                    origem_tipo="vendas_pdv", origem_id=venda_id,
+                    venda_id=venda_id, forma=forma_pagamento, sentido="entrada",
+                    valor=doacao,
+                    efeito_fisico=doacao if forma_pagamento == "especie" else Decimal("0.00"),
+                    conta_id=conta_venda, atendente_id=atendente["id"])
+            if credito_usado > 0:
+                registrar_evento(
+                    conn, identidade=f"venda:{venda_id}:credito", sessao_id=mov_id,
+                    tipo="venda_credito", natureza="recebimento",
+                    origem_tipo="vendas_pdv", origem_id=venda_id,
+                    venda_id=venda_id, forma="credito", sentido="entrada",
+                    valor=credito_usado, efeito_fisico=Decimal("0.00"),
+                    atendente_id=atendente["id"],
+                    observacao="Consumo de crédito antecipado — não é dinheiro novo")
 
         for linha in linhas:
             if linha["produto_id"] is None:
@@ -768,20 +835,29 @@ async def tabela_precos(request: Request):
     })
 
 
+def _pagina_doacao(request, atendente, erro=None, forma_pre="especie"):
+    from servico_sessao import MENSAGENS_ERRO, sessoes_abertas, contas_por_tipo
+    with conectar() as conn:
+        sessoes = [dict(s) for s in sessoes_abertas(conn)]
+        contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
+    return templates.TemplateResponse("caixa/doacao.html", {
+        "request": request,
+        "atendente": atendente,
+        "sessoes": sessoes,
+        "contas_pix": contas_pix,
+        "erro": MENSAGENS_ERRO.get(erro, erro) if erro else None,
+        "forma_pre": forma_pre,
+    })
+
+
 @router.get("/doacao", response_class=HTMLResponse)
 async def form_doacao(request: Request):
     atendente, redir = _guard(request)
     if redir:
         return redir
-    with conectar() as conn:
-        mov = conn.execute(
-            "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-    return templates.TemplateResponse("caixa/doacao.html", {
-        "request": request,
-        "atendente": atendente,
-        "caixa_aberto": bool(mov),
-    })
+    return _pagina_doacao(request, atendente,
+                          erro=request.query_params.get("erro"),
+                          forma_pre=request.query_params.get("forma", "especie"))
 
 
 @router.post("/doacao", response_class=HTMLResponse)
@@ -790,47 +866,83 @@ async def registrar_doacao(
     forma: str = Form("especie"),
     valor: str = Form(""),
     descricao: str = Form(""),
+    sessao_id: int = Form(0),
+    conta_pix_id: int = Form(0),
 ):
+    """Doação avulsa sem cesta (TASK_008): o destino é declarado, não presumido.
+
+    Espécie precisa de uma sessão aberta explicitamente escolhida — o dinheiro
+    físico existe dentro de uma gaveta. PIX precisa de uma conta PIX válida e
+    NÃO entra em gaveta alguma. Sessão 'eventos' registra o evento com o efeito
+    físico correto; sessão 'legado' escolhida de forma explícita mantém a
+    contabilidade antiga. A escolha implícita do caixa 2 foi removida.
+    """
     atendente, redir = _guard(request)
     if redir:
         return redir
 
-    try:
-        valor_dec = round(float(valor.strip().replace(",", ".")), 2)
-    except (ValueError, AttributeError):
-        valor_dec = 0.0
+    from decimal import Decimal
+    from servico_sessao import (
+        SessaoInvalida, VERSAO_EVENTOS, moeda, registrar_evento,
+        sessao_aberta_para_especie, validar_conta_para_forma,
+    )
 
-    if valor_dec <= 0:
-        with conectar() as conn:
-            mov = conn.execute(
-                "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
-            ).fetchone()
-        return templates.TemplateResponse("caixa/doacao.html", {
-            "request": request,
-            "atendente": atendente,
-            "caixa_aberto": bool(mov),
-            "erro": "Informe um valor válido maior que zero.",
-            "forma_pre": forma,
-        })
+    if forma not in ("especie", "pix"):
+        forma = "especie"
+    try:
+        valor_dec = moeda(valor, "valor")
+    except SessaoInvalida as e:
+        return RedirectResponse(url=f"/caixa/doacao?erro={e.chave}&forma={forma}",
+                                status_code=303)
 
     desc = descricao.strip() or f"Doação avulsa via {'PIX' if forma == 'pix' else 'Dinheiro'}"
-    with conectar() as conn:
-        avulsa_conta_id = conta_id_por_tipo(conn, 'pix' if forma == 'pix' else 'especie')
-        conn.execute(
-            """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
-               VALUES ('entrada', 'doacao', %s, %s, 2, %s, %s)""",
-            (valor_dec, desc, forma, avulsa_conta_id)
-        )
-        mov = conn.execute(
-            "SELECT id FROM caixa_movimentos WHERE caixa_id=2 AND status='aberto' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        if mov:
-            conn.execute(
-                "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-                (valor_dec, mov["id"])
-            )
+    try:
+        with conectar() as conn:
+            if forma == "especie":
+                mov = sessao_aberta_para_especie(conn, sessao_id)
+                conta = validar_conta_para_forma(conn, "especie", None)
+            else:
+                mov = None
+                if sessao_id:
+                    mov = conn.execute(
+                        """SELECT * FROM caixa_movimentos
+                           WHERE id = %s AND status = 'aberto' FOR UPDATE""",
+                        (sessao_id,)).fetchone()
+                    if not mov:
+                        raise SessaoInvalida(
+                            "sessao_invalida", "A sessão informada não está aberta.")
+                conta = validar_conta_para_forma(conn, "pix", conta_pix_id or None)
+
+            cur = conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id, status)
+                   VALUES ('entrada', 'doacao', %s, %s, %s, %s, %s, 'pago')
+                   RETURNING id""",
+                (valor_dec, desc, mov["caixa_id"] if mov else None, forma, conta))
+            fin_id = cur.fetchone()["id"]
+
+            if mov and mov["versao"] == VERSAO_EVENTOS:
+                registrar_evento(
+                    conn, identidade=f"doacao:{fin_id}", sessao_id=mov["id"],
+                    tipo="doacao", natureza="recebimento",
+                    origem_tipo="financeiro_movimentacoes", origem_id=fin_id,
+                    financeiro_id=fin_id, forma=forma, sentido="entrada",
+                    valor=valor_dec,
+                    efeito_fisico=valor_dec if forma == "especie" else Decimal("0.00"),
+                    conta_id=conta, atendente_id=atendente["id"],
+                    observacao=desc)
+            elif mov:  # legado escolhido explicitamente: contabilidade antiga
+                conn.execute(
+                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
+                    (valor_dec, mov["id"]))
+    except SessaoInvalida as e:
+        # A exceção vazou do `with conectar()` → rollback integral: nada desta
+        # doação permanece gravado.
+        return RedirectResponse(url=f"/caixa/doacao?erro={e.chave}&forma={forma}",
+                                status_code=303)
 
     return RedirectResponse(url=f"/caixa/doacao?ok=1&valor={valor_dec:.2f}&forma={forma}", status_code=303)
+
 
 
 @router.get("/produtos/{id}/editar", response_class=HTMLResponse)
@@ -1255,6 +1367,9 @@ async def listar_fiados(request: Request):
         return redir
 
     with conectar() as conn:
+        from servico_sessao import contas_por_tipo, sessoes_abertas
+        sessoes = [dict(s) for s in sessoes_abertas(conn)]
+        contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
         fiados = conn.execute(
             """SELECT v.*, c.nome AS caixa_nome,
                       t.nome_completo AS trabalhador_nome,
@@ -1287,26 +1402,10 @@ async def listar_fiados(request: Request):
         "atendente": atendente,
         "fiados": [dict(f) for f in fiados],
         "agrupado": dict(agrupado),
+        "sessoes": sessoes,
+        "contas_pix": contas_pix,
         "e_admin": e_admin(request),
     })
-
-
-def _contabilizar_recebimento(conn, valor: float, descricao: str, caixa_id: int = 2, conta_id: int = None):
-    """Insere em financeiro_movimentacoes e atualiza o caixa aberto da Lanchonete."""
-    conn.execute(
-        """INSERT INTO financeiro_movimentacoes (tipo, categoria, valor, descricao, caixa_id, conta_id)
-           VALUES ('entrada', 'recebimento_fiado', %s, %s, %s, %s)""",
-        (valor, descricao, caixa_id, conta_id)
-    )
-    mov = conn.execute(
-        "SELECT id FROM caixa_movimentos WHERE caixa_id=%s AND status='aberto' ORDER BY id DESC LIMIT 1",
-        (caixa_id,)
-    ).fetchone()
-    if mov:
-        conn.execute(
-            "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-            (valor, mov["id"])
-        )
 
 
 @router.post("/fiados/{venda_id}/pagar")
@@ -1314,37 +1413,69 @@ async def pagar_fiado(
     request: Request,
     venda_id: int,
     forma_pagamento: str = Form("especie"),
+    sessao_id: int = Form(0),
+    conta_pix_id: int = Form(0),
 ):
+    """Quitação de dívida individual no fiado (TASK_008).
+
+    O dinheiro recebido tem destino EXPLÍCITO: espécie exige sessão aberta
+    (entra na gaveta dela); PIX exige conta PIX válida e nunca entra em
+    gaveta. Repetir o pagamento da mesma venda é recusado pelo estado
+    fiado_pago E pela identidade do evento (`fiadopagar:{venda_id}`) —
+    a mesma dívida não conta duas vezes."""
     atendente, redir = _guard(request)
     if redir:
         return redir
+    if forma_pagamento not in ("especie", "pix"):
+        forma_pagamento = "especie"
 
-    with conectar() as conn:
-        venda = conn.execute(
-            "SELECT total, fiado_credito_usado, fiado_trabalhador_id FROM vendas_pdv WHERE id = %s",
-            (venda_id,)
-        ).fetchone()
+    from decimal import Decimal
+    from servico_sessao import (
+        SessaoInvalida, contabilizar_recebimento, sessao_para_recebimento,
+        validar_conta_para_forma,
+    )
 
-        conn.execute(
-            """UPDATE vendas_pdv
-               SET fiado_pago = TRUE,
-                   fiado_data_pagamento = %s
-               WHERE id = %s AND forma_pagamento = 'fiado'""",
-            (date.today().isoformat(), venda_id)
-        )
+    try:
+        with conectar() as conn:
+            venda = conn.execute(
+                """SELECT total, fiado_credito_usado, fiado_trabalhador_id,
+                          fiado_pago, forma_pagamento
+                   FROM vendas_pdv WHERE id = %s FOR UPDATE""",
+                (venda_id,)).fetchone()
+            if not venda or venda["forma_pagamento"] != "fiado":
+                raise SessaoInvalida("venda_nao_encontrada",
+                                     "Venda de fiado não encontrada.")
+            if venda["fiado_pago"]:
+                raise SessaoInvalida("ja_pago",
+                                     "Esta dívida já consta como paga — nada a receber.")
 
-        if venda:
-            valor_pago = round(float(venda["total"]) - float(venda["fiado_credito_usado"] or 0), 2)
+            sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
+            conta = validar_conta_para_forma(
+                conn, forma_pagamento,
+                (conta_pix_id or None) if forma_pagamento == "pix" else None)
+
+            conn.execute(
+                """UPDATE vendas_pdv
+                   SET fiado_pago = TRUE, fiado_data_pagamento = %s
+                   WHERE id = %s AND forma_pagamento = 'fiado'""",
+                (date.today().isoformat(), venda_id))
+
+            valor_pago = (Decimal(str(venda["total"]))
+                          - Decimal(str(venda["fiado_credito_usado"] or 0)))
+            trab_id = venda["fiado_trabalhador_id"]
             if valor_pago > 0:
-                trab_id = venda["fiado_trabalhador_id"]
-                trab = conn.execute(
-                    "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trab_id,)
-                ).fetchone()
-                nome = trab["nome_completo"] if trab else f"#{trab_id}"
-                cid = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
-                _contabilizar_recebimento(conn, valor_pago, f"Recebimento fiado — venda #{venda_id}", conta_id=cid)
+                contabilizar_recebimento(
+                    conn, tipo="recebimento_fiado", valor=valor_pago,
+                    categoria="recebimento_fiado",
+                    descricao=f"Recebimento fiado — venda #{venda_id}",
+                    forma=forma_pagamento, conta_id=conta, sessao=sessao,
+                    identidade=f"fiadopagar:{venda_id}", venda_id=venda_id,
+                    atendente_id=atendente["id"])
+    except SessaoInvalida as e:
+        return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
 
-    return RedirectResponse(url=f"/caixa/fiados?pago_ok={trab_id}&valor={valor_pago:.2f}", status_code=303) if venda else RedirectResponse(url="/caixa/fiados", status_code=303)
+    return RedirectResponse(
+        url=f"/caixa/fiados?pago_ok={trab_id}&valor={valor_pago:.2f}", status_code=303)
 
 
 @router.post("/fiados/{trabalhador_id}/pagar-divida")
@@ -1353,83 +1484,126 @@ async def pagar_divida_fiado(
     trabalhador_id: int,
     valor: str = Form(""),
     forma_pagamento: str = Form("especie"),
+    sessao_id: int = Form(0),
+    conta_pix_id: int = Form(0),
 ):
+    """Pagamento de dívida do fiado (total ou parcial) — TASK_008.
+
+    O valor entregue vira UMA única entrada no financeiro com destino
+    explícito (sessão para espécie, conta PIX para PIX); a parte que sobra
+    e vira crédito antecipado não produz segunda entrada de dinheiro — o
+    consumo futuro desse crédito é que será registrado como evento sem
+    efeito físico."""
     atendente, redir = _guard(request)
     if redir:
         return redir
+    if forma_pagamento not in ("especie", "pix"):
+        forma_pagamento = "especie"
 
-    with conectar() as conn:
-        vendas = conn.execute(
-            """SELECT id, total, fiado_credito_usado
-               FROM vendas_pdv
-               WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'
-               ORDER BY data_venda ASC, id ASC""",
-            (trabalhador_id,)
-        ).fetchall()
+    from decimal import Decimal
+    from servico_sessao import (
+        SessaoInvalida, contabilizar_recebimento, sessao_para_recebimento,
+        validar_conta_para_forma,
+    )
 
-        if not vendas:
-            return RedirectResponse(url="/caixa/fiados", status_code=303)
+    try:
+        with conectar() as conn:
+            sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
+            conta = validar_conta_para_forma(
+                conn, forma_pagamento,
+                (conta_pix_id or None) if forma_pagamento == "pix" else None)
 
-        total_divida = round(sum(
-            float(v["total"]) - float(v["fiado_credito_usado"] or 0)
-            for v in vendas
-        ), 2)
+            vendas = conn.execute(
+                """SELECT id, total, fiado_credito_usado
+                   FROM vendas_pdv
+                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'
+                   ORDER BY data_venda ASC, id ASC
+                   FOR UPDATE""",
+                (trabalhador_id,)
+            ).fetchall()
 
-        try:
-            valor_dec = round(float(valor.strip().replace(",", ".")), 2)
-        except (ValueError, AttributeError):
-            valor_dec = total_divida
+            if not vendas:
+                raise SessaoInvalida("sem_divida",
+                                     "Este trabalhador não tem dívidas de fiado em aberto.")
 
-        if valor_dec <= 0:
-            return RedirectResponse(url="/caixa/fiados", status_code=303)
+            total_divida = round(sum(
+                float(v["total"]) - float(v["fiado_credito_usado"] or 0)
+                for v in vendas
+            ), 2)
 
-        hoje = date.today().isoformat()
+            try:
+                valor_dec = round(float(valor.strip().replace(",", ".")), 2)
+            except (ValueError, AttributeError):
+                valor_dec = total_divida
 
-        if valor_dec >= total_divida:
-            conn.execute(
-                """UPDATE vendas_pdv
-                   SET fiado_pago = TRUE, fiado_data_pagamento = %s
-                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'""",
-                (hoje, trabalhador_id)
-            )
-            valor_efetivo = total_divida
-        else:
-            # FIFO: quita as compras mais antigas primeiro
-            restante = valor_dec
-            for v in vendas:
-                devido = round(float(v["total"]) - float(v["fiado_credito_usado"] or 0), 2)
-                if restante >= devido:
+            if valor_dec <= 0:
+                raise SessaoInvalida("valor_invalido", "Valor inválido.")
+
+            hoje = date.today().isoformat()
+
+            if valor_dec >= total_divida:
+                conn.execute(
+                    """UPDATE vendas_pdv
+                       SET fiado_pago = TRUE, fiado_data_pagamento = %s
+                       WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'""",
+                    (hoje, trabalhador_id)
+                )
+                sobra = round(valor_dec - total_divida, 2)
+                if sobra >= 0.01:
                     conn.execute(
-                        """UPDATE vendas_pdv
-                           SET fiado_pago = TRUE, fiado_data_pagamento = %s
-                           WHERE id = %s""",
-                        (hoje, v["id"])
+                        "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
+                        (sobra, trabalhador_id)
                     )
-                    restante = round(restante - devido, 2)
-                    if restante < 0.01:
+                    conn.execute(
+                        """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
+                           VALUES (%s, 'credito', %s, 'Saldo de quitação de fiado')""",
+                        (trabalhador_id, sobra)
+                    )
+                valor_efetivo = total_divida
+            else:
+                # FIFO: quita as compras mais antigas primeiro
+                restante = valor_dec
+                for v in vendas:
+                    devido = round(float(v["total"]) - float(v["fiado_credito_usado"] or 0), 2)
+                    if restante >= devido:
+                        conn.execute(
+                            """UPDATE vendas_pdv
+                               SET fiado_pago = TRUE, fiado_data_pagamento = %s
+                               WHERE id = %s""",
+                            (hoje, v["id"])
+                        )
+                        restante = round(restante - devido, 2)
+                        if restante < 0.01:
+                            break
+                    else:
                         break
-                else:
-                    break
 
-            # Sobra que não cobre a próxima compra vai para crédito
-            if restante >= 0.01:
-                conn.execute(
-                    "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
-                    (restante, trabalhador_id)
-                )
-                conn.execute(
-                    """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
-                       VALUES (%s, 'credito', %s, 'Saldo de pagamento parcial de fiado')""",
-                    (trabalhador_id, restante)
-                )
-            valor_efetivo = valor_dec
+                # Sobra que não cobre a próxima compra vai para crédito
+                if restante >= 0.01:
+                    conn.execute(
+                        "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
+                        (restante, trabalhador_id)
+                    )
+                    conn.execute(
+                        """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
+                           VALUES (%s, 'credito', %s, 'Saldo de pagamento parcial de fiado')""",
+                        (trabalhador_id, restante)
+                    )
+                valor_efetivo = valor_dec
 
-        trab = conn.execute(
-            "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trabalhador_id,)
-        ).fetchone()
-        nome = trab["nome_completo"] if trab else f"#{trabalhador_id}"
-        cid = conta_id_por_tipo(conn, 'pix' if forma_pagamento == 'pix' else 'especie')
-        _contabilizar_recebimento(conn, valor_efetivo, f"Recebimento fiado — {nome}", conta_id=cid)
+            trab = conn.execute(
+                "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trabalhador_id,)
+            ).fetchone()
+            nome = trab["nome_completo"] if trab else f"#{trabalhador_id}"
+            contabilizar_recebimento(
+                conn, tipo="recebimento_fiado",
+                valor=Decimal(str(valor_dec)),
+                categoria="recebimento_fiado",
+                descricao=f"Recebimento fiado — {nome}",
+                forma=forma_pagamento, conta_id=conta, sessao=sessao,
+                atendente_id=atendente["id"])
+    except SessaoInvalida as e:
+        return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
 
     return RedirectResponse(url=f"/caixa/fiados?pago_ok={trabalhador_id}&valor={valor_efetivo:.2f}", status_code=303)
 
@@ -1480,27 +1654,63 @@ async def adicionar_credito_fiado(
     trabalhador_id: int,
     valor: str = Form("0"),
     descricao: str = Form(""),
+    forma_pagamento: str = Form("especie"),
+    sessao_id: int = Form(0),
+    conta_pix_id: int = Form(0),
 ):
+    """Crédito antecipado (TASK_008 / FIN-03): o dinheiro entregue AGORA
+    ganha entrada no financeiro com destino explícito — espécie na sessão
+    aberta escolhida (entra na gaveta), PIX na conta PIX (não entra em
+    gaveta). O crédito em si fica no trabalhador e o consumo futuro desse
+    crédito é registrado como evento de efeito físico zero, sem segunda
+    entrada de dinheiro."""
     atendente, redir = _guard(request)
     if redir:
         return redir
+    if forma_pagamento not in ("especie", "pix"):
+        forma_pagamento = "especie"
 
-    valor_dec = float(valor or 0)
-    if valor_dec <= 0:
-        return RedirectResponse(url="/caixa/fiados?erro=valor_invalido", status_code=303)
+    from servico_sessao import (
+        SessaoInvalida, contabilizar_recebimento, moeda,
+        sessao_para_recebimento, validar_conta_para_forma,
+    )
 
-    with conectar() as conn:
-        conn.execute(
-            "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
-            (valor_dec, trabalhador_id)
-        )
-        conn.execute(
-            """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
-               VALUES (%s, 'credito', %s, %s)""",
-            (trabalhador_id, valor_dec, descricao.strip() or "Adição de crédito")
-        )
+    try:
+        valor_dec = moeda(valor, "valor")
+    except SessaoInvalida as e:
+        return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
 
-    return RedirectResponse(url="/caixa/fiados", status_code=303)
+    desc = descricao.strip() or "Adição de crédito antecipado"
+    try:
+        with conectar() as conn:
+            sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
+            conta = validar_conta_para_forma(
+                conn, forma_pagamento,
+                (conta_pix_id or None) if forma_pagamento == "pix" else None)
+
+            if not conn.execute("SELECT id FROM trabalhadores WHERE id = %s",
+                                (trabalhador_id,)).fetchone():
+                raise SessaoInvalida("trabalhador_nao_encontrado",
+                                     "Trabalhador não encontrado.")
+            conn.execute(
+                "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
+                (valor_dec, trabalhador_id)
+            )
+            cur = conn.execute(
+                """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
+                   VALUES (%s, 'credito', %s, %s) RETURNING id""",
+                (trabalhador_id, valor_dec, desc)
+            )
+            cred_id = cur.fetchone()["id"]
+            contabilizar_recebimento(
+                conn, tipo="credito_anticipado", valor=valor_dec,
+                categoria="credito_anticipado", descricao=desc,
+                forma=forma_pagamento, conta_id=conta, sessao=sessao,
+                identidade=f"credito:{cred_id}", atendente_id=atendente["id"])
+    except SessaoInvalida as e:
+        return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
+
+    return RedirectResponse(url=f"/caixa/fiados?credito_ok={trabalhador_id}", status_code=303)
 
 
 @router.get("/fiados/credito/{trabalhador_id}/mov", response_class=JSONResponse)
@@ -1557,14 +1767,22 @@ async def salvar_abertura(
     if redir:
         return redir
 
-    with conectar() as conn:
-        conn.execute(
-            """INSERT INTO caixa_movimentos
-               (caixa_id, saldo_inicial, status, atendente_id_abertura)
-               VALUES (%s, %s, 'aberto', %s)""",
-            (caixa_id, float(saldo_inicial or 0), atendente["id"])
-        )
-
+    from servico_sessao import SessaoInvalida, abrir_sessao, moeda
+    try:
+        inicial = moeda(saldo_inicial or "0", "saldo_inicial")
+    except SessaoInvalida as e:
+        return RedirectResponse(url=f"/caixa/abrir?caixa_id={caixa_id}&erro=valor_invalido",
+                                status_code=303)
+    erro = None
+    sessao_id = None
+    try:
+        with conectar() as conn:
+            sessao_id = abrir_sessao(conn, caixa_id, inicial, atendente["id"])
+    except SessaoInvalida as e:
+        erro = e.chave
+    if erro:
+        return RedirectResponse(url=f"/caixa/pdv?caixa_id={caixa_id}&erro={erro}",
+                                status_code=303)
     return RedirectResponse(url=f"/caixa/pdv?caixa_id={caixa_id}", status_code=303)
 
 
@@ -1586,11 +1804,21 @@ async def form_sangria(request: Request, caixa_movimento_id: int = Query(0)):
         ).fetchone()
         if not mov:
             return RedirectResponse(url="/caixa/pdv", status_code=303)
+        destinos = conn.execute(
+            """SELECT id, nome, tipo FROM contas_financeiras
+               WHERE ativo = 1 AND tipo <> 'especie' ORDER BY nome""",
+        ).fetchall()
+        esperado = None
+        if mov["versao"] == "eventos":
+            from servico_sessao import resumo_sessao
+            esperado = resumo_sessao(conn, caixa_movimento_id)["saldo_fisico_esperado"]
 
     return templates.TemplateResponse("caixa/sangria.html", {
         "request": request,
         "atendente": atendente,
         "movimento": dict(mov),
+        "destinos": [dict(d) for d in destinos],
+        "esperado": float(esperado) if esperado is not None else None,
     })
 
 
@@ -1601,42 +1829,102 @@ async def salvar_sangria(
     valor: str = Form("0"),
     motivo: str = Form(""),
     recebedor_nome: str = Form(""),
+    conta_destino_id: int = Form(0),
 ):
+    """Sangria (TASK_008): só existe com DESTINO IDENTIFICADO. O dinheiro
+    físico sai da gaveta e entra na conta escolhida como transferência
+    interna — par saída/entrada vinculado pelo mesmo sangria_id, efeito
+    global zero no financeiro (nada vira despesa falsa). Sem destino a
+    operação é recusada antes de gravar. Sessão 'eventos' registra o evento
+    sangria com efeito físico −valor; sessão legado mantém o acumulador que
+    o fechamento antigo continua usando."""
     atendente, redir = _guard(request)
     if redir:
         return redir
 
-    valor_dec = float(valor or 0)
-    if valor_dec <= 0:
-        return RedirectResponse(url=f"/caixa/sangria?caixa_movimento_id={caixa_movimento_id}&erro=valor_invalido", status_code=303)
+    from servico_sessao import (
+        SessaoInvalida, VERSAO_EVENTOS, moeda, registrar_evento,
+        validar_conta_para_forma,
+    )
 
-    with conectar() as conn:
-        cur = conn.execute(
-            """INSERT INTO caixa_sangrias
-               (caixa_movimento_id, valor, motivo, atendente_id, recebedor_nome)
-               VALUES (%s, %s, %s, %s, %s)
-               RETURNING id""",
-            (caixa_movimento_id, valor_dec, motivo.strip(), atendente["id"], recebedor_nome.strip())
-        )
-        sangria_id = cur.fetchone()["id"]
+    erro_base = f"/caixa/sangria?caixa_movimento_id={caixa_movimento_id}&erro="
+    try:
+        valor_dec = moeda(valor, "valor")
+    except SessaoInvalida as e:
+        return RedirectResponse(url=erro_base + e.chave, status_code=303)
 
-        conn.execute(
-            "UPDATE caixa_movimentos SET total_sangrias = total_sangrias + %s WHERE id = %s",
-            (valor_dec, caixa_movimento_id)
-        )
+    try:
+        with conectar() as conn:
+            mov = conn.execute(
+                """SELECT * FROM caixa_movimentos
+                   WHERE id = %s AND status = 'aberto' FOR UPDATE""",
+                (caixa_movimento_id,)
+            ).fetchone()
+            if not mov:
+                raise SessaoInvalida("sessao_invalida",
+                                     "A sessão informada não está aberta.")
 
-        mov_data = conn.execute(
-            "SELECT caixa_id FROM caixa_movimentos WHERE id=%s", (caixa_movimento_id,)
-        ).fetchone()
-        if mov_data:
-            sangria_conta_id = conta_id_por_tipo(conn, 'especie')
+            if not conta_destino_id:
+                raise SessaoInvalida(
+                    "destino_obrigatorio",
+                    "Sangria exige destino: escolha a conta que receberá o valor.")
+            destino = conn.execute(
+                "SELECT id, nome, tipo FROM contas_financeiras WHERE id = %s AND ativo = 1",
+                (conta_destino_id,)).fetchone()
+            if not destino:
+                raise SessaoInvalida("destino_invalido",
+                                     "A conta de destino não é uma conta ativa.")
+            conta_saida = validar_conta_para_forma(conn, "especie", None)
+            if destino["id"] == conta_saida:
+                raise SessaoInvalida(
+                    "destino_invalido",
+                    "O destino precisa ser uma conta diferente da conta espécie "
+                    "da gaveta.")
+
+            cur = conn.execute(
+                """INSERT INTO caixa_sangrias
+                   (caixa_movimento_id, valor, motivo, atendente_id, recebedor_nome)
+                   VALUES (%s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (caixa_movimento_id, valor_dec, motivo.strip(),
+                 atendente["id"], recebedor_nome.strip())
+            )
+            sangria_id = cur.fetchone()["id"]
+            desc = motivo.strip() or "Sangria de caixa"
+
+            fin_saida_id = conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, descricao, caixa_id, forma_pagamento,
+                    conta_id, sangria_id, status)
+                   VALUES ('saida', 'sangria', %s, %s, %s, 'especie', %s, %s, 'pago')
+                   RETURNING id""",
+                (valor_dec, desc, mov["caixa_id"], conta_saida, sangria_id)
+            ).fetchone()["id"]
             conn.execute(
                 """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id, conta_id)
-                   VALUES ('saida', 'sangria', %s, %s, %s, %s)""",
-                (valor_dec, motivo.strip() or "Sangria de caixa",
-                 mov_data["caixa_id"], sangria_conta_id)
+                   (tipo, categoria, valor, descricao, caixa_id, conta_id,
+                    sangria_id, status)
+                   VALUES ('entrada', 'transferencia', %s, %s, NULL, %s, %s, 'pago')""",
+                (valor_dec, f"Transferência interna da sangria — {desc}",
+                 destino["id"], sangria_id)
             )
+
+            if mov["versao"] == VERSAO_EVENTOS:
+                registrar_evento(
+                    conn, identidade=f"sangria:{sangria_id}", sessao_id=mov["id"],
+                    tipo="sangria", natureza="retirada",
+                    origem_tipo="caixa_sangrias", origem_id=sangria_id,
+                    financeiro_id=fin_saida_id,
+                    forma="especie", sentido="saida", valor=valor_dec,
+                    efeito_fisico=-valor_dec, conta_id=destino["id"],
+                    atendente_id=atendente["id"], observacao=desc)
+            else:
+                conn.execute(
+                    "UPDATE caixa_movimentos SET total_sangrias = total_sangrias + %s WHERE id = %s",
+                    (valor_dec, mov["id"])
+                )
+    except SessaoInvalida as e:
+        return RedirectResponse(url=erro_base + e.chave, status_code=303)
 
     return RedirectResponse(url=f"/caixa/sangria/{sangria_id}/comprovante", status_code=303)
 
@@ -1747,10 +2035,13 @@ async def escpos_recibo_fiado(request: Request, trabalhador_id: int, valor: str 
 # ── Fechamento de Caixa ─────────────────────────────────────────────────────
 
 @router.get("/fechar", response_class=HTMLResponse)
-async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query(0)):
+async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query(0),
+                               erro: str = ""):
     atendente, redir = _guard(request)
     if redir:
         return redir
+
+    from servico_sessao import VERSAO_EVENTOS, resumo_sessao
 
     with conectar() as conn:
         mov = conn.execute(
@@ -1766,6 +2057,21 @@ async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query
         ).fetchone()
         if not mov:
             return RedirectResponse(url="/caixa/pdv", status_code=303)
+
+        eventos = []
+        resumo = None
+        if mov["versao"] == VERSAO_EVENTOS:
+            resumo = resumo_sessao(conn, caixa_movimento_id)
+            eventos = conn.execute(
+                """SELECT e.*, a.nome_completo AS atendente_nome,
+                          cf.nome AS conta_nome
+                   FROM caixa_sessao_eventos e
+                   LEFT JOIN atendentes a ON a.id = e.atendente_id
+                   LEFT JOIN contas_financeiras cf ON cf.id = e.conta_id
+                   WHERE e.sessao_id = %s ORDER BY e.id""",
+                (caixa_movimento_id,)
+            ).fetchall()
+            eventos = [dict(e) for e in eventos]
 
         # Vendas do movimento
         vendas = conn.execute(
@@ -1812,7 +2118,12 @@ async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query
             (caixa_movimento_id,)
         ).fetchall()
 
-    saldo_esperado = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
+    if resumo is not None:
+        # versão eventos: a prévia vem TODA dos eventos — mesma fórmula do
+        # fechamento e do comprovante (esperado = inicial + Σ efeito físico).
+        saldo_esperado = float(resumo["saldo_fisico_esperado"])
+    else:
+        saldo_esperado = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
 
     return templates.TemplateResponse("caixa/fechamento.html", {
         "request": request,
@@ -1823,6 +2134,9 @@ async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query
         "produtos": [dict(p) for p in produtos],
         "sangrias": [dict(s) for s in sangrias],
         "saldo_esperado": saldo_esperado,
+        "resumo": resumo,
+        "eventos": eventos,
+        "erro": erro,
     })
 
 
@@ -1831,62 +2145,101 @@ async def fechar_caixa(
     request: Request,
     caixa_movimento_id: int = Form(...),
     observacao: str = Form(""),
+    dinheiro_contado: str = Form(""),
 ):
+    """Fechamento (TASK_008): sessões 'eventos' conferem a gaveta — o
+    esperado vem dos eventos (inicial + Σ efeito físico), o contado é
+    registrado ao lado com divergência, e contado ≠ esperado exige
+    observação; o esperado NUNCA é sobrescrito. Sessões iniciadas antes da
+    implantação fecham exatamente pela regra anterior (acumuladores)."""
     atendente, redir = _guard(request)
     if redir:
         return redir
 
-    with conectar() as conn:
-        # FOR UPDATE: serializa com o cancelamento (TASK_007). Ou a venda é
-        # cancelada antes do fechamento (e sai do total), ou o fechamento
-        # trava a sessão primeiro e o cancelamento seguinte é bloqueado.
-        mov = conn.execute(
-            "SELECT * FROM caixa_movimentos WHERE id = %s AND status = 'aberto' FOR UPDATE",
-            (caixa_movimento_id,)
-        ).fetchone()
-        if not mov:
-            return RedirectResponse(url="/caixa/pdv", status_code=303)
+    from decimal import Decimal, ROUND_HALF_UP
+    from servico_sessao import SessaoInvalida, VERSAO_EVENTOS, fechar_sessao_eventos
 
-        saldo_final = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
+    try:
+        contado = Decimal((dinheiro_contado or "0").strip().replace(",", ".")) \
+            .quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if contado < Decimal("0"):
+            raise ValueError()
+    except Exception:
+        return RedirectResponse(
+            url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}"
+                "&erro=valor_contado_invalido", status_code=303)
 
-        conn.execute(
-            """UPDATE caixa_movimentos
-               SET status = 'fechado',
-                   data_fechamento = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text,
-                   saldo_final = %s,
-                   atendente_id_fechamento = %s,
-                   observacao_fechamento = %s
-               WHERE id = %s""",
-            (saldo_final, atendente["id"], observacao.strip(), caixa_movimento_id)
-        )
+    try:
+        with conectar() as conn:
+            # FOR UPDATE: serializa com o cancelamento (TASK_007) e com a
+            # sangria. Ou a operação entra antes do fechamento (e aparece no
+            # resumo), ou o fechamento trava a sessão primeiro e a operação
+            # seguinte é recusada.
+            mov = conn.execute(
+                "SELECT * FROM caixa_movimentos WHERE id = %s AND status = 'aberto' FOR UPDATE",
+                (caixa_movimento_id,)
+            ).fetchone()
+            if not mov:
+                return RedirectResponse(url="/caixa/pdv", status_code=303)
 
-        caixa_info = conn.execute("SELECT nome FROM caixas WHERE id=%s", (mov["caixa_id"],)).fetchone()
-        caixa_nome = caixa_info["nome"] if caixa_info else f"#{mov['caixa_id']}"
+            if mov["versao"] == VERSAO_EVENTOS:
+                fechar_sessao_eventos(conn, caixa_movimento_id, contado,
+                                      observacao, atendente["id"])
+                return RedirectResponse(
+                    url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}"
+                        "&fechado=1", status_code=303)
 
-        # Busca total por forma de pagamento e cria uma entrada no financeiro para cada
-        mapa_conta = {'especie': 'especie', 'pix': 'pix', 'fiado': 'areceber'}
-        vendas_por_pgto = conn.execute(
-            """SELECT forma_pagamento, COALESCE(SUM(total + COALESCE(doacao_valor, 0)), 0) AS total
-               FROM vendas_pdv
-               WHERE caixa_movimento_id = %s AND status = 'concluida'
-               GROUP BY forma_pagamento""",
-            (caixa_movimento_id,)
-        ).fetchall()
+            # ── sessão LEGADO: regra anterior intacta ──
+            if (dinheiro_contado or "").strip():
+                # o formulário novo (contagem de gaveta) não se aplica a
+                # sessões abertas antes da implantação
+                return RedirectResponse(
+                    url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}"
+                        "&erro=sessao_legada", status_code=303)
+            saldo_final = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
 
-        for vp in vendas_por_pgto:
-            total_pgto = float(vp["total"])
-            if total_pgto <= 0:
-                continue
-            tipo_conta = mapa_conta.get(vp["forma_pagamento"], 'especie')
-            cid = conta_id_por_tipo(conn, tipo_conta)
             conn.execute(
-                """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
-                   VALUES ('entrada', 'venda_pdv', %s, %s, %s, %s, %s)""",
-                (total_pgto,
-                 f"Vendas {caixa_nome} ({vp['forma_pagamento']}) — fechamento #{caixa_movimento_id}",
-                 mov["caixa_id"], vp["forma_pagamento"], cid)
+                """UPDATE caixa_movimentos
+                   SET status = 'fechado',
+                       data_fechamento = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text,
+                       saldo_final = %s,
+                       atendente_id_fechamento = %s,
+                       observacao_fechamento = %s
+                   WHERE id = %s""",
+                (saldo_final, atendente["id"], observacao.strip(), caixa_movimento_id)
             )
+
+            caixa_info = conn.execute("SELECT nome FROM caixas WHERE id=%s", (mov["caixa_id"],)).fetchone()
+            caixa_nome = caixa_info["nome"] if caixa_info else f"#{mov['caixa_id']}"
+
+            # Busca total por forma de pagamento e cria uma entrada no financeiro para cada
+            mapa_conta = {'especie': 'especie', 'pix': 'pix', 'fiado': 'areceber'}
+            vendas_por_pgto = conn.execute(
+                """SELECT forma_pagamento, COALESCE(SUM(total + COALESCE(doacao_valor, 0)), 0) AS total
+                   FROM vendas_pdv
+                   WHERE caixa_movimento_id = %s AND status = 'concluida'
+                   GROUP BY forma_pagamento""",
+                (caixa_movimento_id,)
+            ).fetchall()
+
+            for vp in vendas_por_pgto:
+                total_pgto = float(vp["total"])
+                if total_pgto <= 0:
+                    continue
+                tipo_conta = mapa_conta.get(vp["forma_pagamento"], 'especie')
+                cid = conta_id_por_tipo(conn, tipo_conta)
+                conn.execute(
+                    """INSERT INTO financeiro_movimentacoes
+                       (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
+                       VALUES ('entrada', 'venda_pdv', %s, %s, %s, %s, %s)""",
+                    (total_pgto,
+                     f"Vendas {caixa_nome} ({vp['forma_pagamento']}) — fechamento #{caixa_movimento_id}",
+                     mov["caixa_id"], vp["forma_pagamento"], cid)
+                )
+    except SessaoInvalida as e:
+        return RedirectResponse(
+            url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}"
+                f"&erro={e.chave}", status_code=303)
 
     return RedirectResponse(url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}", status_code=303)
 
@@ -1946,6 +2299,20 @@ async def exportar_pdf_fechamento(request: Request, mov_id: int):
             "SELECT * FROM caixa_sangrias WHERE caixa_movimento_id = %s ORDER BY id",
             (mov_id,)
         ).fetchall()
+
+        resumo_v2 = None
+        eventos_v2 = []
+        if mov["versao"] == "eventos":
+            from servico_sessao import resumo_sessao
+            resumo_v2 = resumo_sessao(conn, mov_id)
+            eventos_v2 = conn.execute(
+                """SELECT e.*, cf.nome AS conta_nome
+                   FROM caixa_sessao_eventos e
+                   LEFT JOIN contas_financeiras cf ON cf.id = e.conta_id
+                   WHERE e.sessao_id = %s ORDER BY e.id""",
+                (mov_id,)
+            ).fetchall()
+            eventos_v2 = [dict(e) for e in eventos_v2]
 
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
@@ -2007,15 +2374,41 @@ async def exportar_pdf_fechamento(request: Request, mov_id: int):
     elems.append(Spacer(1, 6))
 
     # Resumo + Pgto lado a lado
-    saldo_esp = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
-    res_data = [["Descrição","R$"],
-                ["Saldo inicial", f"{float(mov['saldo_inicial']):.2f}"],
-                ["Total vendas",  f"{float(mov['total_vendas']):.2f}"],
-                ["Total sangrias",f"({float(mov['total_sangrias']):.2f})"],
-                ["Saldo esperado",f"{saldo_esp:.2f}"]]
+    if resumo_v2:
+        r = resumo_v2
+        saldo_esp = float(r["saldo_fisico_esperado"])
+        res_data = [["Descrição", "R$"],
+                    ["Saldo inicial", f"{float(r['saldo_inicial']):.2f}"],
+                    ["Vendas em espécie", f"{float(r['vendas_especie']):.2f}"],
+                    ["Vendas PIX (conta bancária)", f"{float(r['vendas_pix']):.2f}"],
+                    ["Vendas fiado (a receber)", f"{float(r['vendas_fiado']):.2f}"]]
+        if float(r["vendas_canceladas"]) > 0:
+            res_data.append(["Vendas canceladas", f"({float(r['vendas_canceladas']):.2f})"])
+        if float(r["credito_consumido"]) > 0:
+            res_data.append(["Consumo de crédito antecipado", f"{float(r['credito_consumido']):.2f}"])
+        if float(r["doacoes"]) > 0:
+            res_data.append(["Doações", f"{float(r['doacoes']):.2f}"])
+        if float(r["mensalidades"]) > 0:
+            res_data.append([f"Mensalidades ({int(r['qtd_mensalidades'])})", f"{float(r['mensalidades']):.2f}"])
+        if float(r["recebimentos_fiado"]) > 0:
+            res_data.append(["Quitaciones de fiado", f"{float(r['recebimentos_fiado']):.2f}"])
+        if float(r["creditos_anticipados"]) > 0:
+            res_data.append(["Créditos antecipados", f"{float(r['creditos_anticipados']):.2f}"])
+        res_data.append(["Sangrias", f"({float(r['sangrias']):.2f})"])
+        res_data.append(["Dinheiro físico esperado", f"{saldo_esp:.2f}"])
+        if mov.get("dinheiro_contado") is not None:
+            res_data.append(["Dinheiro contado", f"{float(mov['dinheiro_contado']):.2f}"])
+            res_data.append(["Divergência de contagem", f"{float(mov['divergencia_contagem']):.2f}"])
+    else:
+        saldo_esp = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
+        res_data = [["Descrição","R$"],
+                    ["Saldo inicial", f"{float(mov['saldo_inicial']):.2f}"],
+                    ["Total vendas",  f"{float(mov['total_vendas']):.2f}"],
+                    ["Total sangrias",f"({float(mov['total_sangrias']):.2f})"],
+                    ["Saldo esperado",f"{saldo_esp:.2f}"]]
     if mov.get("saldo_final") is not None:
         res_data.append(["Saldo final", f"{float(mov['saldo_final']):.2f}"])
-    t_res = mini_table(res_data, [W*0.28, W*0.12], bold_last=True)
+    t_res = mini_table(res_data, [W*0.34, W*0.12], bold_last=True)
 
     mapa_pgto = {"especie":"Espécie","pix":"PIX","fiado":"Fiado"}
     if pgto:
@@ -2054,9 +2447,25 @@ async def exportar_pdf_fechamento(request: Request, mov_id: int):
         elems.append(mini_table(sang_data, [W*0.20, W*0.12, W*0.35, W*0.33]))
         elems.append(Spacer(1, 6))
 
+    # Eventos detalhados (sessões 'eventos' — TASK_008)
+    if eventos_v2:
+        ev_data = [["#", "Tipo", "Forma", "Valor", "Efeito gaveta", "Conta", "Instante"]]
+        for e in eventos_v2:
+            ev_data.append([
+                str(e["id"]), e["tipo"], e["forma"],
+                f"{float(e['valor']):.2f}", f"{float(e['efeito_fisico']):.2f}",
+                e.get("conta_nome") or "-", (e.get("criado_em") or "")[:19],
+            ])
+        elems.append(Paragraph("<b>Eventos da sessão (fonte dos totais)</b>", s9b))
+        elems.append(Spacer(1, 3))
+        elems.append(mini_table(ev_data, [W*0.05, W*0.18, W*0.10, W*0.12, W*0.14, W*0.21, W*0.20]))
+        elems.append(Spacer(1, 6))
+
     # Observação
     if mov.get("observacao_fechamento"):
         elems.append(Paragraph(f"<b>Obs:</b> {mov['observacao_fechamento']}", s8))
+    if mov.get("observacao_conferencia"):
+        elems.append(Paragraph(f"<b>Conferência:</b> {mov['observacao_conferencia']}", s8))
 
     doc.build(elems)
     buf.seek(0)
