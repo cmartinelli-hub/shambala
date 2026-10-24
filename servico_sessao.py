@@ -27,7 +27,7 @@ tests/repro_task008_fin04.py):
 Todo valor monetário é Decimal com duas casas (ROUND_HALF_UP); instantes
 são gravados em America/Sao_Paulo com precisão de segundos.
 """
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from psycopg2.errors import UniqueViolation
 
@@ -87,6 +87,18 @@ MENSAGENS_ERRO = {
 }
 
 
+TETO_MOEDA = Decimal("9999999999.99")  # teto do NUMERIC(12,2) usado no schema
+
+
+def _arredondar_centavos(d: Decimal, campo: str) -> Decimal:
+    try:
+        return d.quantize(CENTAVO, rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        # finito colossal (ex. 1e400): estoura o NUMERIC(12,2); o quantize do
+        # Decimal lança InvalidOperation — o parser não pode vazar cru.
+        raise SessaoInvalida("valor_invalido", f"Valor fora do limite em {campo}.")
+
+
 def moeda(valor, campo: str) -> Decimal:
     """Parse defensivo para Decimal de 2 casas; teto NUMERIC(12,2)."""
     try:
@@ -95,8 +107,38 @@ def moeda(valor, campo: str) -> Decimal:
         raise SessaoInvalida("valor_invalido", f"Valor inválido em {campo}.")
     if not d.is_finite():
         raise SessaoInvalida("valor_invalido", f"Valor inválido em {campo}.")
-    d = d.quantize(CENTAVO, rounding=ROUND_HALF_UP)
-    if d <= Decimal("0.00") or d > Decimal("9999999999.99"):
+    d = _arredondar_centavos(d, campo)
+    if d <= Decimal("0.00") or d > TETO_MOEDA:
+        raise SessaoInvalida("valor_invalido", f"Valor fora do limite em {campo}.")
+    return d
+
+
+def moeda_nao_negativa(valor, campo: str) -> Decimal:
+    """Saldo inicial e dinheiro contado: ZERO é legítimo (TASK_010/REV-02).
+
+    Política monetária explícita, sem decisão por acidente:
+      * texto inválido/NaN/infinito → recusado (mesma chave `valor_invalido`);
+      * NEGATIVO é recusado ANTES do arredondamento — `-0,001` não se salva
+        arredondando para zero;
+      * duas casas com ROUND_HALF_UP, como no resto do caixa: `0,001` vira
+        `0.00` e é ACEITO (contagem com fração de centavo);
+      * o teto NUMERIC(12,2) é conferido DEPOIS do arredondamento: um valor
+        enviado direto com precisão adicional que arredonda para além do teto
+        (ex. `9999999999.995` → `10000000000.00`) é recusado estourando.
+
+    Eventos de recebimento/saída continuam usando `moeda()` — estritamente
+    positivos; esta regra não relaxa o evento zero.
+    """
+    try:
+        d = Decimal(str(valor).strip().replace(",", "."))
+    except Exception:
+        raise SessaoInvalida("valor_invalido", f"Valor inválido em {campo}.")
+    if not d.is_finite():
+        raise SessaoInvalida("valor_invalido", f"Valor inválido em {campo}.")
+    if d < Decimal("0"):
+        raise SessaoInvalida("valor_invalido", f"Valor fora do limite em {campo}.")
+    d = _arredondar_centavos(d, campo)
+    if d > TETO_MOEDA:
         raise SessaoInvalida("valor_invalido", f"Valor fora do limite em {campo}.")
     return d
 

@@ -85,6 +85,7 @@ async def pdv(request: Request, caixa_id: int = 0):
         caixa_sel = None
         movimento = None
         precisa_abrir = False
+        sem_sessao = False
         atalhos = []
         if caixa_id:
             caixa_sel = conn.execute(
@@ -98,7 +99,14 @@ async def pdv(request: Request, caixa_id: int = 0):
                     (caixa_id,)
                 ).fetchone()
                 if not movimento:
-                    precisa_abrir = True
+                    # TASK_010 §3: PIX com conta financeira válida é recebimento
+                    # legítimo sem sessão de caixa (o POST /pdv/finalizar já
+                    # aceita isso); espécie continua condicionada à sessão.
+                    # Sem conta PIX disponível, a tela segue exigindo abertura.
+                    if conta_id_por_tipo(conn, "pix") is not None:
+                        sem_sessao = True
+                    else:
+                        precisa_abrir = True
             if caixa_sel:
                 atalhos = conn.execute(
                     """SELECT id, nome, preco_venda, foto_produto
@@ -113,6 +121,7 @@ async def pdv(request: Request, caixa_id: int = 0):
         "caixa_sel": dict(caixa_sel) if caixa_sel else None,
         "movimento": dict(movimento) if movimento else None,
         "precisa_abrir": precisa_abrir,
+        "sem_sessao": sem_sessao,
         "atalhos": [dict(a) for a in atalhos],
     })
 
@@ -1762,9 +1771,11 @@ async def salvar_abertura(
     if redir:
         return redir
 
-    from servico_sessao import SessaoInvalida, abrir_sessao, moeda
+    from servico_sessao import SessaoInvalida, abrir_sessao, moeda_nao_negativa
     try:
-        inicial = moeda(saldo_inicial or "0", "saldo_inicial")
+        # REV-02/TASK_010: saldo inicial zero é legítimo (caixa sem fundo de
+        # troco); negativos/NaN/estouro seguem recusados pelo parser explícito.
+        inicial = moeda_nao_negativa(saldo_inicial or "0", "saldo_inicial")
     except SessaoInvalida as e:
         return RedirectResponse(url=f"/caixa/abrir?caixa_id={caixa_id}&erro=valor_invalido",
                                 status_code=303)
@@ -2151,15 +2162,17 @@ async def fechar_caixa(
     if redir:
         return redir
 
-    from decimal import Decimal, ROUND_HALF_UP
-    from servico_sessao import SessaoInvalida, VERSAO_EVENTOS, fechar_sessao_eventos
+    from decimal import Decimal
+    from servico_sessao import (
+        SessaoInvalida, VERSAO_EVENTOS, fechar_sessao_eventos, moeda_nao_negativa,
+    )
 
     try:
-        contado = Decimal((dinheiro_contado or "0").strip().replace(",", ".")) \
-            .quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if contado < Decimal("0"):
-            raise ValueError()
-    except Exception:
+        # REV-02/TASK_010: mesma regra explícita do saldo inicial — contado zero
+        # é legítimo, negativo recusa ANTES do arredondamento, teto NUMERIC(12,2)
+        # conferido depois dele (parser único, sem política por acidente).
+        contado = moeda_nao_negativa(dinheiro_contado or "0", "dinheiro_contado")
+    except SessaoInvalida:
         return RedirectResponse(
             url=f"/caixa/fechar?caixa_movimento_id={caixa_movimento_id}"
                 "&erro=valor_contado_invalido", status_code=303)

@@ -411,19 +411,32 @@
         </div>
 
         <div class="pdv-pagamento">
+            {% if sem_sessao %}
+            {# TASK_010 §3: sem sessão, a tela oferece só PIX (espécie segue
+               condicionada à abertura — o POST /pdv/finalizar é a autoridade). #}
+            <div style="padding:.5rem .7rem;margin-bottom:.5rem;border-radius:var(--raio);
+                        background:#fff8e1;font-size:.85rem">
+                Caixa sem sessão aberta: vendas disponíveis apenas por <strong>PIX</strong>.
+                Para receber em espécie,
+                <a href="/caixa/abrir?caixa_id={{ caixa_sel.id }}">abra a sessão</a>.
+            </div>
+            {% endif %}
             <label>Forma de pagamento</label>
             <div class="pdv-radio-group">
-                <input type="radio" name="pgto" id="pgto-especie" value="especie" checked>
+                <input type="radio" name="pgto" id="pgto-especie" value="especie"
+                       {% if sem_sessao %}disabled{% else %}checked{% endif %}>
                 <label for="pgto-especie">💵 Espécie</label>
-                <input type="radio" name="pgto" id="pgto-pix" value="pix">
+                <input type="radio" name="pgto" id="pgto-pix" value="pix"
+                       {% if sem_sessao %}checked{% endif %}>
                 <label for="pgto-pix">📱 PIX</label>
                 {% if caixa_sel.usa_produtos != False %}
-                <input type="radio" name="pgto" id="pgto-fiado" value="fiado">
+                <input type="radio" name="pgto" id="pgto-fiado" value="fiado"
+                       {% if sem_sessao %}disabled{% endif %}>
                 <label for="pgto-fiado">📝 Fiado</label>
                 {% endif %}
             </div>
 
-            <div class="pdv-especie ativo" id="painel-especie">
+            <div class="pdv-especie{% if not sem_sessao %} ativo{% endif %}" id="painel-especie">
                 <label for="valor-recebido">Valor recebido (R$)</label>
                 <input type="number" id="valor-recebido" class="pdv-input-valor"
                        step="0.01" min="0" placeholder="0,00">
@@ -436,7 +449,7 @@
                 </div>
             </div>
 
-            <div class="pdv-pix" id="painel-pix">
+            <div class="pdv-pix{% if sem_sessao %} ativo{% endif %}" id="painel-pix">
                 <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
                     <label style="font-size:.85rem;font-weight:600;white-space:nowrap">❤️ Doação (R$)</label>
                     <input type="number" id="pix-doacao" class="pdv-input-valor"
