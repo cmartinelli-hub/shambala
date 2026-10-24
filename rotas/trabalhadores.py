@@ -712,6 +712,11 @@ async def checkin_trabalhador_page(
     if redir:
         return redir
 
+    # Botão de ativar o terminal (TASK_003): só para quem pode ESCREVER no
+    # check-in. Ativar não abre cadastro nem carteirinha pela recepção.
+    from rotas.permissoes import usuario_pode
+    pode_ativar_terminal = usuario_pode(atendente["id"], "checkin.trabalhadores", "escrever")
+
     aviso = None
     modelo = _MSG_STATUS.get(status)
     if modelo:
@@ -752,6 +757,7 @@ async def checkin_trabalhador_page(
         "presencas": [dict(p) for p in presencas],
         "aviso": aviso,
         "erro": None,
+        "pode_ativar_terminal": pode_ativar_terminal,
     })
 
 

@@ -4888,3 +4888,26 @@ td.acoes { white-space: nowrap; text-align: right; }
     align-self: flex-start;
     cursor: pointer;
 }
+
+/* ── Terminal de presença (TASK_003): ativação a partir do check-in ── */
+.terminal-ativar {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    margin-top: .7rem;
+    padding-top: .7rem;
+    border-top: 1px dashed var(--cor-borda);
+}
+.terminal-ativar form { display: inline; }
+.btn-terminal-ativar {
+    background: #eef4fb;
+    color: var(--cor-primaria-escura);
+    border: 1px solid #c5d8ef;
+    padding: .5rem .9rem;
+    border-radius: var(--raio);
+    font-size: .9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.btn-terminal-ativar:hover { background: #dcebf9; }
+.terminal-ativar-nota { font-size: .8rem; color: var(--cor-texto-suave); margin: 0; max-width: 62ch; }

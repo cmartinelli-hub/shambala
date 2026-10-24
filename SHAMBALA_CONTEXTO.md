@@ -204,10 +204,19 @@ UNIQUE(trabalhador_id, dia_semana)
 ```
 id, trabalhador_id (FK), data (DATE), dia_trabalho_id (FK nullable)
 presente (0/1), hora_chegada (TEXT nullable), hora_saida (TEXT nullable)
+origem_chegada (TEXT nullable: terminal_qr | terminal_codigo | recepcao)
 UNIQUE(trabalhador_id, data)   ← a data é própria; dia_trabalho é opcional
 ```
 A presença não depende de existir dia de atendimento; `data` é sempre a data
 de São Paulo calculada pelo servidor (`servico_presenca`).
+
+`origem_chegada` diz **por onde a pessoa chegou**: lida no QR do terminal,
+digitada no terminal, ou registrada pela recepção. Nulo = fato anterior ao
+terminal, cuja origem não se conhece — nunca se inventa. A coluna é adicionada
+por migração idempotente (`banco._migrar`) e só é escrita por
+`servico_presenca.registrar_chegada(origem=…)`; `OrigemInvalida` recusa origem
+desconhecida. Repetição não altera horário nem origem: quem já está presente
+mantém a primeira chegada.
 
 ### `trabalhador_codigo`
 ```
@@ -240,13 +249,56 @@ Regra única em `servico_codigo_trabalhador.py`: `garantir_codigo` (idempotente)
 externo). Emissão por sorteio controlado com `ON CONFLICT DO NOTHING` e até 8
 tentativas; `CodigosEsgotados` quando os 10.000 já saíram.
 
-**Contrato para o terminal de leitura (TASK_003):** o QR codifica
+**Contrato usado pelo terminal de leitura (TASK_003):** o QR codifica
 exatamente a string de 4 dígitos — sem URL, nome, documento, id interno ou
 token. `resolver_codigo(conn, codigo)` devolve `estado` ∈ `invalido` (formato),
 `ativo`, `inativo`, `retirado`, `inexistente` e, quando `ativo`,
-`trabalhador_id` + `nome_completo`. Resolver **não** registra presença: quem
-resolve chama depois `servico_presenca.registrar_chegada()`. Não existe (e não
-se deve criar) endpoint público de busca por código.
+`trabalhador_id` + `nome_completo`. Resolver **não** registra presença:
+`servico_chegada.registrar_chegada_por_codigo()` é quem faz os dois na mesma
+transação. Não existe (e não se deve criar) endpoint público de busca por código.
+
+## Terminal de presença (`/terminal`)
+
+Aparelho fixo na entrada da Casa. Uma pessoa autorizada **ativa** o terminal no
+aparelho; depois disso o voluntário não faz login — apresenta a carteirinha ou
+digita os quatro números.
+
+- **Sessão própria e restrita** (`rotas/terminal.py`): cookie `sessao_terminal`,
+  httpOnly, SameSite=Lax (Secure quando `SHAMBALA_HTTPS=true`), 24 h desde a
+  ativação, emitida só por `POST /terminal/ativar` de operador autenticado com
+  `checkin.trabalhadores` na ação **escrever** — a mesma permissão do check-in da
+  recepção. Na transição a sessão **comum daquele navegador** é encerrada (as de
+  outros aparelhos continuam); nenhuma outra rota procura `sessao_terminal`,
+  então o aparelho não alcança cadastro, financeiro ou menu. `POST
+  /terminal/encerrar` desliga; voltar a administrar exige login normal. Se a
+  pessoa que ativou for inativada, a sessão cai junto (a autorização é conferida
+  em cada requisição).
+- **Um único fluxo de chegada** para QR e teclado: `POST /terminal/chegada`
+  valida formato e sessão no servidor, resolve o código, trava a linha do
+  trabalhador (`FOR UPDATE`, a mesma trava de `trocar_codigo`), re-resolve o
+  código depois do bloqueio e grava `registrar_chegada` na mesma transação,
+  confirmando antes de responder. Carteirinha retirada no meio da corrida vira
+  recusa, nunca presença de outra pessoa.
+- **O que a resposta contém:** `resultado`, `nome`, `foto` (só um caminho
+  `/static/fotos/<nome>` validado por regex), `data` e `hora`. Recusa não devolve
+  nome nem foto. CPF, telefone, mensalidade, fiado e histórico não saem.
+- **Tela** (`templates/terminal/leitura.html`, `static/css/terminal.css`,
+  `static/js/terminal.js`): sem navegação geral, retrato e paisagem, leitor
+  **jsQR 1.4.0** vendorizado (Apache-2.0, `static/js/vendor/jsqr-1.4.0/`, com a
+  licença no repositório — sem CDN, sem serviço externo, o vídeo não sai do
+  aparelho). Aceita só os quatro dígitos ASCII, preservando zeros iniciais;
+  conteúdo diferente é recusado no aparelho, sem abrir link. Sucesso mostra nome,
+  foto (se houver) e o horário do servidor; repetição mostra "Presença já
+  registrada às HH:MM" mantendo a primeira chegada; ~3 s depois a tela volta a
+  observar. A mesma carteirinha no enquadro não reenvia nem toca sem parar
+  (precisa sair do enquadro para rearma). Sem câmera — negada, ausente, ocupada
+  ou endereço não seguro — o teclado continua operando.
+- **Contexto seguro:** navegador só libera câmera em HTTPS ou localhost. No
+  endereço HTTP da LAN (`http://<host>:9000`) o terminal funciona **pelo teclado**
+  e avisa exatamente isso; liberar a câmera exige HTTPS nesse endereço (ver
+  `SHAMBALA_HTTPS`). Nada de túnel ou domínio novo para "resolver" isso.
+- **Sem** fila offline, reconhecimento facial, geolocalização, controle de saída
+  ou punição.
 
 ### `grupos` e `grupos_permissoes`
 ```
@@ -578,6 +630,14 @@ GET       /checkin-trabalhador                 ← presença (módulo checkin.tr
 POST      /checkin-trabalhador/{id}/presente
 POST      /checkin-trabalhador/{id}/ausente
 GET       /relatorios/presenca-trabalhadores   ← relatório mensal por dia
+
+POST      /terminal/ativar               ← operador (checkin.trabalhadores:escrever) habilita
+                                          o aparelho da entrada; encerra a sessão COMUM
+                                          daquele navegador e emite `sessao_terminal` (24 h)
+GET       /terminal[/]                   ← tela do terminal, sem navegação geral
+POST      /terminal/chegada              ← JSON {codigo,origem}; QR e teclado pelo mesmo
+                                          caminho; 401 sem sessão de terminal
+POST      /terminal/encerrar             ← desliga o terminal; administrar de novo exige login
 
 GET       /cadastros/permissoes                ← controle RBAC
 

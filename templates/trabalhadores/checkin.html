@@ -7,6 +7,14 @@
     <div>
         <h1>Check-in de Trabalhadores</h1>
         <p class="subtitulo">📅 {{ dia.data | data_br }} — registre a chegada; não é preciso abrir o dia de atendimento</p>
+        {% if pode_ativar_terminal %}
+        <div class="terminal-ativar">
+            <form method="post" action="/terminal/ativar" onsubmit="return confirm('Ativar o terminal de presença NESTE aparelho? A sua sessão de administração neste navegador será encerrada; para voltar ao sistema é preciso entrar de novo.');">
+                <button type="submit" class="btn btn-terminal-ativar">📷 Ativar terminal de presença neste aparelho</button>
+            </form>
+            <p class="terminal-ativar-nota">Use no tablet ou smartphone da entrada. O voluntário apresenta o QR da carteirinha ou digita os quatro números — sem login.</p>
+        </div>
+        {% endif %}
     </div>
 </div>
 

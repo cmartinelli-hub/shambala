@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+{# Terminal fixo de presença (TASK_003). Página própria, SEM navegação geral:
+   nada de menu, busca por nome, cadastro, financeiro ou histórico. #}
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Shambala – Cidade de Luz — Presença</title>
+    <link rel="stylesheet" href="/static/css/terminal.css">
+</head>
+<body class="terminal">
+
+<header class="tm-cabecalho">
+    <img class="tm-estrela"
+         src="{{ '/static/logos/' ~ centro.centro_logo if centro.centro_logo else '/static/logos/estrela_dourada.svg' }}"
+         alt="">
+    <span class="tm-centro">Shambala – Cidade de Luz</span>
+    <span class="tm-conexao" id="tm-conexao" hidden>sem conexão</span>
+</header>
+
+<main class="tm-principal">
+
+    <p class="tm-convite" id="tm-convite">Apresente sua carteirinha</p>
+
+    {# ── Leitura por câmera ── #}
+    <section class="tm-leitor" id="tm-leitor">
+        <div class="tm-enquadramento" id="tm-enquadramento">
+            <video id="tm-video" playsinline muted autoplay></video>
+            <div class="tm-mira" aria-hidden="true"></div>
+            <p class="tm-estado tm-estado-camera" id="tm-estado-camera">Iniciando câmera…</p>
+        </div>
+
+        <div class="tm-acoes-leitor">
+            <label class="tm-camera-label">
+                <span>Câmera</span>
+                <select id="tm-seletor-camera" class="tm-seletor"></select>
+            </label>
+            <button type="button" id="tm-reiniciar-camera" class="tm-botao tm-botao-suave">Reiniciar câmera</button>
+        </div>
+
+        <p class="tm-msg-bloqueio" id="tm-msg-bloqueio" hidden></p>
+
+        <button type="button" id="tm-ir-teclado" class="tm-botao tm-botao-grande">Digitar meu código</button>
+    </section>
+
+    {# ── Teclado numérico ── #}
+    <section class="tm-teclado" id="tm-teclado" hidden>
+        <p class="tm-digitar-titulo">Digite os quatro números da carteirinha</p>
+        <div class="tm-posicoes" id="tm-posicoes" role="status" aria-label="Código digitado">
+            <span class="tm-posicao" data-pos="0"></span>
+            <span class="tm-posicao" data-pos="1"></span>
+            <span class="tm-posicao" data-pos="2"></span>
+            <span class="tm-posicao" data-pos="3"></span>
+        </div>
+        <div class="tm-teclas" id="tm-teclas">
+            <button type="button" class="tm-tecla" data-digito="1">1</button>
+            <button type="button" class="tm-tecla" data-digito="2">2</button>
+            <button type="button" class="tm-tecla" data-digito="3">3</button>
+            <button type="button" class="tm-tecla" data-digito="4">4</button>
+            <button type="button" class="tm-tecla" data-digito="5">5</button>
+            <button type="button" class="tm-tecla" data-digito="6">6</button>
+            <button type="button" class="tm-tecla" data-digito="7">7</button>
+            <button type="button" class="tm-tecla" data-digito="8">8</button>
+            <button type="button" class="tm-tecla" data-digito="9">9</button>
+            <button type="button" class="tm-tecla tm-tecla-util" data-acao="apagar" aria-label="Apagar">⌫</button>
+            <button type="button" class="tm-tecla" data-digito="0">0</button>
+            <button type="button" class="tm-tecla tm-tecla-util" data-acao="limpar">Limpar</button>
+        </div>
+        <div class="tm-acoes-teclado">
+            <button type="button" id="tm-voltar-camera" class="tm-botao tm-botao-suave">Voltar à câmera</button>
+            <button type="button" id="tm-confirmar" class="tm-botao tm-botao-grande tm-botao-confirmar">Confirmar</button>
+        </div>
+        <p class="tm-msg-teclado" id="tm-msg-teclado" hidden></p>
+    </section>
+
+    {# ── Resultado (sucesso ou recusa) ── #}
+    <section class="tm-resultado" id="tm-resultado" hidden>
+        <img class="tm-foto" id="tm-foto" alt="" hidden>
+        <p class="tm-resultado-mensagem" id="tm-resultado-mensagem"></p>
+        <p class="tm-resultado-nome" id="tm-resultado-nome"></p>
+        <p class="tm-resultado-hora" id="tm-resultado-hora"></p>
+    </section>
+
+</main>
+
+<footer class="tm-rodape">
+    <button type="button" id="tm-tela-cheia" class="tm-link-rodape" hidden>Tela cheia</button>
+    <form method="post" action="/terminal/encerrar" class="tm-form-encerrar">
+        <button type="submit" class="tm-link-rodape">Encerrar terminal</button>
+    </form>
+</footer>
+
+<canvas id="tm-canvas" class="tm-canvas-oculto" aria-hidden="true"></canvas>
+
+<script src="/static/js/vendor/jsqr-1.4.0/jsQR.js"></script>
+<script src="/static/js/terminal.js"></script>
+</body>
+</html>

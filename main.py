@@ -17,7 +17,7 @@ else:
 
 from banco import criar_tabelas, fechar_pool, conectar
 from rotas import auth, pessoas, mediuns, usuarios, dia, checkin, chamada, relatorios, agenda, configuracoes, mala_direta, trabalhadores, permissoes, financeiro, doacoes, biblioteca, compras, caixa
-from rotas import financeiro_mensalidades
+from rotas import financeiro_mensalidades, terminal
 from rotas.auth import criar_atendente_inicial
 
 
@@ -72,6 +72,8 @@ app.include_router(mala_direta.router)
 app.include_router(trabalhadores.router)
 app.include_router(trabalhadores.router_checkin_trab)
 app.include_router(permissoes.router)
+# Terminal fixo de presença (TASK_003) — sessão própria e restrita, sem menu
+app.include_router(terminal.router)
 app.include_router(financeiro.router)
 app.include_router(doacoes.router)
 app.include_router(biblioteca.router)

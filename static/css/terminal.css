@@ -1,0 +1,427 @@
+/* ── Terminal fixo de presença (TASK_003) ──────────────────────────────────
+   Tela de entrada da Casa: grande, legível a distância, retrato e paisagem,
+   smartphone e tablet. Página própria — sem navegação geral. */
+
+.terminal {
+    --tm-fundo: #10233a;
+    --tm-superficie: #16304d;
+    --tm-texto: #f4f7fb;
+    --tm-texto-suave: #a9c0da;
+    --tm-primaria: #1a5fa8;
+    --tm-primaria-clara: #2f7fce;
+    --tm-ouro: #E8B22F;
+    --tm-sucesso: #2e9e6b;
+    --tm-erro: #d06a5a;
+    --tm-raio: 14px;
+
+    display: flex;
+    flex-direction: column;
+    margin: 0;                 /* o body: sem a margem padrão, que empurraria o
+                                  rodapé para fora de uma tela que não rola */
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--tm-fundo);
+    color: var(--tm-texto);
+    font-size: 18px;
+    overflow: hidden;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+              env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* ── Cabeçalho ── */
+.tm-cabecalho {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .55rem 1rem;
+    flex: 0 0 auto;
+}
+
+.tm-estrela {
+    height: clamp(26px, 4.2vh, 44px);
+    width: auto;
+    object-fit: contain;
+}
+
+.tm-centro {
+    font-size: clamp(15px, 2.4vh, 22px);
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: var(--tm-ouro);
+}
+
+.tm-conexao {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 600;
+    padding: .2rem .6rem;
+    border-radius: 999px;
+    background: rgba(208, 106, 90, .22);
+    color: #f3c9c1;
+    border: 1px solid var(--tm-erro);
+}
+
+/* ── Corpo ── */
+.tm-principal {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(.5rem, 1.6vh, 1.1rem);
+    padding: 0 1rem .8rem;
+    min-height: 0;
+}
+
+.tm-convite {
+    font-size: clamp(22px, 4.4vh, 40px);
+    font-weight: 700;
+    text-align: center;
+    margin: 0;
+}
+
+/* ── Leitor ── */
+.tm-leitor {
+    width: 100%;
+    max-width: 620px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(.5rem, 1.4vh, .9rem);
+    min-height: 0;
+}
+
+.tm-enquadramento {
+    position: relative;
+    width: 100%;
+    /* Em paisagem a câmera divide a tela com as ações; em retrato ela manda. */
+    aspect-ratio: 4 / 3;
+    max-height: 46vh;
+    min-height: 150px;
+    background: #000;
+    border-radius: var(--tm-raio);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tm-enquadramento video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.tm-mira {
+    position: absolute;
+    inset: 12%;
+    border: 3px dashed rgba(232, 178, 47, .85);
+    border-radius: 12px;
+    pointer-events: none;
+}
+
+.tm-enquadramento[data-camera="pronta"] .tm-mira { border-style: solid; }
+.tm-enquadramento[data-camera="off"] .tm-mira { display: none; }
+
+.tm-estado-camera {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    padding: .35rem .7rem;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--tm-texto);
+    background: rgba(0, 0, 0, .55);
+}
+
+.tm-estado-camera[data-estado="pronta"] { color: #b8f0d2; }
+.tm-estado-camera[data-estado="indisponivel"] { color: #f6c9bf; }
+
+.tm-acoes-leitor {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+}
+
+.tm-camera-label {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: 14px;
+    color: var(--tm-texto-suave);
+}
+
+.tm-seletor {
+    max-width: 46vw;
+    padding: .45rem .5rem;
+    border-radius: 8px;
+    border: 1px solid var(--tm-primaria);
+    background: var(--tm-superficie);
+    color: var(--tm-texto);
+    font-size: 15px;
+}
+
+.tm-msg-bloqueio {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.35;
+    text-align: center;
+    color: #f6c9bf;
+    max-width: 620px;
+}
+
+/* ── Botões ── */
+.tm-botao {
+    appearance: none;
+    border: 0;
+    border-radius: var(--tm-raio);
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    color: var(--tm-texto);
+    background: var(--tm-primaria);
+    touch-action: manipulation;
+}
+
+.tm-botao:active { transform: translateY(1px); }
+
+.tm-botao-grande {
+    width: 100%;
+    max-width: 420px;
+    /* O botão principal do terminal é tocado no aparelho: alvo tátil mínimo. */
+    min-height: 44px;
+    font-size: clamp(18px, 2.8vh, 26px);
+    padding: clamp(.7rem, 1.8vh, 1.05rem) 1rem;
+}
+
+.tm-botao-suave {
+    background: var(--tm-superficie);
+    border: 1px solid rgba(255, 255, 255, .18);
+    font-size: 15px;
+    font-weight: 600;
+    padding: .5rem .85rem;
+}
+
+.tm-botao-confirmar { background: var(--tm-sucesso); }
+.tm-botao-confirmar[disabled] { opacity: .45; }
+
+/* ── Teclado ── */
+.tm-teclado {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(.5rem, 1.5vh, 1rem);
+}
+
+.tm-digitar-titulo {
+    margin: 0;
+    font-size: clamp(16px, 2.4vh, 21px);
+    font-weight: 600;
+    text-align: center;
+    color: var(--tm-texto-suave);
+}
+
+.tm-posicoes {
+    display: flex;
+    gap: .5rem;
+    justify-content: center;
+}
+
+.tm-posicao {
+    width: clamp(58px, 14vw, 92px);
+    height: clamp(70px, 15vh, 112px);
+    border: 3px solid rgba(255, 255, 255, .28);
+    border-radius: 12px;
+    background: var(--tm-superficie);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(38px, 8vh, 64px);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.tm-posicao.ativa { border-color: var(--tm-ouro); }
+
+.tm-teclas {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .5rem;
+    width: 100%;
+}
+
+.tm-tecla {
+    appearance: none;
+    border: 0;
+    border-radius: 12px;
+    background: var(--tm-superficie);
+    color: var(--tm-texto);
+    font-family: inherit;
+    font-size: clamp(26px, 5vh, 40px);
+    font-weight: 700;
+    padding: clamp(.5rem, 1.4vh, .85rem) 0;
+    min-height: clamp(52px, 9vh, 76px);
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.tm-tecla:active { background: var(--tm-primaria-clara); }
+
+.tm-tecla-util {
+    font-size: clamp(16px, 2.6vh, 22px);
+    background: rgba(255, 255, 255, .1);
+}
+
+.tm-acoes-teclado {
+    display: flex;
+    gap: .6rem;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.tm-msg-teclado {
+    margin: 0;
+    font-size: 15px;
+    text-align: center;
+    color: #f6c9bf;
+}
+
+/* ── Resultado ── */
+.tm-resultado {
+    width: 100%;
+    max-width: 560px;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(.4rem, 1.4vh, 1rem);
+    text-align: center;
+    padding: 1rem;
+    border-radius: var(--tm-raio);
+    background: var(--tm-superficie);
+}
+
+.tm-resultado[data-tipo="erro"] { background: #4a2a26; }
+
+.tm-foto {
+    width: clamp(96px, 22vh, 170px);
+    height: clamp(96px, 22vh, 170px);
+    border-radius: 50%;
+    object-fit: cover;
+    border: 4px solid var(--tm-ouro);
+    background: #000;
+}
+
+.tm-resultado-mensagem {
+    margin: 0;
+    font-size: clamp(26px, 5.6vh, 52px);
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.tm-resultado[data-tipo="sucesso"] .tm-resultado-mensagem { color: #b8f0d2; }
+.tm-resultado[data-tipo="erro"] .tm-resultado-mensagem { color: #ffd9d0; }
+
+.tm-resultado-nome {
+    margin: 0;
+    font-size: clamp(20px, 3.6vh, 34px);
+    font-weight: 700;
+}
+
+.tm-resultado-hora {
+    margin: 0;
+    font-size: clamp(16px, 2.6vh, 24px);
+    color: var(--tm-texto-suave);
+}
+
+/* ── Rodapé ── */
+.tm-rodape {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 1rem;
+    padding: .3rem 1rem .5rem;
+}
+
+.tm-form-encerrar { display: inline; }
+
+.tm-link-rodape {
+    appearance: none;
+    background: none;
+    border: 0;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--tm-texto-suave);
+    text-decoration: underline;
+    cursor: pointer;
+    padding: .3rem .2rem;
+}
+
+/* ── Utilitários ── */
+.tm-canvas-oculto {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    width: 1px;
+    height: 1px;
+}
+
+[hidden] { display: none !important; }
+
+/* ── Paisagem em tablet/smartphone: câmera e ações lado a lado ── */
+@media (orientation: landscape) and (max-height: 560px) {
+    .tm-leitor {
+        flex-direction: row;
+        align-items: flex-end;
+        max-width: 900px;
+        gap: .8rem;
+    }
+    .tm-enquadramento {
+        flex: 1 1 auto;
+        max-height: 62vh;
+        aspect-ratio: 4 / 3;
+    }
+    .tm-acoes-leitor {
+        flex-direction: column;
+        align-items: stretch;
+        flex: 0 0 auto;
+        width: 220px;
+    }
+    #tm-ir-teclado { max-width: 220px; }
+    .tm-convite { font-size: clamp(18px, 3.4vh, 28px); }
+
+    /* Em altura curta o teclado não cabe empilhado: as quatro posições sobem
+       ao lado das teclas e nada cai abaixo da dobra. */
+    .tm-teclado {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-content: center;
+        justify-content: center;
+        gap: .5rem;
+        max-width: 620px;
+    }
+    .tm-digitar-titulo { flex: 1 1 100%; font-size: 15px; margin: 0; }
+    .tm-posicoes { flex-direction: column; flex: 0 0 auto; gap: .4rem; }
+    .tm-posicao { width: 64px; height: 40px; font-size: 24px; border-width: 2px; }
+    .tm-teclas { flex: 0 0 auto; width: 232px; gap: .4rem; }
+    .tm-tecla { min-height: 44px; font-size: 22px; padding: .3rem 0; }
+    .tm-acoes-teclado, .tm-msg-teclado { flex: 1 1 100%; }
+}
+
+/* Retrato pequeno (smartphone): nada de rolagem, teclado compacto */
+@media (orientation: portrait) and (max-height: 720px) {
+    .tm-posicao { height: clamp(56px, 11vh, 84px); }
+    .tm-tecla { min-height: clamp(44px, 7.4vh, 62px); }
+}

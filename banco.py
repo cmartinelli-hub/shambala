@@ -487,6 +487,11 @@ def _migrar(conn):
         ("checkins", "posicao", "INTEGER"),
         ("checkins", "observacao_acolhimento", "TEXT"),
         ("checkins", "acolhimento_cancelado", "INTEGER NOT NULL DEFAULT 0"),
+        # Origem da primeira chegada (TASK_003). TEXT puro, sem DEFAULT e sem
+        # backfill: linha antiga continua NULL — origem desconhecida (legado),
+        # que nunca é presumida. A recepção grava 'recepcao', o terminal grava
+        # 'terminal_qr'/'terminal_codigo'.
+        ("trabalhador_presenca", "origem_chegada", "TEXT"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:

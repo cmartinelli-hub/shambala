@@ -75,6 +75,18 @@ def codigo_valido(codigo) -> bool:
     return isinstance(codigo, str) and len(codigo) == 4 and codigo.isdigit() and codigo.isascii()
 
 
+def travar_trabalhador(conn, trabalhador_id) -> dict:
+    """Fecha a linha do trabalhador para a transação do chamador (TASK_003).
+
+    É a mesma trava de `garantir_codigo`/`trocar_codigo`, exposta para quem
+    precisa resolver um código e gravar presença na mesma transação sem
+    duplicar o SELECT da pessoa.
+    """
+    trab = _trabalhador(conn, trabalhador_id, travar=True)
+    return {"id": trab["id"], "nome_completo": trab["nome_completo"],
+            "ativo": bool(trab["ativo"])}
+
+
 def _emitir(conn, trabalhador_id, atendente_id, origem, instante) -> str:
     """Sorteia um código livre e o emite, dentro da transação do chamador.
 
@@ -187,6 +199,10 @@ def resolver_codigo(conn, codigo) -> dict:
 
     Estados: invalido (formato), ativo, inativo (código é da pessoa, mas ela
     está inativada), retirado (saiu de circulação) e inexistente.
+
+    Para resolver e gravar na mesma transação sem aceitar um código já retirado,
+    o chamador trava o trabalhador (`travar_trabalhador`) e re-resolve depois da
+    trava — é o que faz o fluxo único de chegada (servico_chegada).
     """
     if not codigo_valido(codigo):
         return {"estado": "invalido"}
