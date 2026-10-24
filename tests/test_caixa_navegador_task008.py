@@ -478,6 +478,12 @@ def c7():
         verificar("C7 tela explica que a sessão legada não fecha pela regra nova", True)
         verificar("C7 sessão legada continua aberta (nada foi gravado)",
                   escalar("SELECT status FROM caixa_movimentos WHERE id=%s", (sl,)) == "aberto")
+        pagina.goto(BASE + "/caixa/fiados")
+        _esperar_texto(pagina, "Fiados")
+        valores = pagina.locator("#dest-sessao option").evaluate_all(
+            "els => els.map(e => e.value)")
+        verificar("C7 sessão legada NÃO aparece na barra de destino de recebimento",
+                  str(sl) not in valores, f"{valores}")
         _evidencia(pagina, "c7-legado-bloqueado")
 
 

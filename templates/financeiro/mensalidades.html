@@ -169,10 +169,13 @@
                 <option value="">— nenhuma —</option>
                 {% for s in sessoes %}
                 <option value="{{ s.id }}"{% if sessoes | length == 1 %} selected{% endif %}>
-                    {{ s.caixa_nome }} — sessão #{{ s.id }}{% if s.versao != 'eventos' %} (regra antiga){% endif %}
+                    {{ s.caixa_nome }} — sessão #{{ s.id }}
                 </option>
                 {% endfor %}
             </select>
+            {% if sessoes_legadas %}
+            <small style="color:var(--cor-texto-suave)">Sessões do fluxo antigo ({% for s in sessoes_legadas %}{{ s.caixa_nome }} #{{ s.id }}{% if not loop.last %}, {% endif %}{% endfor %}) não aceitam novos recebimentos.</small>
+            {% endif %}
         </div>
         <div style="display:flex;align-items:center;gap:.5rem">
             <label style="font-weight:600;font-size:.9rem" for="dest-conta-pix">Conta PIX:</label>

@@ -66,6 +66,9 @@ MENSAGENS_ERRO = {
     "sessao_invalida": "A sessão escolhida não está aberta agora.",
     "sessao_ja_aberta": "Este caixa já tem uma sessão aberta.",
     "sessao_legada": "Esta sessão é do fluxo antigo e não fecha pela regra nova.",
+    "sessao_legada_recebimento": "A sessão escolhida é do fluxo antigo e não "
+                                 "aceita novos recebimentos — abra uma sessão "
+                                 "nova e escolha-a como destino.",
     "conta_invalida": "A conta de destino não é válida para essa forma de pagamento.",
     "destino_obrigatorio": "Escolha a conta que recebe o dinheiro (destino).",
     "destino_invalido": "O destino precisa ser uma conta ativa e diferente da "
@@ -228,9 +231,15 @@ def contabilizar_recebimento(conn, *, tipo: str, valor: Decimal, categoria: str,
                              sessao, identidade: str | None = None,
                              atendente_id: int | None = None,
                              venda_id: int | None = None):
-    """UM lançamento financeiro + (sessão eventos → UM evento; sessão legado
-    escolhida explicitamente → acumulador antigo). PIX nunca entra na gaveta:
-    efeito físico zero; em legado nem soma. Retorna o id do lançamento."""
+    """UM lançamento financeiro + (sessão eventos → UM evento). PIX nunca
+    entra na gaveta: efeito físico zero. Sessão legado jamais é alimentada —
+    recusa antes de qualquer escrita. Retorna o id do lançamento."""
+    if sessao is not None and sessao.get("versao") != VERSAO_EVENTOS:
+        raise SessaoInvalida(
+            "sessao_legada_recebimento",
+            "A sessão escolhida é do fluxo antigo e não aceita novos "
+            "recebimentos. Abra uma sessão nova (regra atual) e escolha-a "
+            "como destino.")
     cur = conn.execute(
         """INSERT INTO financeiro_movimentacoes
            (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id, status)
@@ -240,37 +249,45 @@ def contabilizar_recebimento(conn, *, tipo: str, valor: Decimal, categoria: str,
     fin_id = cur.fetchone()["id"]
     if sessao is None:
         return fin_id
-    if sessao.get("versao") == VERSAO_EVENTOS:
-        registrar_evento(
-            conn,
-            identidade=identidade or f"{tipo}:{fin_id}",
-            sessao_id=sessao["id"], tipo=tipo, natureza="recebimento",
-            origem_tipo="financeiro_movimentacoes", origem_id=fin_id,
-            venda_id=venda_id, financeiro_id=fin_id, forma=forma,
-            sentido="entrada", valor=valor,
-            efeito_fisico=valor if forma == "especie" else Decimal("0.00"),
-            conta_id=conta_id, atendente_id=atendente_id, observacao=descricao)
-    elif forma == "especie":  # legado escolhido explicitamente: só espécie soma
-        conn.execute(
-            "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-            (valor, sessao["id"]))
+    registrar_evento(
+        conn,
+        identidade=identidade or f"{tipo}:{fin_id}",
+        sessao_id=sessao["id"], tipo=tipo, natureza="recebimento",
+        origem_tipo="financeiro_movimentacoes", origem_id=fin_id,
+        venda_id=venda_id, financeiro_id=fin_id, forma=forma,
+        sentido="entrada", valor=valor,
+        efeito_fisico=valor if forma == "especie" else Decimal("0.00"),
+        conta_id=conta_id, atendente_id=atendente_id, observacao=descricao)
     return fin_id
 
 
 def sessao_para_recebimento(conn, sessao_id: int, forma: str):
     """Espécie SEMPRE exige sessão aberta (travada); PIX aceita sessão
-    opcional apenas como vínculo de auditoria (efeito físico 0)."""
+    opcional apenas como vínculo de auditoria (efeito físico 0).
+
+    TASK_008/revisão do dono: sessões LEGADO não aceitam novos recebimentos —
+    nada de alimentar os acumuladores antigos por escolha explícita. A recusa
+    acontece ANTES de qualquer escrita (baixa de pendência, lançamento, evento).
+    Vendas e sangrias continuam na regra antiga para permitir concluir e fechar
+    a gaveta legada."""
     if forma == "especie":
-        return sessao_aberta_para_especie(conn, sessao_id)
-    if not sessao_id:
+        mov = sessao_aberta_para_especie(conn, sessao_id)
+    elif not sessao_id:
         return None
-    mov = conn.execute(
-        """SELECT * FROM caixa_movimentos
-           WHERE id = %s AND status = 'aberto' FOR UPDATE""",
-        (sessao_id,)).fetchone()
-    if not mov:
+    else:
+        mov = conn.execute(
+            """SELECT * FROM caixa_movimentos
+               WHERE id = %s AND status = 'aberto' FOR UPDATE""",
+            (sessao_id,)).fetchone()
+        if not mov:
+            raise SessaoInvalida(
+                "sessao_invalida", "A sessão informada não está aberta.")
+    if mov.get("versao") != VERSAO_EVENTOS:
         raise SessaoInvalida(
-            "sessao_invalida", "A sessão informada não está aberta.")
+            "sessao_legada_recebimento",
+            "A sessão escolhida é do fluxo antigo e não aceita novos "
+            "recebimentos. Abra uma sessão nova (regra atual) e escolha-a "
+            "como destino.")
     return mov
 
 

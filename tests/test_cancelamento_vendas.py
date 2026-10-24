@@ -73,16 +73,24 @@ def _login_novo(usuario="admin", senha="teste123"):
     return opener
 
 
-def _nova_sessao(p, caixa=None):
+def _nova_sessao(p, caixa=None, versao=None):
     # TASK_008: no máximo UMA sessão aberta por caixa — fecha a anterior antes
+    # versao=None mantém a coluna DEFAULT ('legado', fluxo antigo — vendas e
+    # fechamento pela regra anterior ainda operam aí); recebimentos (fiado
+    # pago) exigem sessão 'eventos': legado recusa novos recebimentos.
     alvo = caixa or p.catalogo
     with conectar() as conn:
         conn.execute(
             "UPDATE caixa_movimentos SET status = 'fechado' "
             "WHERE caixa_id = %s AND status = 'aberto'", (alvo,))
-        cur = conn.execute(
-            "INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status) "
-            "VALUES (%s, 0, 'aberto') RETURNING id", (alvo,))
+        if versao:
+            cur = conn.execute(
+                "INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status, versao) "
+                "VALUES (%s, 0, 'aberto', %s) RETURNING id", (alvo, versao))
+        else:
+            cur = conn.execute(
+                "INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status) "
+                "VALUES (%s, 0, 'aberto') RETURNING id", (alvo,))
         return cur.fetchone()["id"]
 
 
@@ -345,7 +353,7 @@ def m7():
 def m8a():
     p = pdv()
     trab = _trabalhador("fiado pago")
-    sess = _nova_sessao(p)
+    sess = _nova_sessao(p, versao="eventos")  # recebimento exige sessão eventos
     vid = _venda(p, [_linha(p.suco, 1, "12.50")], sess, forma="fiado", trab=trab)
     t6._req(_jar(), "POST", f"/caixa/fiados/{vid}/pagar",
           {"forma_pagamento": "especie", "sessao_id": str(sess)})
@@ -360,7 +368,7 @@ def m8a():
 def m8b():
     p = pdv()
     trab = _trabalhador("fiado parcial")
-    sess = _nova_sessao(p)
+    sess = _nova_sessao(p, versao="eventos")  # recebimento exige sessão eventos
     vid = _venda(p, [_linha(p.suco, 1, "12.50")], sess, forma="fiado", trab=trab)
     t6._req(_jar(), "POST", f"/caixa/fiados/{trab}/pagar-divida",
             {"valor": "10.00", "forma_pagamento": "especie",
@@ -782,7 +790,7 @@ def m19():
 
     # caso bloqueado: a rota de fiado não vira atalho para estorno incorreto
     trab2 = _trabalhador("fiado bloqueado rota")
-    sess2 = _nova_sessao(p)
+    sess2 = _nova_sessao(p, versao="eventos")  # recebimento exige sessão eventos
     vid2 = _venda(p, [_linha(p.suco, 1, "12.50")], sess2, forma="fiado", trab=trab2)
     t6._req(_jar(), "POST", f"/caixa/fiados/{vid2}/pagar",
           {"forma_pagamento": "especie", "sessao_id": str(sess2)})
@@ -802,7 +810,7 @@ def b1():
     if faltam:
         raise t6.PularTeste(f"ferramentas ausentes ({', '.join(faltam)})")
     p = pdv()
-    sess = _nova_sessao(p)
+    sess = _nova_sessao(p, versao="eventos")  # paga fiado → exige sessão eventos
     vid = _venda(p, [_linha(p.suco, 1, "12.50")], sess, recebido="20.00")
     trab = _trabalhador("fiado navegador")
     vid_paga = _venda(p, [_linha(p.agua, 1, "3.00")], sess, forma="fiado", trab=trab)
@@ -848,11 +856,23 @@ def b1():
 def _limpar():
     # A prova de cancelamento referencia a venda (FK RESTRICT) e o financeiro
     # referencia os caixas: ambas as saídas acontecem antes da limpeza t6.
+    # Os eventos da sessão (recebimentos em 'eventos') apontam para o
+    # financeiro e para a sessão: saem primeiro, na mesma varredura.
     with conectar() as conn:
         conn.execute(
             "DELETE FROM vendas_pdv_cancelamento WHERE venda_id IN "
             "(SELECT id FROM vendas_pdv WHERE caixa_id IN "
             "(SELECT id FROM caixas WHERE nome LIKE %s))", (f"{PREFIXO}%",))
+        conn.execute(
+            """DELETE FROM caixa_sessao_eventos
+               WHERE sessao_id IN (SELECT m.id FROM caixa_movimentos m
+                                     JOIN caixas c ON c.id = m.caixa_id
+                                    WHERE c.nome LIKE %s)
+                  OR financeiro_id IN (SELECT id FROM financeiro_movimentacoes
+                                       WHERE caixa_id IN (SELECT id FROM caixas WHERE nome LIKE %s)
+                                          OR descricao LIKE %s
+                                          OR descricao LIKE 'Recebimento fiado — venda #%%')""",
+            (f"{PREFIXO}%", f"{PREFIXO}%", f"%{PREFIXO}%"))
         conn.execute(
             """DELETE FROM financeiro_movimentacoes
                WHERE caixa_id IN (SELECT id FROM caixas WHERE nome LIKE %s)

@@ -50,18 +50,20 @@
             <input type="hidden" name="sessao_id" value="{{ sessoes[0].id }}">
             <div style="padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio);background:var(--cor-fundo-suave, #f7f7f7)">
                 {{ sessoes[0].caixa_nome }} — sessão #{{ sessoes[0].id }}
-                {% if sessoes[0].versao != 'eventos' %}<span style="color:var(--cor-texto-suave)">(regra antiga)</span>{% endif %}
             </div>
             {% elif sessoes | length > 1 %}
             <select name="sessao_id" required style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
                 <option value="">— selecione a sessão —</option>
                 {% for s in sessoes %}
-                <option value="{{ s.id }}">{{ s.caixa_nome }} — sessão #{{ s.id }}{% if s.versao != 'eventos' %} (regra antiga){% endif %}</option>
+                <option value="{{ s.id }}">{{ s.caixa_nome }} — sessão #{{ s.id }}</option>
                 {% endfor %}
             </select>
             {% else %}
             <input type="hidden" name="sessao_id" value="">
             <div style="color:var(--cor-texto-suave)">Sem sessão aberta: o registro em dinheiro será recusado.</div>
+            {% endif %}
+            {% if sessoes_legadas %}
+            <small style="color:var(--cor-texto-suave);display:block;margin-top:.4rem">Sessões do fluxo antigo ({% for s in sessoes_legadas %}{{ s.caixa_nome }} #{{ s.id }}{% if not loop.last %}, {% endif %}{% endfor %}) não aceitam novos recebimentos.</small>
             {% endif %}
         </div>
         <div class="campo">

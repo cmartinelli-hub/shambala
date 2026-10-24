@@ -271,8 +271,8 @@ with conectar() as conn:
     mm_a1 = pendencia(t_mensa_a, "50.00", "A1")   # espécie no mix
     mm_a2 = pendencia(t_mensa_a, "60.00", "A2")   # PIX no mix
     mm_b1 = pendencia(t_mensa_b, "100.00", "B1")  # reenvio rejeitado (caso 6)
-    mm_c1 = pendencia(t_legado, "50.00", "C1")    # legado espécie
-    mm_c2 = pendencia(t_legado, "50.00", "C2")    # legado PIX (não soma) + reenvio
+    mm_c1 = pendencia(t_legado, "50.00", "C1")    # recusado no legado; pago na sessão eventos
+    mm_c2 = pendencia(t_legado, "50.00", "C2")    # recusado no legado (PIX também)
 
 print("[seed] fixtures prontas")
 
@@ -861,7 +861,7 @@ verificar("nenhum resíduo da transação falha: zero lançamentos, zero eventos
 executar("ALTER TABLE caixa_sangrias DROP CONSTRAINT t008_chk_recebedor")
 
 # ═════════════════════════════════════════════════════════════════════════════
-print("\n══ CASO 12 — SESSÃO LEGADO ISOLADA, CONSULTÁVEL, REGRA ANTIGA ══")
+print("\n══ CASO 12 — LEGADO: CONSULTÁVEL, SEM NOVOS RECEBIMENTOS, REGRA ANTIGA ══")
 
 st, _, loc = req("POST", "/caixa/fechar", {
     "caixa_movimento_id": str(sb), "dinheiro_contado": "120.00"})
@@ -887,17 +887,21 @@ verificar("legado NÃO contamina o modelo novo (zero eventos gravados)",
 st, _, loc = req("POST", "/financeiro/mensalidades/receber", {
     "trabalhador_id": str(t_legado), "mov_ids": f"{mm_c1}", "forma_pagamento": "especie",
     "sessao_id": str(sl)})
-passo("mensalidade espécie R$ 50 na LEGADO", st, loc)
+verificar("recebimento espécie em sessão LEGADO é recusado antes de qualquer escrita",
+          erro_em(loc, "sessao_legada_recebimento"), loc)
 tv = dec(escalar("SELECT total_vendas FROM caixa_movimentos WHERE id=%s", (sl,)))
-verificar("legado + espécie soma o lote UMA vez (70 = 20 + 50)", tv == D("70.00"), f"{tv}")
+verificar("recusa sem efeito: total_vendas segue 20.00, pendência segue pendente",
+          tv == D("20.00")
+          and escalar("SELECT status FROM financeiro_movimentacoes WHERE id=%s", (mm_c1,))
+          == "pendente", f"{tv}")
 
 st, _, loc = req("POST", "/financeiro/mensalidades/receber", {
     "trabalhador_id": str(t_legado), "mov_ids": f"{mm_c2}", "forma_pagamento": "pix",
     "conta_pix_id": str(cid_pix), "sessao_id": str(sl)})
-passo("mensalidade PIX R$ 50 na LEGADO", st, loc)
-verificar("PIX NUNCA infla a gaveta nem em legado",
-          dec(escalar("SELECT total_vendas FROM caixa_movimentos WHERE id=%s", (sl,)))
-          == D("70.00"))
+verificar("recebimento PIX em sessão LEGADO também é recusado",
+          erro_em(loc, "sessao_legada_recebimento")
+          and escalar("SELECT status FROM financeiro_movimentacoes WHERE id=%s", (mm_c2,))
+          == "pendente", loc)
 
 st, _, loc = req("POST", "/caixa/sangria", {
     "caixa_movimento_id": str(sl), "valor": "22.00", "recebedor_nome": "Fictício",
@@ -915,7 +919,7 @@ verificar("legado acumula sangria pela regra antiga e o par vinculado existe",
                       "(SELECT id FROM caixa_sangrias WHERE caixa_movimento_id=%s)", (sl,)) == 2)
 
 st, _, loc = req("POST", "/caixa/fechar", {"caixa_movimento_id": str(sl),
-                                           "dinheiro_contado": "58.00"})
+                                           "dinheiro_contado": "8.00"})
 verificar("fechar legado pela regra nova é recusado com explicação (sessao_legada)",
           erro_em(loc, "sessao_legada")
           and escalar("SELECT status FROM caixa_movimentos WHERE id=%s", (sl,)) == "aberto", loc)
@@ -923,8 +927,9 @@ verificar("fechar legado pela regra nova é recusado com explicação (sessao_le
 st, _, loc = req("POST", "/caixa/fechar", {"caixa_movimento_id": str(sl), "observacao": "T008"})
 passo("fechar LEGADO pela regra anterior", st, loc)
 m_leg = consulta("SELECT * FROM caixa_movimentos WHERE id=%s", (sl,))[0]
-verificar("regra antiga intacta: saldo_final = 10 + 70 − 22 = 58",
-          dec(m_leg["saldo_final"]) == D("58.00") and m_leg["status"] == "fechado",
+verificar("regra antiga intacta: saldo_final = 10 + 20 − 22 = 8 "
+          "(recebimentos recusados não entraram no acumulador)",
+          dec(m_leg["saldo_final"]) == D("8.00") and m_leg["status"] == "fechado",
           f"saldo_final={m_leg['saldo_final']} status={m_leg['status']}")
 
 st, _, loc = req("POST", "/caixa/pdv/finalizar", {
@@ -935,9 +940,29 @@ verificar("sessão legada fechada não aceita novas vendas",
 
 st, _, loc = req("POST", "/caixa/abrir", {"caixa_id": str(cx_c), "saldo_inicial": "1.00"})
 passo("reabrir o caixa C após fechar o legado", st, loc)
+sc = sessao_aberta(cx_c)
 verificar("sessão nova do caixa C nasce na versão 'eventos' (transição pelo tempo)",
-          escalar("SELECT versao FROM caixa_movimentos WHERE id=%s", (sessao_aberta(cx_c),))
-          == "eventos")
+          escalar("SELECT versao FROM caixa_movimentos WHERE id=%s", (sc,)) == "eventos")
+
+# as pendências recusadas no legado agora têm destino na regra atual
+st, _, loc = req("POST", "/financeiro/mensalidades/receber", {
+    "trabalhador_id": str(t_legado), "mov_ids": f"{mm_c1}", "forma_pagamento": "especie",
+    "sessao_id": str(sc)})
+passo("mensalidade espécie R$ 50 na sessão EVENTOS (após a recusa no legado)", st, loc)
+st, _, loc = req("POST", "/financeiro/mensalidades/receber", {
+    "trabalhador_id": str(t_legado), "mov_ids": f"{mm_c2}", "forma_pagamento": "pix",
+    "conta_pix_id": str(cid_pix), "sessao_id": str(sc)})
+passo("mensalidade PIX R$ 50 na sessão EVENTOS", st, loc)
+n_e, v_e, f_e = eventos(sc, "mensalidade")
+verificar("as duas pendências pagas viram eventos na sessão nova (2 eventos, 100, físico 50)",
+          n_e == 2 and v_e == D("100.00") and f_e == D("50.00")
+          and escalar("SELECT status FROM financeiro_movimentacoes WHERE id=%s", (mm_c1,))
+          == "pago"
+          and escalar("SELECT status FROM financeiro_movimentacoes WHERE id=%s", (mm_c2,))
+          == "pago", f"eventos=({n_e},{v_e},{f_e})")
+verificar("sessão eventos NÃO usa acumulador legado: total_vendas segue 0",
+          dec(escalar("SELECT total_vendas FROM caixa_movimentos WHERE id=%s", (sc,)))
+          == D("0.00"))
 
 # migração repetida não quebra nada
 criar_tabelas()

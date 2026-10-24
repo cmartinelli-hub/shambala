@@ -234,7 +234,9 @@ async def mensalidades(
                     })
 
         from servico_sessao import contas_por_tipo, sessoes_abertas
-        sessoes = [dict(s) for s in sessoes_abertas(conn)]
+        todas = [dict(s) for s in sessoes_abertas(conn)]
+        sessoes = [s for s in todas if s["versao"] == "eventos"]
+        sessoes_legadas = [s for s in todas if s["versao"] != "eventos"]
         contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
 
     return templates.TemplateResponse("financeiro/mensalidades.html", {
@@ -250,6 +252,7 @@ async def mensalidades(
         "total": total,
         "erro": erro,
         "sessoes": sessoes,
+        "sessoes_legadas": sessoes_legadas,
         "contas_pix": contas_pix,
     })
 
@@ -302,8 +305,8 @@ async def receber_mensalidades(
     entra NAQUELA gaveta. PIX exige conta PIX válida e não toca gaveta
     alguma. Em sessão 'eventos' cada mensalidade paga gera UM evento
     `mensalidade:{mov_id}`: o banco recusa contar a mesma competência duas
-    vezes. Em sessão legado escolhida explicitamente vale o acumulador
-    antigo, agora só para espécie."""
+    vezes. Sessão legado (regra antiga) não aceita novos recebimentos — a
+    escolha dela é recusada antes de qualquer escrita."""
     atendente, redir = _guard(request)
     if redir:
         return redir
@@ -385,14 +388,6 @@ async def receber_mensalidades(
                         efeito_fisico=Decimal(str(m["valor"]))
                         if forma_pagamento == "especie" else Decimal("0.00"),
                         conta_id=cid, atendente_id=atendente["id"])
-
-            if sessao is not None and sessao["versao"] != VERSAO_EVENTOS \
-                    and forma_pagamento == "especie":
-                # legado escolhido explicitamente: lote somado UMA vez
-                conn.execute(
-                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-                    (total, sessao["id"]),
-                )
 
         ids_str = ",".join(str(i) for i in vistos)
     except SessaoInvalida as e:

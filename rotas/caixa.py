@@ -838,12 +838,17 @@ async def tabela_precos(request: Request):
 def _pagina_doacao(request, atendente, erro=None, forma_pre="especie"):
     from servico_sessao import MENSAGENS_ERRO, sessoes_abertas, contas_por_tipo
     with conectar() as conn:
-        sessoes = [dict(s) for s in sessoes_abertas(conn)]
+        todas = [dict(s) for s in sessoes_abertas(conn)]
+        # recebimento novo só entra em sessão 'eventos'; legado é listado
+        # apenas como aviso — escolher uma sessão antiga é recusado no POST
+        sessoes = [s for s in todas if s["versao"] == "eventos"]
+        sessoes_legadas = [s for s in todas if s["versao"] != "eventos"]
         contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
     return templates.TemplateResponse("caixa/doacao.html", {
         "request": request,
         "atendente": atendente,
         "sessoes": sessoes,
+        "sessoes_legadas": sessoes_legadas,
         "contas_pix": contas_pix,
         "erro": MENSAGENS_ERRO.get(erro, erro) if erro else None,
         "forma_pre": forma_pre,
@@ -871,11 +876,12 @@ async def registrar_doacao(
 ):
     """Doação avulsa sem cesta (TASK_008): o destino é declarado, não presumido.
 
-    Espécie precisa de uma sessão aberta explicitamente escolhida — o dinheiro
-    físico existe dentro de uma gaveta. PIX precisa de uma conta PIX válida e
-    NÃO entra em gaveta alguma. Sessão 'eventos' registra o evento com o efeito
-    físico correto; sessão 'legado' escolhida de forma explícita mantém a
-    contabilidade antiga. A escolha implícita do caixa 2 foi removida.
+    Espécie precisa de uma sessão aberta NOVA ('eventos') explicitamente
+    escolhida — o dinheiro físico existe dentro de uma gaveta. PIX precisa de
+    uma conta PIX válida e NÃO entra em gaveta alguma. Sessão do fluxo antigo
+    ('legado') recusa o recebimento antes de qualquer escrita: nada alimenta
+    os acumuladores legados por escolha explícita. A escolha implícita do
+    caixa 2 foi removida.
     """
     atendente, redir = _guard(request)
     if redir:
@@ -883,8 +889,8 @@ async def registrar_doacao(
 
     from decimal import Decimal
     from servico_sessao import (
-        SessaoInvalida, VERSAO_EVENTOS, moeda, registrar_evento,
-        sessao_aberta_para_especie, validar_conta_para_forma,
+        SessaoInvalida, moeda, registrar_evento, sessao_para_recebimento,
+        validar_conta_para_forma,
     )
 
     if forma not in ("especie", "pix"):
@@ -898,20 +904,10 @@ async def registrar_doacao(
     desc = descricao.strip() or f"Doação avulsa via {'PIX' if forma == 'pix' else 'Dinheiro'}"
     try:
         with conectar() as conn:
-            if forma == "especie":
-                mov = sessao_aberta_para_especie(conn, sessao_id)
-                conta = validar_conta_para_forma(conn, "especie", None)
-            else:
-                mov = None
-                if sessao_id:
-                    mov = conn.execute(
-                        """SELECT * FROM caixa_movimentos
-                           WHERE id = %s AND status = 'aberto' FOR UPDATE""",
-                        (sessao_id,)).fetchone()
-                    if not mov:
-                        raise SessaoInvalida(
-                            "sessao_invalida", "A sessão informada não está aberta.")
-                conta = validar_conta_para_forma(conn, "pix", conta_pix_id or None)
+            mov = sessao_para_recebimento(conn, sessao_id, forma)
+            conta = validar_conta_para_forma(
+                conn, forma,
+                (conta_pix_id or None) if forma == "pix" else None)
 
             cur = conn.execute(
                 """INSERT INTO financeiro_movimentacoes
@@ -921,7 +917,7 @@ async def registrar_doacao(
                 (valor_dec, desc, mov["caixa_id"] if mov else None, forma, conta))
             fin_id = cur.fetchone()["id"]
 
-            if mov and mov["versao"] == VERSAO_EVENTOS:
+            if mov:
                 registrar_evento(
                     conn, identidade=f"doacao:{fin_id}", sessao_id=mov["id"],
                     tipo="doacao", natureza="recebimento",
@@ -931,10 +927,6 @@ async def registrar_doacao(
                     efeito_fisico=valor_dec if forma == "especie" else Decimal("0.00"),
                     conta_id=conta, atendente_id=atendente["id"],
                     observacao=desc)
-            elif mov:  # legado escolhido explicitamente: contabilidade antiga
-                conn.execute(
-                    "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
-                    (valor_dec, mov["id"]))
     except SessaoInvalida as e:
         # A exceção vazou do `with conectar()` → rollback integral: nada desta
         # doação permanece gravado.
@@ -1368,7 +1360,9 @@ async def listar_fiados(request: Request):
 
     with conectar() as conn:
         from servico_sessao import contas_por_tipo, sessoes_abertas
-        sessoes = [dict(s) for s in sessoes_abertas(conn)]
+        todas = [dict(s) for s in sessoes_abertas(conn)]
+        sessoes = [s for s in todas if s["versao"] == "eventos"]
+        sessoes_legadas = [s for s in todas if s["versao"] != "eventos"]
         contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
         fiados = conn.execute(
             """SELECT v.*, c.nome AS caixa_nome,
@@ -1403,6 +1397,7 @@ async def listar_fiados(request: Request):
         "fiados": [dict(f) for f in fiados],
         "agrupado": dict(agrupado),
         "sessoes": sessoes,
+        "sessoes_legadas": sessoes_legadas,
         "contas_pix": contas_pix,
         "e_admin": e_admin(request),
     })
