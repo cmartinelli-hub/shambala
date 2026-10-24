@@ -1,6 +1,6 @@
 # TASK_003 — Terminal de presença por QR e código — Etapa 3
 
-Status: pronta para execução exclusivamente no DEV.
+Status: implementação concluída no DEV; homologação física pendente.
 Dependências: TASK_001 (presença por data própria) e TASK_002 (códigos e carteirinhas), incluindo a correção da FK para RESTRICT. Conferir o estado real do código; correção informada nos commits locais a2f2e98 e 1e57f79.
 
 ## Objetivo
@@ -200,7 +200,9 @@ servidor vai apenas o código de 4 dígitos; nenhuma imagem é armazenada.
 - `POST /terminal/chegada` — JSON `{codigo, origem}`; 401 `{"resultado":
   "sessao_encerrada"}` sem sessão, com todos os dados pessoais em `null`; nenhum
   dado além de nome/foto/data/hora quando há sucesso.
-- `POST /terminal/encerrar` — desliga; voltar a administrar exige login normal.
+- `POST /terminal/encerrar` — desliga o terminal **do próprio aparelho** (botão
+  no rodapé da tela); não há encerramento remoto. Voltar a administrar exige
+  login normal.
 - Não existe endpoint público de busca por código.
 
 ## 3. Banco, backup e preservação
@@ -257,7 +259,9 @@ cada erro). Log do runner em `/tmp/runner-task003.log`.
    segurada no enquadro reenvia sem fim.
 
 **Limitações**: vídeo simulado não prova aparelho físico; Chromium é o motor
-dos testes, não o navegador do tablet da entrada; o runner deixa o banco
+dos testes, não o navegador do tablet da entrada; **sem HTTPS na LAN não há
+como homologar a leitura por câmera no aparelho** (roteiro pronto, nada
+aplicado — por decisão do dono, o nginx não foi mexido); o runner deixa o banco
 descartável para a próxima execução — foi removido ao fechar a tarefa, e nenhum
 processo de teste (9011/9013) ficou ativo.
 
@@ -270,8 +274,14 @@ processo; produção intocada). Terminal disponível em
 
 Neste endereço **HTTP** da LAN o navegador bloqueia a câmera (contexto inseguro —
 comportamento verificado em teste, L24). A tela avisa e o terminal opera
-**pelo teclado** normalmente; a câmera só libera com HTTPS neste endereço
-(melhoramento de infraestrutura que a tarefa não alcança).
+**pelo teclado** normalmente. **A leitura de QR no aparelho não é homologável no
+endereço atual**: para isso falta HTTPS na LAN, decisão de infraestrutura que o
+dono reservou para si. O roteiro pronto (certificado com SAN para o IP, site
+nginx na porta 9443 com frente TLS para o mesmo processo, confiança no aparelho,
+flag `SHAMBALA_HTTPS` e conferência) está em
+`docs/infra/HTTPS_TERMINAL_LAN.md` — nada dele foi aplicado. Enquanto HTTPS não
+existir, a digitação é homologável no HTTP de hoje; os passos 1 a 6 abaixo valem
+no endereço atual e o passo 7 (câmera) depende do HTTPS.
 
 Roteiro de homologação no aparelho físico (pendente — não havia aparelho com o
 executor; nada aqui declara aceite operacional):
@@ -285,10 +295,15 @@ executor; nada aqui declara aceite operacional):
    sorteadas no DEV).
 5. Cobrir/interromper a rede e tornar a ler: deve dizer "Não foi possível
    confirmar", nunca falso sucesso.
-6. Em outro navegador, entrar como operador e encerrar o terminal: a tela deve
-   parar e pedir nova ativação.
-7. Com HTTPS disponível, repetir com a câmera (frontal/traseira, distância,
-   iluminação, som e retorno automático de ~3 s).
+6. No próprio aparelho, tocar "Encerrar terminal" no rodapé da tela: o aparelho
+   volta ao login e o código lido depois disso não passa mais. Não existe
+   encerramento remoto de outro navegador — o que se faz de outro aparelho é
+   apenas a nova ativação, que vale para o navegador onde ela for feita.
+7. Aplicado o roteiro de HTTPS (`docs/infra/HTTPS_TERMINAL_LAN.md`), repetir
+   os passos no endereço novo (`https://192.168.15.8:9443/terminal/`) com a
+   câmera: frontal/traseira, distância, iluminação, som e retorno automático
+   de ~3 s. A homologação da **função principal** (leitura das carteirinhas)
+   só se completa aqui.
 
 Registrar modelo, sistema e navegador do aparelho usado apenas quando o teste
 for realmente feito.
