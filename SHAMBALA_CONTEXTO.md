@@ -414,11 +414,15 @@ espaco_disponivel (BIGINT), mensagem_erro (TEXT)
 
 ### Tabela `financeiro_movimentacoes`
 ```
-id, tipo (entrada/saida), categoria (mensalidade/doacao/livro/etc)
+id, tipo (entrada/saida), categoria (mensalidade/doacao/venda_pdv/recebimento_fiado/
+  credito_anticipado/sangria/transferencia/livro/etc)
 valor (NUMERIC 10,2), data_movimentacao (TEXT YYYY-MM-DD)
 descricao (TEXT), trabalhador_id (FK nullable), pessoa_id (FK nullable)
 pix_copiadecola (TEXT), status (pago/pendente/cancelado, padrão pago)
 caixa_id (FK caixas, nullable)  ← adicionado via migração
+forma_pagamento (TEXT), conta_id (FK contas_financeiras), data_pagamento (TEXT)
+sangria_id (FK caixa_sangrias) — TASK_008: par saída+entrada da sangria-transferência
+nota_fiscal_foto (TEXT)
 ```
 
 ### Rotas
@@ -485,6 +489,33 @@ id, venda_id (FK ON DELETE CASCADE), produto_id (FK)
 nome_produto (TEXT, snapshot), quantidade, preco_unitario, subtotal
 ```
 
+**`caixa_movimentos`** (uma linha = uma sessão de gaveta)
+```
+id, caixa_id (FK caixas), data_abertura/data_fechamento (TEXT), saldo_inicial/saldo_final
+total_vendas/total_sangrias (acumuladores da REGRA LEGADA), status (aberto/fechado),
+atendente_id_abertura/atendente_id_fechamento, observacao_fechamento
+versao (TASK_008: 'legado' = regra antiga com acumuladores, padrão em linhas antigas;
+  'eventos' = sessões abertas após TASK_008, vivem de caixa_sessao_eventos)
+dinheiro_contado/divergencia_contagem/observacao_conferencia (TASK_008: conferência
+  física do fechamento 'eventos'; NULL em legado)
+UNIQUE parcial: uq_caixa_movimentos_aberto(caixa_id) WHERE status='aberto'
+```
+
+**`caixa_sessao_eventos`** (TASK_008 — fonte única das sessões 'eventos')
+```
+id, identidade (TEXT UNIQUE — idempotência real no banco: mesmo comando/documento
+  não produz dois eventos), sessao_id (FK caixa_movimentos),
+tipo (venda/venda_doacao/venda_credito/cancelamento/doacao/mensalidade/
+  recebimento_fiado/credito_anticipado/sangria), natureza (comercial/recebimento/retirada),
+origem_tipo + origem_id (persistida), venda_id (FK nullable), financeiro_id
+  (FK financeiro_movimentacoes — vínculo 1:1 quando já existe lançamento),
+forma (especie/pix/fiado/credito), sentido (entrada/saida),
+valor (NUMERIC(12,2) > 0), efeito_fisico (NUMERIC(12,2) — contribuição assinada
+  para a gaveta; PIX, fiado não recebido e crédito consumido entram com 0),
+conta_id, atendente_id, observacao,
+criado_em (TEXT, instante do servidor America/Sao_Paulo timestamp(0))
+```
+
 ### Rotas
 ```
 WS        /caixa/ws                         ← WebSocket segundo monitor (QR Code)
@@ -505,6 +536,16 @@ GET       /caixa/caixas                     ← lista de caixas + chaves PIX
 POST      /caixa/caixas/novo                ← criar caixa
 POST      /caixa/caixas/{id}/pix            ← vincular chave PIX à caixa
 POST      /caixa/caixas/{id}/toggle-ativo   ← ativar/desativar caixa
+GET/POST  /caixa/abrir                      ← abrir sessão NOVA ('eventos'; uma por caixa — lock + índice único)
+GET/POST  /caixa/fechar                     ← prévia detalhada + contagem física (eventos) ou regra antiga (legado; formulário novo é recusado)
+GET       /caixa/fechar/{mov_id}/pdf        ← resumo original do fechamento
+GET/POST  /caixa/doacao                     ← doação avulsa com destino explícito (espécie exige sessão)
+GET       /caixa/fiados                     ← fiados/créditos com barra de destino (sessão/conta)
+POST      /caixa/fiados/{venda}/pagar       ← quitação por venda (identidade fiadopagar:{venda_id})
+POST      /caixa/fiados/{trabalhador}/pagar-divida ← quitação total/parcial — uma entrada; sobra vira crédito sem segundo lançamento
+POST      /caixa/fiados/credito/{trabalhador}      ← adiantamento: lança entrada financeira + evento (antes não era registrado)
+GET/POST  /caixa/sangria                    ← sangria com destino obrigatório (par transferência, efeito global zero)
+GET       /caixa/sangria/{id}/comprovante
 ```
 
 ### Fluxo PDV
@@ -535,7 +576,9 @@ POST      /caixa/caixas/{id}/toggle-ativo   ← ativar/desativar caixa
 - O snapshot histórico de nome/preço nos `vendas_pdv_itens` vem do cadastro; vendas
   antigas nunca são recalculadas pelo preço atual.
 - Troco (`recebido − total`, só espécie), doação, acúmulo da sessão
-  (`total_vendas += total + doação`) e política de estoque preservados como eram.
+  (`total_vendas += total + doação`) e política de estoque preservados como eram
+  — em sessão `eventos` (TASK_008) o acúmulo foi substituído por eventos detalhados;
+  o acumulador legado continua valendo só para sessões `legado`.
 - Crédito usado, limite de fiado, sessão e comprovante usam exatamente o mesmo total.
 - Validação completa antes de qualquer escrita; venda, itens, estoque, crédito e
   acumuladores da sessão vivem numa única transação (`conectar()`), com lock de
@@ -567,6 +610,41 @@ POST      /caixa/caixas/{id}/toggle-ativo   ← ativar/desativar caixa
   finalização). Linhas antigas ficam NULL e nunca são preenchidas por heurística.
 - Fora do escopo (bloqueado, não implementado): reembolso de fiado pago (FIN-06),
   lançamento financeiro após fechamento (FIN-03/FIN-04), devolução parcial/perda.
+
+### Sessão por eventos, destino do recebimento e conferência física (TASK_008 / FIN-04)
+- Sessão aberta após a entrega nasce `versao='eventos'` e tem UMA fonte de verdade:
+  `caixa_sessao_eventos`. Cada operação grava um evento com identidade UNIQUE
+  (`venda:{id}:venda|doacao|credito|cancelamento`, `sangria:{id}`, `doacao:{fin_id}`,
+  `mensalidade:{mov_id}`, `fiadopagar:{venda_id}`, `recebimento_fiado:{fin_id}`,
+  `credito:{cred_id}`) — repetição do mesmo comando/documento é recusada PELO BANCO,
+  e a exceção vaza da transação para rollback integral.
+- `efeito_fisico` é a contribuição assinada para a gaveta: soma espécie recebida
+  (líquida do troco; doação sai da sobra entregue, `recebido < total+doação` é recusado);
+  PIX, fiado não recebido e consumo de crédito anterior entram com **zero**.
+  `esperado = saldo_inicial + Σ efeito_fisico` — mesma fórmula no resumo, no fechamento
+  e no PDF.
+- Destino nunca é presumido: espécie exige sessão aberta explicitamente selecionada
+  (e conta coerente conferida NO BANCO pelo tipo — fora de PIX o `conta_pix_id` do
+  navegador é ignorado); PIX funciona sem gaveta e cria o lançamento na hora, na conta
+  PIX válida. Falta de destino → recusa antes de baixar qualquer pendência.
+- Uma sessão aberta por caixa: `pg_advisory_xact_lock` + checagem + INSERT e índice
+  parcial único; sangria v2 é transferência interna (par saída/entrada com mesmo
+  `sangria_id`, efeito global zero, destino obrigatório ≠ gaveta).
+- Fechamento `eventos`: trava a sessão (`FOR UPDATE`, ordem de travas da TASK_006/007 —
+  escrita concorrente entra antes ou é recusada depois), lança financeiramente agora
+  apenas vendas/doações ainda sem lançamento e não canceladas (vínculo persistido,
+  nunca dois lançamentos para a mesma origem), registra `dinheiro_contado` ao lado do
+  esperado com divergência e observação obrigatória quando ≠ 0 — o esperado NUNCA é
+  sobrescrito; fechamento repetido não duplica nada.
+- Sessões `legado` (todas as anteriores + as que existiam abertas): continuam na regra
+  antiga de acumuladores, intactas, consultáveis e fecháveis pelo fluxo antigo; o
+  formulário novo de contagem nelas é recusado (`sessao_legada`). Nenhum backfill
+  heurístico, nenhum reparo retroativo.
+- Cancelamento (TASK_007) adapta-se: compensa em `eventos` via `venda:{id}:cancelamento`
+  (efeito físico só se espécie) preservando estoque/idempotência/bloqueios.
+- Não implementado (aberto): competência/unicidade de mensalidades, alocação detalhada
+  de fiado, reembolso pós-fechamento, conciliação, cartão/taxas. Saldos de crédito
+  antigos sem origem preservados sem eventos.
 
 ### PIX (geração de payload)
 - Payload EMV completo com CRC16 (`_gerar_payload_pix` em `rotas/caixa.py`)
@@ -864,6 +942,16 @@ GET       /caixa/caixas
 POST      /caixa/caixas/novo
 POST      /caixa/caixas/{id}/pix
 POST      /caixa/caixas/{id}/toggle-ativo
+GET/POST  /caixa/abrir                  ← nova sessão 'eventos' (uma por caixa)
+GET/POST  /caixa/fechar                 ← eventos: prévia + contagem; legado: regra antiga
+GET       /caixa/fechar/{mov_id}/pdf
+GET/POST  /caixa/doacao                 ← destino explícito (espécie exige sessão)
+GET       /caixa/fiados
+POST      /caixa/fiados/{venda}/pagar
+POST      /caixa/fiados/{trabalhador}/pagar-divida
+POST      /caixa/fiados/credito/{trabalhador}
+GET/POST  /caixa/sangria                ← destino obrigatório, par transferência
+GET       /caixa/sangria/{id}/comprovante
 ```
 
 ---
@@ -929,6 +1017,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `servico_codigo_trabalhador.py` | Regra única do código de 4 dígitos: emitir, trocar, preparar, resolver, QR |
 | `servico_pdv.py` | Precificação do PDV no servidor (TASK_006/FIN-01): validar quantidades, consultar preço vigente com trava, somar em Decimal ROUND_HALF_UP e detectar divergência de preço sem escrever nada |
 | `servico_cancelamento.py` | Cancelamento de venda (TASK_007/FIN-02): avaliar elegibilidade pelos vínculos persistidos e reverter só efeitos comprováveis (estoque, sessão, doação) numa transação única com prova em `vendas_pdv_cancelamento` |
+| `servico_sessao.py` | Regra única da sessão de caixa (TASK_008/FIN-04): eventos com identidade, destino validado no banco, resumo/fechamento/conferência física pela mesma fórmula, travas e idempotência |
 | `preparar_codigos_trabalhadores.py` | Operação local: emite os códigos que faltam (simulação / `--aplicar`) |
 | `requirements.txt` | Dependências Python do projeto |
 | `instalar.sh` | Script de instalação automatizada |
@@ -1161,6 +1250,7 @@ shambala/
 - ✅ Gestão do dia, correções retroativas auditadas e relatórios de presença (TASK_004)
 - ✅ PDV com preços e totais calculados no servidor; divergência de preço revisada sem escrita (TASK_006 / FIN-01)
 - ✅ Cancelamento de venda com reversão rastreável dos efeitos comprováveis, idempotência pelo banco e prova durável; casos ambíguos bloqueados sem efeito (TASK_007 / FIN-02)
+- ✅ Caixa por eventos: vendas, recebimentos e dinheiro físico separados; PIX/fiado não recebido/crédito consumido fora da gaveta; destino explícito e fechamento com conferência física (TASK_008 / FIN-04)
 - ✅ Mala direta via WhatsApp e email
 - ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas

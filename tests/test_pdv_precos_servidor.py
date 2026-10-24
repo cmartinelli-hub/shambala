@@ -213,6 +213,10 @@ class PDV:
             self.sessao = cur.fetchone()["id"]
             cur = conn.execute(
                 "INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status) "
+                "VALUES (%s, 0, 'aberto') RETURNING id", (self.livre,))
+            self.sessao_livre = cur.fetchone()["id"]
+            cur = conn.execute(
+                "INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status) "
                 "VALUES (%s, 0, 'fechado') RETURNING id", (self.catalogo,))
             self.sessao_fechada = cur.fetchone()["id"]
 
@@ -241,11 +245,26 @@ class PDV:
         with conectar() as conn:
             return self._produto(conn, self.catalogo, nome, preco, estoque)
 
-    def nova_sessao(self):
+    def sessao_aberta(self):
+        """A sessão aberta do caixa de catálogo — reabre se uma etapa anterior
+        a fechou (TASK_008: no máximo uma sessão aberta por caixa)."""
         with conectar() as conn:
+            r = conn.execute(
+                "SELECT id FROM caixa_movimentos WHERE caixa_id = %s AND status = 'aberto' "
+                "ORDER BY id DESC LIMIT 1", (self.catalogo,)).fetchone()
+            if r:
+                return r["id"]
+        return self.nova_sessao()
+
+    def nova_sessao(self, caixa_id=None):
+        alvo = caixa_id or self.catalogo
+        with conectar() as conn:
+            conn.execute(
+                "UPDATE caixa_movimentos SET status = 'fechado' "
+                "WHERE caixa_id = %s AND status = 'aberto'", (alvo,))
             cur = conn.execute(
                 "INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status) "
-                "VALUES (%s, 0, 'aberto') RETURNING id", (self.catalogo,))
+                "VALUES (%s, 0, 'aberto') RETURNING id", (alvo,))
             return cur.fetchone()["id"]
 
     def produto(self, pid):
@@ -656,7 +675,7 @@ def s14():
 @teste("R1 venda honesta 2×12,50: total persistido 25,00")
 def r1():
     p = pdv()
-    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao,
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
                    itens=[_linha(p.suco, 2, "12.50")], valor_recebido="50.00")
     assert r.redirecionada and r.ok, f"R1 finalizei? {r.status} {r.destino}"
     venda = p.venda_de(int(r.ok))
@@ -674,7 +693,7 @@ def r1():
 def r2():
     p = pdv()
     antes, estoque = p.n_vendas(), p.estoque(p.suco)
-    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao,
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
                    itens=[_item(p.suco, 2, 0.01, 0.02, "SUFRAMA ADULTERADA")],
                    valor_recebido="50.00")
     assert_eq(r.status, 200, f"R2 tela de revisão esperada, veio {r.status} {r.destino}")
@@ -690,9 +709,10 @@ def r2():
 def r3():
     p = pdv()
     prod = p.novo_produto("10.00", 50, nome="Mudou")
-    r = _finalizar(caixa_id=p.catalogo, itens=[{"produto_id": prod, "quantidade": 2}],
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
+                   itens=[{"produto_id": prod, "quantidade": 2}],
                    valor_recebido="20.00")
-    assert r.ok, f"R3 primeira venda ok {r.status}"
+    assert r.ok, f"R3 primeira venda ok {r.status} {r.destino}"
     p.preco(prod, "12.00")
     antes = p.n_vendas()
     r = _finalizar(caixa_id=p.catalogo, itens=[_linha(prod, 2, "10.00")])
@@ -708,7 +728,8 @@ def r3():
 @teste("R4 valores enviados são ignorados: só produto e quantidade importam")
 def r4():
     p = pdv()
-    r = _finalizar(caixa_id=p.catalogo, itens=[{"produto_id": p.suco, "quantidade": 3}])
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
+                   itens=[{"produto_id": p.suco, "quantidade": 3}])
     assert r.ok, f"R4 {r.status} {r.destino}"
     assert_eq(str(_dec(p.venda_de(int(r.ok))["total"])), "37.50", "R4 total do servidor")
     assert_eq(p.estoque(p.suco), 10 - 2 - 3, "R4 estoque coerente com R1")
@@ -717,8 +738,9 @@ def r4():
 @teste("R5 duplicados na cesta: um item, baixa única")
 def r5():
     p = pdv()
-    r = _finalizar(caixa_id=p.catalogo, itens=[_linha(p.agua, 1, "3.00"), _linha(p.agua, 2, "3.00")])
-    assert r.ok, f"R5 {r.status}"
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
+                   itens=[_linha(p.agua, 1, "3.00"), _linha(p.agua, 2, "3.00")])
+    assert r.ok, f"R5 {r.status} {r.destino}"
     venda = p.venda_de(int(r.ok))
     assert_eq(len(venda["itens"]), 1, "R5 item agregado")
     assert_eq(str(_dec(venda["total"])), "9.00", "R5 total")
@@ -766,7 +788,8 @@ def r7():
     livre = {"produto_id": None, "nome": "Camisola usada", "quantidade": 2,
              "preco_unitario": 15.50, "subtotal": 31.00}
     movs_antes, estoque_antes = len(p.movimentos(p.suco)), p.estoque(p.suco)
-    r = _finalizar(caixa_id=p.livre, itens=[livre], valor_recebido="50.00")
+    r = _finalizar(caixa_id=p.livre, caixa_movimento_id=p.sessao_livre,
+                   itens=[livre], valor_recebido="50.00")
     assert r.ok, f"R7 {r.status} {r.destino}"
     venda = p.venda_de(int(r.ok))
     assert_eq(str(_dec(venda["total"])), "31.00", "R7 total")
@@ -788,7 +811,8 @@ def r8():
     assert_eq(str(_dec(venda["total"])), "999999.99", "R8 pix total")
     assert_eq(str(_dec(venda["troco"])), "0.00", "R8 pix sem troco")
 
-    r = _finalizar(caixa_id=p.catalogo, itens=[_linha(p.suco, 1, "12.50")],
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
+                   itens=[_linha(p.suco, 1, "12.50")],
                    forma_pagamento="especie", valor_recebido="20.00", doacao_valor="7.50")
     venda = p.venda_de(int(r.ok))
     # semantics preservadas do código anterior: o campo troco guarda o troco
@@ -893,7 +917,8 @@ def r11():
 @teste("R12 redirect de sucesso leva ao id persistido (comprovante)")
 def r12():
     p = pdv()
-    r = _finalizar(caixa_id=p.catalogo, itens=[_item(p.suco, 1)], imprimir="1")
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
+                   itens=[_item(p.suco, 1)], imprimir="1")
     assert r.ok, f"R12 {r.status} {r.destino}"
     assert_eq(r.destino.split("ok=")[0], f"/caixa/pdv?caixa_id={p.catalogo}&", "R12 destino")
     venda = p.venda_de(int(r.ok))
@@ -908,7 +933,8 @@ def r12():
 def r13():
     p = pdv()
     prod = p.novo_produto("12.50", 50, nome="Ontem")
-    r = _finalizar(caixa_id=p.catalogo, itens=[_linha(prod, 2, "12.50")])
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(),
+                   itens=[_linha(prod, 2, "12.50")])
     assert r.ok, f"R13 venda original {r.status} {r.destino}"
     venda_antiga = p.venda_de(int(r.ok))
     p.preco(prod, "99.00")
@@ -929,7 +955,7 @@ def r13():
 def r14():
     p = pdv()
     centavo = p.novo_produto("0.05", 1000, nome="Centavo")
-    r = _finalizar(caixa_id=p.catalogo, itens=[
+    r = _finalizar(caixa_id=p.catalogo, caixa_movimento_id=p.sessao_aberta(), itens=[
         _item(centavo, 7), _item(p.suco, 1), _item(p.agua, 3), _item(p.caro, 1)],
         valor_recebido="1000100.00")
     assert r.ok, f"R14 {r.status} {r.destino}"
@@ -1165,6 +1191,10 @@ def _limpar():
                      (f"{PREFIXO}%",))
         conn.execute("DELETE FROM produtos WHERE nome LIKE %s", (f"{PREFIXO}%",))
         conn.execute("DELETE FROM trabalhadores WHERE nome_completo LIKE %s", (f"{PREFIXO}%",))
+        # TASK_008: PIX sem sessão cria lançamento com caixa_id na hora da
+        # venda — precisa sair antes do caixa (FK RESTRICT).
+        conn.execute("DELETE FROM financeiro_movimentacoes WHERE caixa_id IN "
+                     "(SELECT id FROM caixas WHERE nome LIKE %s)", (f"{PREFIXO}%",))
         conn.execute("DELETE FROM caixas WHERE nome LIKE %s", (f"{PREFIXO}%",))
 
 

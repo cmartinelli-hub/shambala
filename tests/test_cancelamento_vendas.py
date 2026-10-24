@@ -74,10 +74,15 @@ def _login_novo(usuario="admin", senha="teste123"):
 
 
 def _nova_sessao(p, caixa=None):
+    # TASK_008: no máximo UMA sessão aberta por caixa — fecha a anterior antes
+    alvo = caixa or p.catalogo
     with conectar() as conn:
+        conn.execute(
+            "UPDATE caixa_movimentos SET status = 'fechado' "
+            "WHERE caixa_id = %s AND status = 'aberto'", (alvo,))
         cur = conn.execute(
             "INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status) "
-            "VALUES (%s, 0, 'aberto') RETURNING id", (caixa or p.catalogo,))
+            "VALUES (%s, 0, 'aberto') RETURNING id", (alvo,))
         return cur.fetchone()["id"]
 
 
@@ -342,7 +347,8 @@ def m8a():
     trab = _trabalhador("fiado pago")
     sess = _nova_sessao(p)
     vid = _venda(p, [_linha(p.suco, 1, "12.50")], sess, forma="fiado", trab=trab)
-    t6._req(_jar(), "POST", f"/caixa/fiados/{vid}/pagar", {"forma_pagamento": "especie"})
+    t6._req(_jar(), "POST", f"/caixa/fiados/{vid}/pagar",
+          {"forma_pagamento": "especie", "sessao_id": str(sess)})
     antes = _snapshot(vid, (p.suco,), trabalhador_id=trab, sessoes=(sess,))
     st, corpo, _ = _cancelar(vid, motivo="tentar cancelar fiado pago")
     assert_eq(st, 200, "resposta é a tela com o motivo, não redirecionamento de sucesso")
@@ -357,7 +363,8 @@ def m8b():
     sess = _nova_sessao(p)
     vid = _venda(p, [_linha(p.suco, 1, "12.50")], sess, forma="fiado", trab=trab)
     t6._req(_jar(), "POST", f"/caixa/fiados/{trab}/pagar-divida",
-            {"valor": "10.00", "forma_pagamento": "especie"})
+            {"valor": "10.00", "forma_pagamento": "especie",
+             "sessao_id": str(sess)})
     antes = _snapshot(vid, (p.suco,), trabalhador_id=trab, sessoes=(sess,))
     assert_eq(antes["venda"]["fiado_pago"], False, "venda segue não paga (flag engana)")
     st, corpo, _ = _cancelar(vid, motivo="tentar cancelar fiado com recebimento parcial")
@@ -431,8 +438,8 @@ def m9():
     assert "fechada" in corpo, "motivo cita a sessão fechada"
     _sem_efeitos(antes, _snapshot(v_ok, (p.agua,), sessoes=(sess,)), v_ok)
 
-    # sem vínculo: a rota do PDV aceita caixa_movimento_id=0 e grava sem sessão
-    v_solta = _venda(p, [_linha(p.suco, 1, "12.50")], 0, recebido="20.00")
+    # sem vínculo: PIX não exige sessão (TASK_008) e a venda nasce sem gaveta
+    v_solta = _venda(p, [_linha(p.suco, 1, "12.50")], 0, forma="pix", recebido="0")
     st, corpo, _ = _cancelar(v_solta, motivo="sem sessão")
     assert_eq(st, 200, "venda sem vínculo recusada")
     assert "não está vinculada" in corpo, "motivo claro"
@@ -520,7 +527,9 @@ def m11():
 def m12():
     p = pdv()
     sess_a = _nova_sessao(p)
-    sess_b = _nova_sessao(p)
+    sess_b = sess_a  # TASK_008: uma única sessão aberta por caixa; a corrida é
+    # mesmo válida — cancelamento e venda disputam a linha do produto e o
+    # acumulador da sessão
     v_a = _venda(p, [_linha(p.suco, 2, "12.50")], sess_a, recebido="30.00")
     erro = {}
 
@@ -775,7 +784,8 @@ def m19():
     trab2 = _trabalhador("fiado bloqueado rota")
     sess2 = _nova_sessao(p)
     vid2 = _venda(p, [_linha(p.suco, 1, "12.50")], sess2, forma="fiado", trab=trab2)
-    t6._req(_jar(), "POST", f"/caixa/fiados/{vid2}/pagar", {"forma_pagamento": "especie"})
+    t6._req(_jar(), "POST", f"/caixa/fiados/{vid2}/pagar",
+          {"forma_pagamento": "especie", "sessao_id": str(sess2)})
     antes = _snapshot(vid2, (p.suco,), trabalhador_id=trab2, sessoes=(sess2,))
     st, corpo, _ = t6._req(_jar(), "POST", f"/caixa/fiados/{vid2}/cancelar",
                            {"motivo": "tentar o pago", "confirmar": "1"})
@@ -796,7 +806,8 @@ def b1():
     vid = _venda(p, [_linha(p.suco, 1, "12.50")], sess, recebido="20.00")
     trab = _trabalhador("fiado navegador")
     vid_paga = _venda(p, [_linha(p.agua, 1, "3.00")], sess, forma="fiado", trab=trab)
-    t6._req(_jar(), "POST", f"/caixa/fiados/{vid_paga}/pagar", {"forma_pagamento": "especie"})
+    t6._req(_jar(), "POST", f"/caixa/fiados/{vid_paga}/pagar",
+          {"forma_pagamento": "especie", "sessao_id": str(sess)})
 
     from playwright.sync_api import sync_playwright
     host = urllib.parse.urlsplit(BASE).hostname
