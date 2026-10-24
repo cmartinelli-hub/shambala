@@ -315,15 +315,29 @@ async def presenca_geral_trabalhadores(
     data_fim: str = Query(""),
     dia_semana: str = Query(""),
     origem: str = Query(""),
-    trabalhador_id: int = Query(0),
+    trabalhador_id: str = Query(""),
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
+    # O seletor pesquisável pode enviar vazio (todos) ou um id escolhido.
+    try:
+        trabalhador_id = int(trabalhador_id) if trabalhador_id else 0
+    except ValueError:
+        trabalhador_id = 0
+
     ini_padrao, fim_padrao = _mes_atual()
     data_ini = data_ini or ini_padrao
     data_fim = data_fim or fim_padrao
+
+    with conectar() as conn:
+        opcoes_trabalhadores = [
+            dict(r) for r in conn.execute(
+                "SELECT id, nome_completo FROM trabalhadores "
+                "ORDER BY nome_completo"
+            ).fetchall()
+        ]
 
     contexto_base = {
         "request": request,
@@ -333,6 +347,7 @@ async def presenca_geral_trabalhadores(
         "dia_semana": dia_semana,
         "origem": origem,
         "trabalhador_id": trabalhador_id,
+        "opcoes_trabalhadores": opcoes_trabalhadores,
         "nomes_dia": _NOMES_DIA_REL,
         "origens_filtro": _ORIGENS_RELATORIO,
         "rotulo_origem": rotulo_origem,
@@ -392,7 +407,7 @@ async def presenca_geral_trabalhadores(
 @router.get("/presenca-trabalhador", response_class=HTMLResponse)
 async def presenca_individual(
     request: Request,
-    trabalhador_id: int = Query(0),
+    trabalhador_id: str = Query(""),
     data_ini: str = Query(""),
     data_fim: str = Query(""),
     dia_semana: str = Query(""),
@@ -402,9 +417,23 @@ async def presenca_individual(
     if redir:
         return redir
 
+    try:
+        trabalhador_id = int(trabalhador_id) if trabalhador_id else 0
+    except ValueError:
+        trabalhador_id = 0
+
     ini_padrao, fim_padrao = _mes_atual()
     data_ini = data_ini or ini_padrao
     data_fim = data_fim or fim_padrao
+
+    with conectar() as conn:
+        # Lista completa para o seletor: inativos continuam consultáveis —
+        # o passado não desaparece após a inativação.
+        trabalhadores_lista = conn.execute(
+            "SELECT id, nome_completo, ativo FROM trabalhadores "
+            "ORDER BY nome_completo"
+        ).fetchall()
+        trabalhadores_lista = [dict(r) for r in trabalhadores_lista]
 
     from rotas.permissoes import usuario_pode
     contexto_base = {
@@ -428,7 +457,8 @@ async def presenca_individual(
     if erro:
         return templates.TemplateResponse(
             "relatorios/presenca_individual.html",
-            {**contexto_base, "trabalhadores": [], "trabalhador": None,
+            {**contexto_base, "trabalhadores": trabalhadores_lista,
+             "trabalhador": None,
              "registros": [], "presencas": 0, "ausencias": 0, "erro": erro})
 
     params_filtro: list = []
@@ -437,24 +467,16 @@ async def presenca_individual(
     if erro:
         return templates.TemplateResponse(
             "relatorios/presenca_individual.html",
-            {**contexto_base, "trabalhadores": [], "trabalhador": None,
+            {**contexto_base, "trabalhadores": trabalhadores_lista,
+             "trabalhador": None,
              "registros": [], "presencas": 0, "ausencias": 0, "erro": erro})
 
-    trabalhadores_lista = []
     trabalhador = None
     registros = []
     presencas = 0
     ausencias = 0
 
     with conectar() as conn:
-        # Lista completa para o seletor: inativos continuam consultáveis —
-        # o passado não desaparece após a inativação.
-        trabalhadores_lista = conn.execute(
-            "SELECT id, nome_completo, ativo FROM trabalhadores "
-            "ORDER BY nome_completo"
-        ).fetchall()
-        trabalhadores_lista = [dict(r) for r in trabalhadores_lista]
-
         if trabalhador_id:
             trabalhador = conn.execute(
                 "SELECT id, nome_completo, ativo FROM trabalhadores WHERE id = %s",

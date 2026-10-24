@@ -834,8 +834,12 @@ def c18(ctx: Ctx):
 
     st, html = _http("GET",
         f"/relatorios/presenca-trabalhadores?data_ini={hoje}&data_fim={hoje}&origem=terminal_qr")
-    assert "Aura QR" in html, "filtro de origem mantém o fato correspondente"
-    assert "Bento Recepção" not in html and "Cida Inativa" not in html, \
+    # O seletor pesquisável lista toda a gente no datalist e no JSON do campo
+    # — quem passou pelo filtro se mede apenas pelas linhas da tabela.
+    linhas = (html.split("<table>", 1)[1].split("</table>", 1)[0]
+              if "<table>" in html else "")
+    assert "Aura QR" in linhas, "filtro de origem mantém o fato correspondente"
+    assert "Bento Recepção" not in linhas and "Cida Inativa" not in linhas, \
         "fatos de outra origem não entram"
 
 

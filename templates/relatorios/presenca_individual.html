@@ -12,13 +12,14 @@
 <form method="get" class="barra-busca rel-controles" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
     <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
         Trabalhador
-        <select name="trabalhador_id" style="padding:0.4rem 0.6rem;min-width:200px">
-            <option value="">— Selecione —</option>
+        <input type="text" id="rel-trab-nome" list="rel-trab-opcoes" autocomplete="off"
+               placeholder="— todos —" style="padding:0.4rem 0.6rem;min-width:12rem">
+        <input type="hidden" name="trabalhador_id" value="{{ trabalhador_id or '' }}">
+        <datalist id="rel-trab-opcoes">
             {% for t in trabalhadores %}
-            <option value="{{ t.id }}" {% if t.id == trabalhador_id %}selected{% endif %}>
-                {{ t.nome_completo }}{% if not t.ativo %} (inativo){% endif %}</option>
+            <option value="{{ t.nome_completo }}" label="{{ t.id }}"></option>
             {% endfor %}
-        </select>
+        </datalist>
     </label>
     <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
         De <input type="date" name="data_ini" value="{{ data_ini }}" style="padding:0.4rem 0.6rem">
@@ -43,7 +44,7 @@
             <option value="terminal_codigo" {% if origem == 'terminal_codigo' %}selected{% endif %}>Código digitado</option>
             <option value="recepcao" {% if origem == 'recepcao' %}selected{% endif %}>Recepção</option>
             <option value="correcao_administrativa" {% if origem == 'correcao_administrativa' %}selected{% endif %}>Correção administrativa</option>
-            <option value="nao_informada" {% if origem == 'nao_informada' %}selected{% endif %}>Não informada (legado)</option>
+            <option value="nao_informada" {% if origem == 'nao_informada' %}selected{% endif %}>Não informada</option>
         </select>
     </label>
     <button type="submit" class="btn btn-primario">Filtrar</button>
@@ -57,9 +58,7 @@
 {% endif %}
 
 <p style="color:var(--cor-texto-suave);font-size:0.85rem;margin:-0.5rem 0 1rem">
-    Só os <strong>registros explícitos</strong> do período aparecem aqui: presença e ausência
-    registrada. Não ter lançamento <strong>não é falta</strong> e não entra em nenhuma conta;
-    lançamentos anulados deixaram de existir (ficam apenas no histórico de correções).
+    Sem registro não significa falta. Lançamentos anulados não entram nos totais.
 </p>
 
 {% if trabalhador %}
@@ -128,6 +127,29 @@
     Trabalhador não encontrado.
 </p>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script id="rel-trab-lista" type="application/json">{{ trabalhadores | tojson }}</script>
+<script>
+// O nome pesquisado decide o filtro: só vale quando bate exatamente com um
+// trabalhador; texto desconhecido equivale a "todos".
+(function () {
+    const campoNome = document.getElementById('rel-trab-nome');
+    const campoId = document.querySelector('input[name="trabalhador_id"]');
+    const opcoes = JSON.parse(document.getElementById('rel-trab-lista').textContent);
+    function sincronizar() {
+        const escolhida = opcoes.find(function (o) {
+            return o.nome_completo === campoNome.value;
+        });
+        campoId.value = escolhida ? String(escolhida.id) : '';
+    }
+    const atual = opcoes.find(function (o) { return String(o.id) === campoId.value; });
+    if (atual) campoNome.value = atual.nome_completo;
+    campoNome.addEventListener('input', sincronizar);
+    document.querySelector('form.barra-busca').addEventListener('submit', sincronizar);
+})();
+</script>
 {% endblock %}
 
 {% block estilos %}

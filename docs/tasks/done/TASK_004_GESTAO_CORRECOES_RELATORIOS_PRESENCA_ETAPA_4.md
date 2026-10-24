@@ -1,6 +1,6 @@
 # TASK_004 — Gestão, correções e relatórios de presença — Etapa 4
 
-Status: pronta para execução exclusivamente no DEV.
+Status: implementada e aplicada no DEV (migração idempotente via restart da 9000; commits locais, sem push). Aguarda conferência do dono pelo roteiro do "Adendo de execução (DEV)".
 Dependências: TASK_001, TASK_002 e TASK_003 implementadas. Confirmar código e schema atuais. A homologação física da câmera permanece pendente e não impede esta etapa.
 
 ## Objetivo
@@ -264,28 +264,38 @@ nenhum grupo do DEV recebeu a permissão nova em demonstração.
 
 ### Roteiro de conferência para o dono (no DEV, com credenciais reais)
 
+0. Criar em Cadastros → Trabalhadores um trabalhador **fictício identificado**
+   para as provas de escrita: `Homologacao TASK-004 (teste)`. Conferir que ele
+   nasce sem presença. **Todos os lançamentos, correções e anulações deste
+   roteiro são feitos só nesse trabalhador fictício — nos demais, nada
+   corrigir nem anular: preservar os fatos reais.**
 1. Entrar com usuário de recepção que **não** tenha `correcoes` → a gestão do
    dia funciona, mas não há link "✎ Corrigir/lançar" nem acesso a histórico.
-2. Entrar como Admin (bypass) → gestão do dia de hoje; em quem não chegou,
-   registrar ✔ Presente / ✕ Ausente e ver a coluna de origem.
+2. Entrar como Admin (bypass) → gestão do dia de hoje; no fictício
+   `Homologacao TASK-004 (teste)`, registrar ✔ Presente / ✕ Ausente e ver a
+   coluna de origem.
 3. Navegar ← para ontem → página em consulta somente leitura (sem botões);
    buscar por nome e filtrar "Sem registro"; apertar ↻ Atualizar.
-4. Abrir "✎ Corrigir/lançar nesta data" de alguém com presença registrada
+4. Abrir "✎ Corrigir/lançar nesta data" do fictício com presença registrada
    hoje → corrigir o horário com motivo e confirmar; conferir o aviso, o selo
    "ajustado" e a tabela "Alterações desta data".
-5. Tentar aplicar sem motivo (o navegador barra) e por URL com data futura →
-   recusa com aviso claro e nada gravado.
-6. Abrir a ficha de presença do trabalhador → selo ajustado, origem por
+5. No mesmo fictício: tentar aplicar sem motivo (o navegador barra) e por URL
+   com data futura → recusa com aviso claro e nada gravado.
+6. Abrir a ficha de presença do fictício → selo ajustado, origem por
    registro e "Histórico de alterações" com autor e motivo.
 7. Conceder `checkin.trabalhadores.correcoes` (ler/escrever) a um grupo de
    teste na tela de Permissões e conferir que o operador passa a ver só o que
    a permissão manda (leitor vê histórico sem formulário; sem escrever não há
    POST possível).
-8. Relatórios → geral e individual com filtro de dia entre os 7, origem e
-   trabalhador; nenhum percentual; inativo com registro aparece com selo;
-   "🖨 Imprimir" esconde controles no PDF do navegador.
-9. Testar o terminal no endereço HTTPS existente para a câmera (fora do escopo
-   desta entrega; a digitação já funciona no HTTP da LAN).
+8. Relatórios → geral e individual com filtro de **trabalhador pesquisável
+   por nome**, dia entre os 7 e origem; nenhum percentual; inativo com
+   registro aparece com selo; "🖨 Imprimir" esconde controles no PDF do
+   navegador.
+9. Encerrar as provas **inativando** o fictício (não excluí-lo: enquanto houver
+   histórico de correções a exclusão é barrada de propósito) e conferir que ele
+   segue aparecendo nos relatórios com o selo "inativo" e o preservado.
+10. Testar o terminal no endereço HTTPS existente para a câmera (fora do escopo
+    desta entrega; a digitação já funciona no HTTP da LAN).
 
 ### Limitações verdadeiras
 
@@ -295,12 +305,66 @@ nenhum grupo do DEV recebeu a permissão nova em demonstração.
   real), não por aparelho físico neste ambiente.
 - **Suítes financeiras não aprovadas nesta tarefa**: mensalidades/fiado não
   foram homologadas; o runner cobre o que roda, não o resto.
-- **Auditoria não cobre os fatos legados**: os registros anteriores à TASK_004
-  não têm linha de auditoria e podem ter origem nula — as telas dizem
-  "Não informada", nunca inventam.
+- **Registros anteriores a esta entrega não têm histórico de correções**;
+  quando a origem não foi informada, as telas dizem "Não informada", nunca
+  inventam.
 - **Nenhuma correção real foi aplicada no DEV** de propósito: não havia
   lançamento errado a demonstrar e corrigir fatos reais não é papel de
   demonstração. O roteiro acima permite ao dono exercitar o fluxo.
 
 Status: **concluída em DEV, commit local, sem push.** Produção não recebeu
 nada; a publicação exige autorização e tarefa de implantação próprias.
+
+## Adendo de acabamento — ajustes pedidos pelo dono (2026-10-24)
+
+Cinco ajustes pontuais sobre a entrega acima. Nenhum esquema mudou; a subida no
+DEV foi apenas o restart do serviço existente da 9000.
+
+| # | Ajuste | Onde ficou |
+|---|---|---|
+| 1 | Cabeçalho dizia "pronta para execução" | Status real no topo desta ordem |
+| 2 | Explicações de tela com jargão interno ("denominador", "legado esperado", "linha de auditoria") | Nota dos relatórios agora é uma frase: *Sem registro não significa falta. Lançamentos anulados não entram nos totais.* Ficha: *Somente consulta: este histórico não pode ser editado nem apagado por aqui.* Filtro de origem diz apenas "Não informada" |
+| 3 | Instante da correção cru, com microssegundos | Filtro Jinja `data_hora_br` em `templates_config.py`; correção e ficha exibem `DD/MM/AAAA HH:MM:SS` |
+| 4 | Campo livre "Trabalhador" (id numérico) nos relatórios | Seletor **pesquisável por nome** nos dois relatórios (`<input list>` + `datalist` e `<script type="application/json">` com a lista); nome que não bate com ninguém = nenhum filtro; id na URL volta como nome no campo |
+| 5 | Roteiro de homologação expunha fatos reais a correções | Roteiro reescrito: as provas de escrita (passos 2, 4, 5, 6) correm **só sobre um trabalhador fictício identificado** — `Homologacao TASK-004 (teste)` — que no fim é **inativado** (a exclusão é barrada pela FK enquanto houver histórico, o que é o comportamento desejado) |
+
+### Validação dos ajustes
+
+| Suíte | Antes | Depois |
+|---|---|---|
+| `test_presenca_trabalhadores.py` (TASK_001) | 19 | 19 (H7 passou a medir **a tabela**, não a página inteira — o seletor novo lista toda a gente no `datalist`) |
+| `test_correcoes_presenca.py` (TASK_004) | 21 | 21 (C18 idem) |
+| `test_gestao_correcoes_navegador.py` (TASK_004) | 11 | 11 (N9 agora filtra pelo nome digitado, verifica o id resolvido, o nome desconhecido sem filtro e o id da URL reaparecendo como nome; N8 confere o instante com `DD/MM/AAAA HH:MM:SS`) |
+| Runner completo (10 suítes) | 168/168 | **168/168, RC=0** — 27+12+8+10+19+18+18+24+21+11 |
+
+Ajustes de código que a própria bateria exigiu: `trabalhador_id` dos relatórios
+passou a ser `str` validado (vazio = todos) porque o formulário novo pode
+submeter o campo em branco; a lista de opções do seletor é lida antes da
+validação de período para as telas de erro continuarem com o filtro utilizável;
+e os dois relatórios passaram a usar exatamente a mesma chave (`nome_completo`)
+no `datalist`, no JSON embutido e no JavaScript.
+
+**Prova de que a bateria enxerga o produto.** Ao escrever o seletor, a rota
+geral devolvia `nome` e o template lia `nome_completo`: o `datalist` nasceria
+vazio. O cenário N9 antigo **passava mesmo assim** (preenche o campo por
+`fill()`). Acrescentamos a N9 a verificação de que o seletor carrega os 4 nomes
+do cenário; reintroduzimos o defeito de propósito e **N9 falhou (10/11)**,
+depois do quê a chave foi unificada e tudo voltou a verde. A medição de filtro
+em H7/C18 também mudou de HTML-inteiro para **só a tabela**, porque o seletor
+novo lista toda a gente na página — sem isso, "não apareceu" virava
+"apareceu" por causa do JSON embutido.
+
+### DEV depois do acabamento
+
+| Verificação | Resultado |
+|---|---|
+| Subida | restart do serviço existente da 9000 (HTTP), sem nginx/TLS/porta nova; **zero DDL** |
+| Baseline | `trab=70 pres=15 cod=70 ativos=70 retirados=0 corr=0` — idêntico ao registrado na migração |
+| Permissão nova | `concessoes=0` em `grupos_permissoes` |
+| HTTP | `GET /login` → 200; `/relatorios/presenca-trabalhadores` e `/checkin-trabalhador` → 303 (exigem login, como antes) |
+| Log | `Started server process [1718027]` em diante: zero traceback/erro |
+
+Nenhum fato real foi corrigido, anulado ou apagado. Testes financeiros
+permanecem não aprovados; o `checkin.trabalhadores.correcoes` continua sem
+concessão a qualquer grupo do DEV.
+

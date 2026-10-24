@@ -95,7 +95,7 @@
         {% for a in correcoes %}
         <tr>
             <td>{{ a.data_fato | data_br }}</td>
-            <td>{{ a.criado_em }}</td>
+            <td {% if loop.index0 == 0 %}id="rel-quando-0"{% endif %}>{{ a.criado_em | data_hora_br }}</td>
             <td>{{ rotulos_operacao.get(a.operacao, a.operacao) }}</td>
             <td>{% if a.anterior_presente is none %}Sem registro{% elif a.anterior_presente %}Presente {{ a.anterior_hora_chegada or '(desconhecido)' }} · {{ rotulo_origem(a.anterior_origem) }}{% else %}Ausência registrada{% endif %}</td>
             <td>{% if a.novo_presente is none %}Sem registro (anulado){% elif a.novo_presente %}Presente {{ a.novo_hora_chegada or '(desconhecido)' }} · {{ rotulo_origem(a.novo_origem) }}{% else %}Ausência registrada{% endif %}</td>
@@ -105,8 +105,7 @@
         {% endfor %}
     </tbody>
 </table>
-<p class="form-hinta">Somente consulta: o histórico não pode ser editado nem apagado pela interface.
-    Registros anteriores a esta funcionalidade não têm linha de auditoria — origem “Não informada” é o legado esperado.</p>
+<p class="form-hinta">Somente consulta: este histórico não pode ser editado nem apagado por aqui.</p>
 {% else %}
 <p class="subtitulo">Nenhuma alteração neste mês — todos os lançamentos estão no estado original.</p>
 {% endif %}

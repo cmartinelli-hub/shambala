@@ -32,13 +32,19 @@
             <option value="terminal_codigo" {% if origem == 'terminal_codigo' %}selected{% endif %}>Código digitado</option>
             <option value="recepcao" {% if origem == 'recepcao' %}selected{% endif %}>Recepção</option>
             <option value="correcao_administrativa" {% if origem == 'correcao_administrativa' %}selected{% endif %}>Correção administrativa</option>
-            <option value="nao_informada" {% if origem == 'nao_informada' %}selected{% endif %}>Não informada (legado)</option>
+            <option value="nao_informada" {% if origem == 'nao_informada' %}selected{% endif %}>Não informada</option>
         </select>
     </label>
     <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
         Trabalhador
-        <input type="number" name="trabalhador_id" value="{{ trabalhador_id or '' }}"
-               min="1" placeholder="todos" style="padding:0.4rem 0.6rem;width:7rem">
+        <input type="text" id="rel-trab-nome" list="rel-trab-opcoes" autocomplete="off"
+               placeholder="todos" style="padding:0.4rem 0.6rem;min-width:12rem">
+        <input type="hidden" name="trabalhador_id" value="{{ trabalhador_id or '' }}">
+        <datalist id="rel-trab-opcoes">
+            {% for t in opcoes_trabalhadores %}
+            <option value="{{ t.nome_completo }}" label="{{ t.id }}"></option>
+            {% endfor %}
+        </datalist>
     </label>
     <button type="submit" class="btn btn-primario">Filtrar</button>
 </form>
@@ -51,11 +57,7 @@
 {% endif %}
 
 <p style="color:var(--cor-texto-suave);font-size:0.85rem;margin:-0.5rem 0 1rem">
-    Contas apenas dos <strong>registros explícitos</strong> do período: o denominador é
-    cada lançamento existente (presença ou ausência registrada), não a agenda nem o total de dias.
-    Ausência de registro <strong>não é falta</strong>; lançamentos anulados não entram
-    (a correção fica no histórico, fora das contagens). O selo “inativo” mantém o passado
-    consultável — inativar não apaga a história de ninguém.
+    Sem registro não significa falta. Lançamentos anulados não entram nos totais.
 </p>
 
 {% if trabalhadores %}
@@ -65,7 +67,7 @@
             <th>Trabalhador</th>
             <th style="text-align:center">Presenças</th>
             <th style="text-align:center">Ausências registradas</th>
-            <th style="text-align:center">Registros explícitos</th>
+            <th style="text-align:center">Lançamentos</th>
         </tr>
     </thead>
     <tbody>
@@ -92,9 +94,32 @@
 </table>
 {% elif not erro %}
 <p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
-    Nenhum trabalhador com registro explícito no período.
+    Nenhum lançamento no período.
 </p>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script id="rel-trab-lista" type="application/json">{{ opcoes_trabalhadores | tojson }}</script>
+<script>
+// O nome pesquisado decide o filtro: só vale quando bate exatamente com um
+// trabalhador; texto desconhecido volta ao relatório completo.
+(function () {
+    const campoNome = document.getElementById('rel-trab-nome');
+    const campoId = document.querySelector('input[name="trabalhador_id"]');
+    const opcoes = JSON.parse(document.getElementById('rel-trab-lista').textContent);
+    function sincronizar() {
+        const escolhida = opcoes.find(function (o) {
+            return o.nome_completo === campoNome.value;
+        });
+        campoId.value = escolhida ? String(escolhida.id) : '';
+    }
+    const atual = opcoes.find(function (o) { return String(o.id) === campoId.value; });
+    if (atual) campoNome.value = atual.nome_completo;
+    campoNome.addEventListener('input', sincronizar);
+    document.querySelector('form.barra-busca').addEventListener('submit', sincronizar);
+})();
+</script>
 {% endblock %}
 
 {% block estilos %}

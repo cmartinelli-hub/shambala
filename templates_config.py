@@ -27,7 +27,15 @@ def _data_br(valor: str) -> str:
     return valor or ""
 
 
+def _data_hora_br(valor: str) -> str:
+    """AAAA-MM-DD HH:MM:SS[.ffffff] → DD/MM/AAAA HH:MM:SS (sem microssegundos)"""
+    if valor and len(valor) >= 19:
+        return f"{valor[8:10]}/{valor[5:7]}/{valor[:4]} {valor[11:19]}"
+    return valor or ""
+
+
 templates.env.filters["data_br"] = _data_br
+templates.env.filters["data_hora_br"] = _data_hora_br
 
 
 def _obter_config_centro() -> dict:

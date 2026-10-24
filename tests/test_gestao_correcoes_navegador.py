@@ -26,6 +26,7 @@ descartável, nunca dados reais.
 Uso (recomendado): bash tests/rodar_testes.sh
 """
 import os
+import re
 import sys
 import time
 import shutil
@@ -437,6 +438,9 @@ def n8():
         assert "Histórico de alterações" in corpo, "admin não vê o histórico"
         assert "prova de ficha" in corpo and "Correção de horário" in corpo
         assert "08:05" in corpo
+        instante = pagina.locator('td[id="rel-quando-0"]').inner_text()
+        assert re.fullmatch(r"\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}", instante), \
+            f"o instante da correção deveria ser DD/MM/AAAA HH:MM:SS, veio {instante!r}"
         _evidencia(pagina, "n8-ficha-historico-desktop")
 
 
@@ -444,7 +448,7 @@ def n8():
 #  Relatórios e impressão
 # ══════════════════════════════════════════════════════════════════════════
 
-@cenario("N9 relatório geral: sem percentual, 7 dias e origens; impressão limpa")
+@cenario("N9 relatório geral: sem percentual, 7 dias, origem pesquisável; impressão limpa")
 def n9():
     with _operador(largura=SMARTPHONE[0], altura=SMARTPHONE[1]) as op:
         pagina = op.abrir(
@@ -453,8 +457,36 @@ def n9():
         corpo = pagina.inner_text("body")
         assert "% Presença" not in corpo and "% Falta" not in corpo, \
             "percentuais removidos deveriam permanecer fora"
-        assert "Registros explícitos" in corpo
+        assert "Sem registro não significa falta" in corpo, "faltou a nota do dono"
+        assert "denominador" not in corpo.lower(), "jargão interno ainda aparece na tela"
         assert "Alice Chegada QR" in corpo and "Bruno Recepcao" in corpo
+        # o campo Trabalhador é pesquisável por nome e decide o filtro
+        assert_eq(pagina.locator("#rel-trab-opcoes option").count(), 4,
+                  "o seletor deveria carregar as 4 pessoas do cenário")
+        assert "Bruno Recepcao" in pagina.locator("#rel-trab-opcoes").inner_html(), \
+            "o datalist precisa trazer os nomes (não pode vir vazio)"
+        pagina.fill("#rel-trab-nome", "Alice Chegada QR")
+        pagina.click('button[type="submit"]')
+        pagina.wait_for_load_state("networkidle")
+        corpo = pagina.inner_text("body")
+        assert "Alice Chegada QR" in corpo, "o filtro por nome sumiu com quem deveria ficar"
+        assert "Bruno Recepcao" not in corpo, "o filtro por nome não filtrou nada"
+        assert_eq(pagina.locator('input[name="trabalhador_id"]').input_value(),
+                  str(_id_por_nome("Alice Chegada QR")),
+                  "o nome digitado deveria resolver para o id do trabalhador")
+        assert_eq(pagina.locator("#rel-trab-nome").input_value(), "Alice Chegada QR",
+                  "a seleção deveria permanecer visível depois do filtro")
+        # digitado avulso, sem corresponder a ninguém, volta o relatório completo
+        pagina.fill("#rel-trab-nome", "Ninguém Com Esse Nome")
+        pagina.click('button[type="submit"]')
+        pagina.wait_for_load_state("networkidle")
+        assert "Bruno Recepcao" in pagina.inner_text("body"), \
+            "nome desconhecido deveria equivale a nenhum filtro"
+        pagina = op.abrir(
+            f"/relatorios/presenca-trabalhadores?data_ini={CENAS['hoje']}"
+            f"&data_fim={CENAS['hoje']}&trabalhador_id={_id_por_nome('Bruno Recepcao')}")
+        assert_eq(pagina.locator("#rel-trab-nome").input_value(), "Bruno Recepcao",
+                  "um id na URL deveria reaparecer como nome no campo")
         assert_eq(pagina.locator('select[name="dia_semana"] option').count(), 8,
                   "o filtro de dia deveria oferecer Todos + os 7 dias")
         assert_eq(pagina.locator('select[name="origem"] option').count(), 6,

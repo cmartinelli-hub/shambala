@@ -121,7 +121,7 @@
     <tbody>
         {% for a in alteracoes %}
         <tr>
-            <td>{{ a.criado_em }}</td>
+            <td>{{ a.criado_em | data_hora_br }}</td>
             <td>{{ rotulos_operacao.get(a.operacao, a.operacao) }}</td>
             <td>{{ estado_texto(a.anterior_presente, a.anterior_hora_chegada, a.anterior_origem) }}</td>
             <td>{{ estado_texto(a.novo_presente, a.novo_hora_chegada, a.novo_origem) }}

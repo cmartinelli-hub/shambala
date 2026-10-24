@@ -593,7 +593,11 @@ def h7(ctx: Ctx):
     st, html = _http("GET",
                      "/relatorios/presenca-trabalhadores?data_ini=2020-01-01&data_fim=2020-01-31")
     assert_eq(st, 200, "relatório responde")
-    assert "Presente Hoje" not in html, "nada fora do período entra na contagem"
+    # o seletor pesquisável de trabalhador lista toda a gente na página; a
+    # contagem do período se mede apenas pelas linhas da tabela (sem tabela,
+    # nada foi contado)
+    linhas = html.split("<table>", 1)[1].split("</table>", 1)[0] if "<table>" in html else ""
+    assert "Presente Hoje" not in linhas, "nada fora do período entra na contagem"
     st, html_cheio = _http("GET",
                            f"/relatorios/presenca-trabalhadores?data_ini={hoje}&data_fim={hoje}")
     assert "Presente Hoje" in html_cheio, "no período correto o registro aparece"

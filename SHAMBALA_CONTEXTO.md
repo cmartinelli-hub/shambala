@@ -680,8 +680,9 @@ GET/POST  /checkin-trabalhador/{id}/correcao  ← correções e lançamentos ret
                                           (módulo checkin.trabalhadores.correcoes;
                                           GET=ler, POST=escrever; motivo obrigatório;
                                           data passada/hoje; conflito detectado)
-GET       /relatorios/presenca-trabalhadores   ← período/dia (7 dias)/origem; sem
-                                          percentuais; inativos com fato participam
+GET       /relatorios/presenca-trabalhadores   ← período/dia (7 dias)/origem/trabalhador
+                                          (nome pesquisável); sem percentuais; inativos
+                                          com fato participam
 
 POST      /terminal/ativar               ← operador (checkin.trabalhadores:escrever) habilita
                                           o aparelho da entrada; encerra a sessão COMUM
@@ -890,6 +891,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 - **Banco:** `psycopg2` com pool, context manager `with conectar() as conn:`, `RealDictCursor`
 - **Parâmetros SQL:** `%s` (psycopg2), nunca `?` (SQLite)
 - **Datas:** armazenadas como `TEXT` `YYYY-MM-DD`; exibidas via filtro Jinja2 `data_br`
+  (instantes de auditoria: `data_hora_br` → `DD/MM/AAAA HH:MM:SS`, sem microssegundos)
 - **Telefones:** formato `(XX) XXXXX-XXXX`
 - **Ordem de rotas:** rotas com parâmetro dinâmico (`/{id}`) sempre **por último** no módulo — evita conflito com `/buscar`, `/novo` etc. (vale para `rotas/pessoas.py`, `rotas/caixa.py`, etc.)
 
