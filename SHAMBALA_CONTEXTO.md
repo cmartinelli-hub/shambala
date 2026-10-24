@@ -297,6 +297,10 @@ digita os quatro números.
   endereço HTTP da LAN (`http://<host>:9000`) o terminal funciona **pelo teclado**
   e avisa exatamente isso; liberar a câmera exige HTTPS nesse endereço (ver
   `SHAMBALA_HTTPS`). Nada de túnel ou domínio novo para "resolver" isso.
+  Decisão do dono (24/10/2026): o DEV **permanece** em HTTP na porta 9000 — não
+  se montam nginx, TLS, certificados, CA ou porta nova por causa do terminal.
+  Homologa-se a digitação no acesso atual; a leitura por câmera fica pendente de
+  um ambiente HTTPS **já existente**, não de um a criar.
 - **Sem** fila offline, reconhecimento facial, geolocalização, controle de saída
   ou punição.
 

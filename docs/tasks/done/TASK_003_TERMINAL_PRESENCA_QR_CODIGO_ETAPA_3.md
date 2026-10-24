@@ -1,6 +1,7 @@
 # TASK_003 — Terminal de presença por QR e código — Etapa 3
 
 Status: implementação concluída no DEV; homologação física pendente.
+Decisão do dono (24/10/2026): o DEV permanece em HTTP na porta 9000 — sem nginx, TLS, certificados, CA ou porta nova. A digitação será homologada no acesso atual; a leitura por câmera fica pendente para um ambiente HTTPS já disponível (ver adendo, seção 5).
 Dependências: TASK_001 (presença por data própria) e TASK_002 (códigos e carteirinhas), incluindo a correção da FK para RESTRICT. Conferir o estado real do código; correção informada nos commits locais a2f2e98 e 1e57f79.
 
 ## Objetivo
@@ -259,9 +260,11 @@ cada erro). Log do runner em `/tmp/runner-task003.log`.
    segurada no enquadro reenvia sem fim.
 
 **Limitações**: vídeo simulado não prova aparelho físico; Chromium é o motor
-dos testes, não o navegador do tablet da entrada; **sem HTTPS na LAN não há
-como homologar a leitura por câmera no aparelho** (roteiro pronto, nada
-aplicado — por decisão do dono, o nginx não foi mexido); o runner deixa o banco
+dos testes, não o navegador do tablet da entrada; **a leitura por câmera no
+aparelho não é homologável no DEV** — o navegador a barra em contexto inseguro,
+e por decisão do dono o DEV permanece em HTTP na porta 9000, sem nginx, TLS,
+certificados, CA ou porta nova (a câmera fica pendente de um ambiente HTTPS já
+existente; a digitação é homologável no acesso atual); o runner deixa o banco
 descartável para a próxima execução — foi removido ao fechar a tarefa, e nenhum
 processo de teste (9011/9013) ficou ativo.
 
@@ -274,14 +277,19 @@ processo; produção intocada). Terminal disponível em
 
 Neste endereço **HTTP** da LAN o navegador bloqueia a câmera (contexto inseguro —
 comportamento verificado em teste, L24). A tela avisa e o terminal opera
-**pelo teclado** normalmente. **A leitura de QR no aparelho não é homologável no
-endereço atual**: para isso falta HTTPS na LAN, decisão de infraestrutura que o
-dono reservou para si. O roteiro pronto (certificado com SAN para o IP, site
-nginx na porta 9443 com frente TLS para o mesmo processo, confiança no aparelho,
-flag `SHAMBALA_HTTPS` e conferência) está em
-`docs/infra/HTTPS_TERMINAL_LAN.md` — nada dele foi aplicado. Enquanto HTTPS não
-existir, a digitação é homologável no HTTP de hoje; os passos 1 a 6 abaixo valem
-no endereço atual e o passo 7 (câmera) depende do HTTPS.
+**pelo teclado** normalmente.
+
+**Decisão do dono (24/10/2026), registrada aqui como definitiva para a tarefa**:
+o DEV permanece como está — HTTP na porta 9000. Não configurar nginx, TLS,
+certificados, CA ou nova porta por causa do terminal. A **digitação será
+homologada no acesso atual**; a **leitura por câmera permanece pendente para um
+ambiente HTTPS já disponível**, sem criar infraestrutura no DEV. O roteiro
+`docs/infra/HTTPS_TERMINAL_LAN.md` chegou a ser preparado, **não foi aplicado e
+foi removido do repositório** — nada de sua receita (porta 9443, CA, certificados)
+deve ser montado no DEV. Produção intocada.
+
+Os passos 1 a 6 abaixo valem no endereço atual e constituem a homologação da
+digitação; a câmera (passo 7) só será homologada onde já houver HTTPS.
 
 Roteiro de homologação no aparelho físico (pendente — não havia aparelho com o
 executor; nada aqui declara aceite operacional):
@@ -299,11 +307,12 @@ executor; nada aqui declara aceite operacional):
    volta ao login e o código lido depois disso não passa mais. Não existe
    encerramento remoto de outro navegador — o que se faz de outro aparelho é
    apenas a nova ativação, que vale para o navegador onde ela for feita.
-7. Aplicado o roteiro de HTTPS (`docs/infra/HTTPS_TERMINAL_LAN.md`), repetir
-   os passos no endereço novo (`https://192.168.15.8:9443/terminal/`) com a
-   câmera: frontal/traseira, distância, iluminação, som e retorno automático
-   de ~3 s. A homologação da **função principal** (leitura das carteirinhas)
-   só se completa aqui.
+7. Ler QR com a câmera **somente em ambiente HTTPS já disponível** — por
+   decisão do dono, o DEV não recebe TLS/nginx/CA/nova porta para isso. Onde já
+   houver HTTPS, repetir os passos 1 a 6 com a câmera: frontal/traseira,
+   distância, iluminação, som e retorno automático de ~3 s. Enquanto esse
+   ambiente não existir, a homologação da leitura por carteirinha permanece
+   pendente e a operação no DEV é por digitação.
 
 Registrar modelo, sistema e navegador do aparelho usado apenas quando o teste
 for realmente feito.
