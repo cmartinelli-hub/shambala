@@ -439,6 +439,7 @@ POST      /financeiro/{id}/cancelar     ← cancelar movimento
 **`caixas`**
 ```
 id, nome (NOT NULL UNIQUE), descricao, ativo (padrão 1)
+usa_produtos (BOOLEAN, padrão TRUE; FALSE = caixa de preço aberto — Geral e Bazar no seed)
 chave_pix_id (FK chaves_pix, nullable)  ← atenção: coluna no BD mas tabela chaves_pix não está em banco.py
 ```
 Caixas padrão (seed): Geral, Lanchonete, Biblioteca, Bazar.
@@ -453,14 +454,17 @@ id, nome, tipo (cpf/cnpj/email/telefone/aleatoria), chave, cidade, ativa (BOOLEA
 ```
 id, nome (NOT NULL), categoria (salgado_assado/salgado_frito/bebida/doce/outro)
 preco_custo (NUMERIC 10,2), preco_venda (NUMERIC 10,2)
-codigo_barras (UNIQUE nullable), ativo (padrão 1)
+quantidade_estoque (INTEGER), codigo_barras (UNIQUE nullable), ativo (padrão 1)
+caixa_id (FK caixas) — produto pertence a um caixa; venda cruza caixa/product é recusada
 ```
 
 **`vendas_pdv`**
 ```
 id, caixa_id (FK NOT NULL), data_venda (TEXT YYYY-MM-DD)
-total (NUMERIC 10,2), forma_pagamento (especie/pix), troco (NUMERIC 10,2)
+total (NUMERIC 10,2), forma_pagamento (especie/pix/fiado), troco (NUMERIC 10,2)
 status (concluida/cancelada), atendente_id (FK atendentes nullable), observacao
+caixa_movimento_id (FK caixa_movimentos), doacao_valor (NUMERIC 10,2)
+fiado_trabalhador_id (FK), fiado_pago, fiado_data_pagamento, fiado_credito_usado (NUMERIC 10,2)
 ```
 
 **`vendas_pdv_itens`**
@@ -497,6 +501,32 @@ POST      /caixa/caixas/{id}/toggle-ativo   ← ativar/desativar caixa
 4. Ao selecionar PIX: sistema gera QR Code via `GET /caixa/pix-qr` e transmite ao segundo monitor via WebSocket
 5. Finaliza venda: `POST /caixa/pdv/finalizar` (form com `itens_json`)
 6. Comprovante disponível em `/caixa/vendas/{id}/comprovante` (layout 80mm para impressão)
+
+### Finalização de venda: servidor é a única fonte de valores (TASK_006 / FIN-01)
+- O navegador envia `produto_id` + `quantidade` por linha; `nome`, `preco_unitario`,
+  `subtotal` enviados são **só para detecção de divergência** — nunca persistem nem somam.
+- O preço vigente é consultado no banco com `FOR UPDATE` (produtos ativos, em `ORDER BY id`)
+  antes de qualquer escrita; subtotal por linha e total são `Decimal` quantizado em
+  ROUND_HALF_UP a centavos, e o total é a soma dos subtotais persistidos.
+- Duplicatas do mesmo produto são agregadas (uma linha, quantidade somada) antes de
+  validar estoque e limites; quantidade precisa ser inteiro ≥ 1 (recusa 0, negativo,
+  fracionário, booleano, malformado e acima de `MAX_QUANTIDADE`); teto NUMERIC(10,2)
+  → recusa `total_estourado`, sem 500.
+- Preço do cadastro negativo ou zero → `produto_preco_invalido` (não vira R$ 0,00).
+- Divergência entre o exibido e o servidor → a tela re-renderiza com a cesta reprificada
+  (`cesta_revisar` + aviso) e **nada** é gravado (venda, estoque, sessão, crédito); o
+  operador revisa e confirma de novo, e aí o servidor revalida do zero.
+- Caixa com `usa_produtos = FALSE` (Geral, Bazar) aceita linha sem produto com valor
+  declarado — essa é a regra real do preço aberto; misturar produto de catálogo nesse
+  caixa é recusado (`produto_fora_do_caixa`).
+- O snapshot histórico de nome/preço nos `vendas_pdv_itens` vem do cadastro; vendas
+  antigas nunca são recalculadas pelo preço atual.
+- Troco (`recebido − total`, só espécie), doação, acúmulo da sessão
+  (`total_vendas += total + doação`) e política de estoque preservados como eram.
+- Crédito usado, limite de fiado, sessão e comprovante usam exatamente o mesmo total.
+- Validação completa antes de qualquer escrita; venda, itens, estoque, crédito e
+  acumuladores da sessão vivem numa única transação (`conectar()`), com lock de
+  trabalhador e da linha de sessão — falha em qualquer gravação reverte tudo.
 
 ### PIX (geração de payload)
 - Payload EMV completo com CRC16 (`_gerar_payload_pix` em `rotas/caixa.py`)
@@ -856,6 +886,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `servico_presenca.py` | Regra única da presença do trabalhador (chegada, ausência, data SP) |
 | `servico_correcao_presenca.py` | Escrita corrigida única da presença (TASK_004): validar, travar, conferir o estado, aplicar e auditar na mesma transação |
 | `servico_codigo_trabalhador.py` | Regra única do código de 4 dígitos: emitir, trocar, preparar, resolver, QR |
+| `servico_pdv.py` | Precificação do PDV no servidor (TASK_006/FIN-01): validar quantidades, consultar preço vigente com trava, somar em Decimal ROUND_HALF_UP e detectar divergência de preço sem escrever nada |
 | `preparar_codigos_trabalhadores.py` | Operação local: emite os códigos que faltam (simulação / `--aplicar`) |
 | `requirements.txt` | Dependências Python do projeto |
 | `instalar.sh` | Script de instalação automatizada |
@@ -881,7 +912,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `rotas/doacoes.py` | Cestas básicas, rastreamento |
 | `rotas/mala_direta.py` | Envio em massa WhatsApp/email |
 | `rotas/permissoes.py` | Controle RBAC (grupos + permissões Unix ler/escrever/apagar) |
-| `rotas/caixa.py` | PDV, produtos, caixas, QR Code PIX, histórico de vendas, comprovante |
+| `rotas/caixa.py` | PDV, produtos, caixas, QR Code PIX, histórico de vendas, comprovante — finalização usa `servico_pdv` como única fonte de valores |
 
 ---
 
@@ -1086,6 +1117,7 @@ shambala/
 - ✅ Códigos de 4 dígitos e carteirinhas com QR imprimíveis (TASK_002)
 - ✅ Terminal de presença fixo na entrada: QR lido por câmera e digitação (TASK_003)
 - ✅ Gestão do dia, correções retroativas auditadas e relatórios de presença (TASK_004)
+- ✅ PDV com preços e totais calculados no servidor; divergência de preço revisada sem escrita (TASK_006 / FIN-01)
 - ✅ Mala direta via WhatsApp e email
 - ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas

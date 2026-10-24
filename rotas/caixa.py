@@ -129,54 +129,122 @@ async def finalizar_venda(
     imprimir: str = Form("1"),
     doacao_valor: str = Form("0"),
 ):
+    """Finaliza venda com o servidor como única autoridade de valores.
+
+    Preço, subtotal, total, crédito usado, limite de fiado, sessão e
+    comprovante saem todos do mesmo cálculo `servico_pdv.precificar`. Os
+    preços do cliente servem apenas para detectar divergência de display:
+    em divergência nada é gravado e a cesta volta reprificada para revisão.
+    """
     atendente, redir = _guard(request)
     if redir:
         return redir
 
-    itens = json.loads(itens_json)
-    if not itens:
-        return RedirectResponse(url=f"/caixa/pdv?caixa_id={caixa_id}", status_code=303)
+    from decimal import Decimal
+    from servico_pdv import (
+        CENTAVO, CestaInvalida, DivergenciaPreco, parse_cesta,
+        precificar, validar_moeda,
+    )
 
-    total = sum(float(i["subtotal"]) for i in itens)
-    recebido = float(valor_recebido or 0)
-    troco = max(0, recebido - total) if forma_pagamento == "especie" else 0
+    def _url_erro(chave: str, item=None):
+        base = f"/caixa/pdv?caixa_id={caixa_id}&erro={chave}"
+        return RedirectResponse(
+            url=base + (f"&item={item}" if item else ""), status_code=303)
 
-    credito_usado = 0.0
-    if forma_pagamento == "fiado" and trabalhador_id:
-        with conectar() as conn_check:
-            trab = conn_check.execute(
+    try:
+        itens = parse_cesta(itens_json)
+    except CestaInvalida as e:
+        return _url_erro(e.chave, e.item)
+
+    with conectar() as conn:
+        caixa = conn.execute(
+            "SELECT * FROM caixas WHERE id = %s AND ativo = 1", (caixa_id,)
+        ).fetchone()
+        if not caixa:
+            return _url_erro("caixa_indisponivel")
+
+        try:
+            linhas, total = precificar(conn, itens, bool(caixa["usa_produtos"]))
+        except DivergenciaPreco as e:
+            # Preço vigente difere do exibido: sem venda, sem estoque, sem
+            # sessão — devolve a cesta reprificada para revisão.
+            caixas = conn.execute(
+                "SELECT * FROM caixas WHERE ativo=1 ORDER BY nome").fetchall()
+            movimento = conn.execute(
+                """SELECT * FROM caixa_movimentos
+                   WHERE caixa_id=%s AND status='aberto'
+                   ORDER BY id DESC LIMIT 1""", (caixa_id,)).fetchone()
+            atalhos = conn.execute(
+                """SELECT id, nome, preco_venda, foto_produto
+                   FROM produtos WHERE atalho=1 AND ativo=1 AND caixa_id=%s
+                   ORDER BY nome""", (caixa_id,)).fetchall()
+            cesta = [{
+                "produto_id": l["produto_id"], "nome": l["nome"],
+                "quantidade": l["quantidade"],
+                "preco_unitario": float(l["preco_unitario"]),
+                "subtotal": float(l["subtotal"]),
+            } for l in e.linhas]
+            return templates.TemplateResponse("caixa/pdv.html", {
+                "request": request, "atendente": atendente,
+                "caixas": [dict(c) for c in caixas],
+                "caixa_sel": dict(caixa),
+                "movimento": dict(movimento) if movimento else None,
+                "precisa_abrir": False,
+                "atalhos": [dict(a) for a in atalhos],
+                "cesta_revisar": cesta,
+                "aviso_divergencia": True,
+            })
+        except CestaInvalida as e:
+            return _url_erro(e.chave, e.item)
+
+        credito_usado = Decimal("0.00")
+        if forma_pagamento == "fiado" and trabalhador_id:
+            trab = conn.execute(
                 """SELECT fiado_limite, fiado_data_encerramento, fiado_credito
-                   FROM trabalhadores WHERE id = %s""",
+                   FROM trabalhadores WHERE id = %s FOR UPDATE""",
                 (trabalhador_id,)
             ).fetchone()
             if not trab:
-                return RedirectResponse(url=f"/caixa/pdv?caixa_id={caixa_id}&erro=trabalhador_nao_encontrado", status_code=303)
+                return _url_erro("trabalhador_nao_encontrado")
+            if trab["fiado_data_encerramento"] and \
+                    date.today() > date.fromisoformat(str(trab["fiado_data_encerramento"])):
+                return _url_erro("fiado_encerrado")
 
-            # Verifica data de encerramento
-            if trab["fiado_data_encerramento"]:
-                if date.today() > date.fromisoformat(trab["fiado_data_encerramento"]):
-                    return RedirectResponse(url=f"/caixa/pdv?caixa_id={caixa_id}&erro=fiado_encerrado", status_code=303)
-
-            # Calcula dívida pendente
-            pendente = conn_check.execute(
+            pendente = conn.execute(
                 """SELECT COALESCE(SUM(total - fiado_credito_usado), 0) AS total
                    FROM vendas_pdv
-                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'""",
+                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE
+                     AND status = 'concluida'""",
                 (trabalhador_id,)
             ).fetchone()["total"]
-
-            # Calcula quanto usar do crédito antecipado
-            credito_usado = min(float(trab["fiado_credito"]), total)
-
-            # Verifica limite
+            credito_usado = min(Decimal(str(trab["fiado_credito"])), total)
             novo_devido = total - credito_usado
-            if float(trab["fiado_limite"]) > 0 and (float(pendente) + novo_devido) > float(trab["fiado_limite"]):
-                return RedirectResponse(url=f"/caixa/pdv?caixa_id={caixa_id}&erro=fiado_excede_limite", status_code=303)
+            limite = Decimal(str(trab["fiado_limite"]))
+            if limite > 0 and (Decimal(str(pendente)) + novo_devido) > limite:
+                return _url_erro("fiado_excede_limite")
 
-    mov_id = caixa_movimento_id if caixa_movimento_id else None
-    doacao = float(doacao_valor or 0)
+        try:
+            recebido = validar_moeda(valor_recebido or 0, "valor_recebido")
+            doacao = validar_moeda(doacao_valor or 0, "doacao")
+        except CestaInvalida as e:
+            return _url_erro(e.chave, e.item)
 
-    with conectar() as conn:
+        troco = max(Decimal("0.00"), recebido - total) \
+            if forma_pagamento == "especie" else Decimal("0.00")
+
+        mov_id = None
+        if caixa_movimento_id:
+            movimento = conn.execute(
+                """SELECT id FROM caixa_movimentos
+                   WHERE id = %s AND caixa_id = %s AND status = 'aberto'
+                   FOR UPDATE""",
+                (caixa_movimento_id, caixa_id)
+            ).fetchone()
+            if not movimento:
+                return _url_erro("sessao_caixa_invalida")
+            mov_id = movimento["id"]
+
+        # ── validações concluídas: a partir daqui é transação única de escrita ──
         cur = conn.execute(
             """INSERT INTO vendas_pdv
                (caixa_id, data_venda, total, forma_pagamento, troco, status, atendente_id,
@@ -190,19 +258,17 @@ async def finalizar_venda(
         )
         venda_id = cur.fetchone()["id"]
 
-        for item in itens:
-            if not item.get("produto_id"):
-                continue
+        for linha in linhas:
+            if linha["produto_id"] is None:
+                continue  # caixa de preço aberto: sem catálogo, sem item (modelo atual)
             conn.execute(
                 """INSERT INTO vendas_pdv_itens
                    (venda_id, produto_id, nome_produto, quantidade, preco_unitario, subtotal)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
-                (venda_id, item["produto_id"], item["nome"],
-                 item["quantidade"], float(item["preco_unitario"]),
-                 float(item["subtotal"]))
+                (venda_id, linha["produto_id"], linha["nome"],
+                 linha["quantidade"], linha["preco_unitario"], linha["subtotal"])
             )
 
-        # Aplica crédito antecipado se houver
         if credito_usado > 0:
             conn.execute(
                 "UPDATE trabalhadores SET fiado_credito = fiado_credito - %s WHERE id = %s",
@@ -214,33 +280,30 @@ async def finalizar_venda(
                 (trabalhador_id, credito_usado, f"Compra #{venda_id}")
             )
 
-        # Atualiza total de vendas no movimento de caixa (inclui doação)
         if mov_id:
             conn.execute(
                 "UPDATE caixa_movimentos SET total_vendas = total_vendas + %s WHERE id = %s",
                 (total + doacao, mov_id)
             )
 
-        # Deduz estoque (apenas itens com produto real)
-        for item in itens:
-            if not item.get("produto_id"):
+        for linha in linhas:
+            if linha["produto_id"] is None:
                 continue
-            conn.execute("""
-                UPDATE produtos SET quantidade_estoque = quantidade_estoque - %s
-                WHERE id = %s""",
-                (item["quantidade"], item["produto_id"])
+            # Produto está travado (FOR UPDATE) desde a precificação: o saldo
+            # abaixo é o valor absoluto consistente, preservando estoque
+            # negativo quando a política atual já o permite.
+            novo_saldo = linha["estoque"] - linha["quantidade"]
+            conn.execute(
+                "UPDATE produtos SET quantidade_estoque = %s WHERE id = %s",
+                (novo_saldo, linha["produto_id"])
             )
-            conn.execute("""
-                INSERT INTO estoque_movimentos
-                (produto_id, tipo, quantidade, saldo_anterior, saldo_posterior, referencia_id, atendente_id)
-                SELECT %s, 'saida', %s,
-                    quantidade_estoque + %s,
-                    quantidade_estoque,
-                    %s, %s
-                FROM produtos WHERE id = %s""",
-                (item["produto_id"], item["quantidade"],
-                 item["quantidade"], venda_id, atendente["id"],
-                 item["produto_id"])
+            conn.execute(
+                """INSERT INTO estoque_movimentos
+                   (produto_id, tipo, quantidade, saldo_anterior, saldo_posterior,
+                    referencia_id, atendente_id)
+                   VALUES (%s, 'saida', %s, %s, %s, %s, %s)""",
+                (linha["produto_id"], linha["quantidade"], linha["estoque"],
+                 novo_saldo, venda_id, atendente["id"])
             )
 
     # Sinaliza ao segundo monitor que a venda foi concluída

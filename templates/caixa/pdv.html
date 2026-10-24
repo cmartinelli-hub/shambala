@@ -280,17 +280,34 @@
 {% endif %}
 
 {% set _erro = request.query_params.get('erro') %}
-{% if _erro == 'fiado_encerrado' %}
+{% set _msgs_erro = {
+    'fiado_encerrado': 'Fiado bloqueado: data de encerramento excedida para este trabalhador.',
+    'fiado_excede_limite': 'Limite de fiado excedido para este trabalhador. Verifique o relatório de fiados.',
+    'trabalhador_nao_encontrado': 'Trabalhador não encontrado.',
+    'cesta_vazia': 'Nada para finalizar — a cesta está vazia.',
+    'cesta_invalida': 'Cesta inválida. Remova e recoloque os itens e tente de novo.',
+    'quantidade_invalida': 'Quantidade inválida: use número inteiro a partir de 1.',
+    'produto_indisponivel': 'Produto não encontrado ou inativo no cadastro.',
+    'produto_preco_invalido': 'Produto com preço inválido no cadastro — corrija o cadastro antes de vender.',
+    'item_sem_produto': 'Este caixa usa catálogo de produtos; itens sem produto não são aceitos.',
+    'produto_fora_do_caixa': 'Este caixa não usa catálogo; cadastre o item pelo valor livre.',
+    'preco_invalido': 'Valor do item inválido.',
+    'preco_estourado': 'Valor do item acima do limite suportado.',
+    'total_estourado': 'Total da venda acima do limite suportado.',
+    'valor_recebido_invalido': 'Valor recebido inválido.',
+    'doacao_invalido': 'Valor de doação inválido.',
+    'caixa_indisponivel': 'Caixa não encontrado ou inativo.',
+    'sessao_caixa_invalida': 'A sessão de caixa informada não está aberta neste caixa — abra a sessão e refaça a cesta.',
+} %}
+{% if _erro in _msgs_erro %}
 <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
-    Fiado bloqueado: data de encerramento excedida para este trabalhador.
+    {{ _msgs_erro[_erro] }}{% set _it = request.query_params.get('item') %}{% if _it %} (item {{ _it }} da cesta){% endif %}
 </div>
-{% elif _erro == 'fiado_excede_limite' %}
-<div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
-    Limite de fiado excedido para este trabalhador. Verifique o relatório de fiados.
-</div>
-{% elif _erro == 'trabalhador_nao_encontrado' %}
-<div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
-    Trabalhador não encontrado.
+{% endif %}
+{% if aviso_divergencia %}
+<div class="pdv-ok" style="background:#fff3cd;border-color:#b8860b;color:#7a5b00">
+    ⚠️ O preço de algum produto mudou desde que a cesta foi montada. Nenhum valor foi gravado.
+    Confira o recálculo abaixo e confirme de novo para fechar pelo preço vigente.
 </div>
 {% endif %}
 {% endif %}
@@ -536,8 +553,15 @@
 
 {% block scripts %}
 {% if caixa_sel %}
+{% if cesta_revisar %}
+<script id="pdv-cesta-seed" type="application/json">{{ cesta_revisar | tojson }}</script>
+{% endif %}
 <script>
-const carrinho = [];
+const carrinho = (function () {
+    const seed = document.getElementById('pdv-cesta-seed');
+    if (!seed) return [];
+    try { return JSON.parse(seed.textContent); } catch (e) { return []; }
+})();
 
 // ── Modo livre (Bazar / Geral) ────────────────────────────────────────────────
 const btnAddLivre = document.getElementById('btn-add-livre');
@@ -1058,6 +1082,10 @@ async function imprimirAgente(vendaId) {
     }
 }
 window.addEventListener('load', () => imprimirAgente({{ request.query_params.get('ok') }}));
+{% endif %}
+{% if cesta_revisar %}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', renderCarrinho);
+else renderCarrinho();
 {% endif %}
 </script>
 {% endif %}
