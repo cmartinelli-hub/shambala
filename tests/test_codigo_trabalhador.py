@@ -40,6 +40,7 @@ from test_tres_passes import (  # noqa: E402
 
 from banco import conectar, criar_tabelas, fechar_pool  # noqa: E402
 import banco  # noqa: E402
+import psycopg2  # noqa: E402  (código de erro da FK — integridade, não driver)
 from servico_codigo_trabalhador import (  # noqa: E402
     CodigosEsgotados, codigo_valido,
     garantir_codigo, trocar_codigo, preparar_codigos_pendentes,
@@ -105,6 +106,23 @@ def _snapshot_codigos(conn):
              FROM trabalhador_codigo ORDER BY codigo"""
     ).fetchall()
     return [tuple(r.values()) for r in rows]
+
+
+def _fk_trabalhador(conn):
+    """(nome, regra de exclusão) da FK de trabalhador_codigo.trabalhador_id.
+
+    confdeltype: 'a' no action, 'c' cascade, 'r' restrict, 'n' set null.
+    """
+    row = conn.execute(
+        """SELECT c.conname, c.confdeltype
+             FROM pg_constraint c
+             JOIN pg_attribute a
+               ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+            WHERE c.contype = 'f'
+              AND c.conrelid = 'trabalhador_codigo'::regclass
+              AND a.attname = 'trabalhador_id'"""
+    ).fetchone()
+    return (row["conname"], row["confdeltype"]) if row else (None, None)
 
 
 def _qtd_mensalidades(conn, trabalhador_id):
@@ -1089,6 +1107,126 @@ def k16(ctx):
         lidos.extend(nesta)
     assert_eq(sorted(lidos), sorted(esperados), "QRs do PDF ≠ códigos dos cartões")
     assert_eq(por_folha, [10] * 7, f"distribuição por folha: {por_folha}")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  K18 — a FK é RESTRICT: instalação nova, correção de banco existente, idempotência
+# ══════════════════════════════════════════════════════════════════════════
+
+@teste("K18 FK de códigos nasce RESTRICT e a migração corrige CASCADE sem tocar nos dados",
+       com_ctx=False)
+def k18():
+    with _banco_dedicado(COD_DB):
+        criar_tabelas()
+        with conectar() as conn:
+            exigir_ambiente_de_teste(conn)
+            nome, regra = _fk_trabalhador(conn)
+            assert_eq(nome, "trabalhador_codigo_trabalhador_id_fkey", "FK com nome inesperado")
+            assert_eq(regra, "r", "instalação nova não nasceu com ON DELETE RESTRICT")
+
+        # ── banco existente, criado pela versão anterior: a FK estava em CASCADE
+        with conectar() as conn:
+            conn.execute(f'ALTER TABLE trabalhador_codigo DROP CONSTRAINT "{nome}"')
+            conn.execute(
+                f'ALTER TABLE trabalhador_codigo ADD CONSTRAINT "{nome}" '
+                'FOREIGN KEY (trabalhador_id) REFERENCES trabalhadores(id) ON DELETE CASCADE')
+            dono = _novo_trab(conn, "Dono do Código Legado")
+            ativo = garantir_codigo(conn, dono, origem="teste")["codigo"]
+            trocar_codigo(conn, dono, origem="teste")     # deixa um retirado + um ativo
+            conn.commit()
+            assert_eq(_fk_trabalhador(conn)[1], "c", "banco simulado não ficou em CASCADE")
+            antes = _snapshot_codigos(conn)
+            assert any(linha[2] == "retirado" for linha in antes), "simulação sem retirado"
+            assert_eq(len(antes), 2, "simulação deveria ter dois códigos emitidos")
+
+        # ── startup com a correção: troca a regra e não mexe em nenhum código
+        criar_tabelas()
+        with conectar() as conn:
+            nome_depois, regra_depois = _fk_trabalhador(conn)
+            assert_eq(regra_depois, "r", "migração não trocou CASCADE por RESTRICT")
+            assert_eq(nome_depois, nome, "migração trocou o nome da FK")
+            assert_eq(_snapshot_codigos(conn), antes, "migração alterou os códigos")
+
+        # ── segunda execução: idempotente, sem erro e sem alterar dados
+        criar_tabelas()
+        with conectar() as conn:
+            assert_eq(_fk_trabalhador(conn), (nome, "r"), "segunda execução perdeu a regra")
+            assert_eq(_snapshot_codigos(conn), antes, "segunda execução alterou os dados")
+
+        # ── e com RESTRICT a exclusão física é recusada, sem efeito colateral
+        with conectar() as conn:
+            dono_row = conn.execute("SELECT id FROM trabalhadores WHERE nome_completo = %s",
+                                    ("Dono do Código Legado",)).fetchone()["id"]
+        try:
+            with conectar() as conn:
+                conn.execute("DELETE FROM trabalhadores WHERE id = %s", (dono_row,))
+            raise AssertionError("DELETE do trabalhador foi aceito com a FK em RESTRICT")
+        except psycopg2.errors.ForeignKeyViolation:
+            pass
+        with conectar() as conn:
+            assert_eq(_snapshot_codigos(conn), antes,
+                      "tentativa de exclusão mexeu nos códigos")
+            assert conn.execute("SELECT 1 FROM trabalhadores WHERE id = %s",
+                                (dono_row,)).fetchone(), "recusa deveria ter preservado o dono"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  K19 — RESTRICT na prática: ninguém sai de circulação por exclusão física
+# ══════════════════════════════════════════════════════════════════════════
+
+@teste("K19 RESTRICT: excluir quem tem código é recusado; inativar/reativar segue funcionando")
+def k19(ctx):
+    _limpa_negocio(ctx.conn)
+    admin = _admin()
+    com_ativo = _trab(ctx, "Doação Válida")
+    cod_ativo = garantir_codigo(ctx.conn, com_ativo)["codigo"]
+
+    # Trabalhador só com códigos RETIRADOS: é o estado que a reserva permanente
+    # protege (e o que o CASCADE destruída em silêncio). Montado por SQL direto
+    # porque nenhuma operação da tela produz "retirar sem emitir" — a troca é
+    # atômica e sempre deixa um atual.
+    so_retirados = _trab(ctx, "Cemitério Particular")
+    ctx.conn.execute(
+        """INSERT INTO trabalhador_codigo (codigo, trabalhador_id, estado, origem,
+                                           criado_em, retirado_em)
+           VALUES ('9001', %s, 'retirado', 'teste', '2026-01-01 00:00', '2026-01-02 00:00')""",
+        (so_retirados,))
+    ctx.conn.commit()
+
+    antes = _snapshot_codigos(ctx.conn)
+    retirados = {linha[0] for linha in antes if linha[2] == "retirado"}
+    assert_eq(retirados, {"9001"}, "cenário com retirado inesperado")
+
+    # exclusão física recusada para quem tem código ATUAL e para quem só tem RETIRADO
+    for alvo, motivo in ((com_ativo, "código atual"), (so_retirados, "só códigos retirados")):
+        try:
+            ctx.conn.execute("DELETE FROM trabalhadores WHERE id = %s", (alvo,))
+            ctx.conn.rollback()
+            raise AssertionError(f"DELETE aceito para quem tem {motivo}")
+        except psycopg2.errors.ForeignKeyViolation:
+            ctx.conn.rollback()
+    assert_eq(_snapshot_codigos(ctx.conn), antes, "recusa de exclusão alterou os códigos")
+
+    # inativação/reativação continuam sendo o fluxo normal — e não tocam no código
+    st, _, _ = admin.post(f"/cadastros/trabalhadores/{com_ativo}/toggle-ativo")
+    assert_eq(st, 303, "inativação")
+    assert_eq(_codigo_atual(ctx.conn, com_ativo), cod_ativo, "inativação mexeu no código")
+    assert_eq(resolver_codigo(ctx.conn, cod_ativo)["estado"], "inativo",
+              "código de inativo deveria resolver como inativo")
+    st, _, _ = admin.post(f"/cadastros/trabalhadores/{com_ativo}/toggle-ativo")
+    assert_eq(st, 303, "reativação")
+    assert_eq(_codigo_atual(ctx.conn, com_ativo), cod_ativo, "reativação reemitiu o código")
+    assert_eq(resolver_codigo(ctx.conn, cod_ativo)["estado"], "ativo", "não reativou")
+
+    # código retirado não volta a ser emitido para ninguém
+    emitidos = set()
+    for i in range(30):
+        emitidos.add(garantir_codigo(ctx.conn, _trab(ctx, f"Recém-Cadastrado {i}"))["codigo"])
+    ctx.conn.commit()
+    assert not (emitidos & retirados), \
+        f"código retirado foi reemitido: {sorted(emitidos & retirados)}"
+    assert_eq(_codigo_atual(ctx.conn, so_retirados), None,
+              "emissões de terceiros deram código a quem só tem retirados")
 
 
 # ══════════════════════════════════════════════════════════════════════════

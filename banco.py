@@ -557,10 +557,15 @@ def _migrar(conn):
     #
     # DDL apenas: o startup NUNCA emite nem troca códigos. A emissão inicial dos
     # ativos é ação explícita (servico_codigo_trabalhador).
+    #
+    # ON DELETE RESTRICT: apagar fisicamente um trabalhador não pode levar os
+    # códigos dele embora — a reserva permanente é o que impede que um código
+    # volte a ser emitido e identifique outra pessoa na carteirinha. A saída é
+    # inativar (o código fica reservado com a pessoa), não excluir.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS trabalhador_codigo (
             codigo          TEXT    PRIMARY KEY CHECK (codigo ~ '^[0-9]{4}$'),
-            trabalhador_id  INTEGER NOT NULL REFERENCES trabalhadores(id) ON DELETE CASCADE,
+            trabalhador_id  INTEGER NOT NULL REFERENCES trabalhadores(id) ON DELETE RESTRICT,
             estado          TEXT    NOT NULL DEFAULT 'ativo'
                                     CHECK (estado IN ('ativo', 'retirado')),
             atendente_id    INTEGER REFERENCES atendentes(id),
@@ -568,6 +573,36 @@ def _migrar(conn):
             criado_em       TEXT    NOT NULL,
             retirado_em     TEXT
         )
+    """)
+    # A regra de exclusão vive na constraint de coluna, não na cláusula CHECK,
+    # então CREATE TABLE IF NOT EXISTS não a corrige em banco já criado: troca-se
+    # a FK aqui, sem apagar, regenerar ou reordenar nenhum código. Idempotente
+    # (reexecutar não encontra mais o desvio) e transacional com o resto do
+    # startup — se falhar, nada do schema fica pela metade.
+    #
+    # Os %% são % literais: o texto passa pela interpolação do psycopg2.
+    conn.execute("""
+        DO $mig$
+        DECLARE
+            nome  text;
+            regra "char";
+        BEGIN
+            SELECT c.conname, c.confdeltype INTO nome, regra
+              FROM pg_constraint c
+              JOIN pg_attribute a
+                ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+             WHERE c.contype = 'f'
+               AND c.conrelid = 'trabalhador_codigo'::regclass
+               AND a.attname = 'trabalhador_id';
+            IF nome IS NOT NULL AND regra <> 'r' THEN
+                EXECUTE format('ALTER TABLE trabalhador_codigo DROP CONSTRAINT %%I', nome);
+                EXECUTE format('ALTER TABLE trabalhador_codigo '
+                               'ADD CONSTRAINT %%I FOREIGN KEY (trabalhador_id) '
+                               'REFERENCES trabalhadores(id) ON DELETE RESTRICT', nome);
+                RAISE NOTICE 'FK trabalhador_codigo.trabalhador_id: regra %%s -> RESTRICT', regra;
+            END IF;
+        END
+        $mig$
     """)
     # Exatamente um código atual por trabalhador (as linhas retiradas coexistem).
     conn.execute("""

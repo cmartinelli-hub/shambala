@@ -212,7 +212,7 @@ de São Paulo calculada pelo servidor (`servico_presenca`).
 ### `trabalhador_codigo`
 ```
 codigo (TEXT PRIMARY KEY, CHECK codigo ~ '^[0-9]{4}$')
-trabalhador_id (FK, ON DELETE CASCADE)
+trabalhador_id (FK, ON DELETE RESTRICT)
 estado (TEXT: 'ativo' | 'retirado')
 atendente_id (FK nullable)     ← nulo quando a ação veio de script local
 origem (TEXT: 'tela' | 'preparacao_local')
@@ -224,6 +224,14 @@ exatamente um código atual por pessoa. Um código `retirado` nunca volta à
 circulação — nem para o mesmo trabalhador — de modo que carteirinha antiga
 nunca passa a identificar outra pessoa. Os 4 caracteres são texto
 (`0047` é `0047` no banco, na tela, no QR e na resolução).
+
+A FK é **RESTRICT de propósito**: excluir fisicamente um trabalhador apagaria
+juntamente os códigos dele (com CASCADE), e é justamente a existência dessas
+linhas que impede a reutilização. Quem sai de circulação é **inativado** — a
+linha fica reservada com a pessoa. `criar_tabelas()` troca CASCADE por RESTRICT
+em banco já criado (a regra mora na constraint, então `CREATE TABLE IF NOT
+EXISTS` não a corrigiria); a troca é transacional e idempotente, e não apaga,
+regenera nem reordena código nenhum.
 
 Regra única em `servico_codigo_trabalhador.py`: `garantir_codigo` (idempotente),
 `trocar_codigo` (retira e insere na mesma transação),
