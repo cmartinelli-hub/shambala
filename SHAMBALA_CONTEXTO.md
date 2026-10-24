@@ -638,8 +638,12 @@ GET       /caixa/sangria/{id}/comprovante
   sobrescrito; fechamento repetido não duplica nada.
 - Sessões `legado` (todas as anteriores + as que existiam abertas): continuam na regra
   antiga de acumuladores, intactas, consultáveis e fecháveis pelo fluxo antigo; o
-  formulário novo de contagem nelas é recusado (`sessao_legada`). Nenhum backfill
-  heurístico, nenhum reparo retroativo.
+  formulário novo de contagem nelas é recusado (`sessao_legada`). **Não aceitam novos
+  recebimentos** (correção da revisão do dono, 2026-10-24): `sessao_para_recebimento`
+  levanta `sessao_legada_recebimento` antes de qualquer escrita em mensalidade/doação/
+  quitação/adiantamento, com exceção vazando da transação (rollback integral); as barras
+  de destino nem listam legado. Vendas e sangrias ainda operam a gaveta antiga pela regra
+  antiga. Nenhum backfill heurístico, nenhum reparo retroativo.
 - Cancelamento (TASK_007) adapta-se: compensa em `eventos` via `venda:{id}:cancelamento`
   (efeito físico só se espécie) preservando estoque/idempotência/bloqueios.
 - Não implementado (aberto): competência/unicidade de mensalidades, alocação detalhada
@@ -1017,7 +1021,9 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `servico_codigo_trabalhador.py` | Regra única do código de 4 dígitos: emitir, trocar, preparar, resolver, QR |
 | `servico_pdv.py` | Precificação do PDV no servidor (TASK_006/FIN-01): validar quantidades, consultar preço vigente com trava, somar em Decimal ROUND_HALF_UP e detectar divergência de preço sem escrever nada |
 | `servico_cancelamento.py` | Cancelamento de venda (TASK_007/FIN-02): avaliar elegibilidade pelos vínculos persistidos e reverter só efeitos comprováveis (estoque, sessão, doação) numa transação única com prova em `vendas_pdv_cancelamento` |
-| `servico_sessao.py` | Regra única da sessão de caixa (TASK_008/FIN-04): eventos com identidade, destino validado no banco, resumo/fechamento/conferência física pela mesma fórmula, travas e idempotência |
+| `servico_sessao.py` | Regra única da sessão de caixa (TASK_008/FIN-04): eventos com identidade, destino validado no banco, resumo/fechamento/conferência física pela mesma fórmula, travas e idempotência; recebimento em sessão `legado` é recusado antes de qualquer escrita |
+| `tests/trava_isolamento.py` | Trava que exige banco comprovadamente descartável (`*_test*` + `SHAMBALA_MODO_TESTE=1`); usada pelo lifespan do app ANTES do `criar_tabelas` e por toda suíte antes de destruir |
+| `tests/subir_app_descartavel.sh` | Única forma segura de subir app temporário de teste: recusa iniciar ANTES do startup quando o env não é descartável (incidente TASK_008); `uvicorn` direto fica reservado ao serviço real da 9000 |
 | `preparar_codigos_trabalhadores.py` | Operação local: emite os códigos que faltam (simulação / `--aplicar`) |
 | `requirements.txt` | Dependências Python do projeto |
 | `instalar.sh` | Script de instalação automatizada |
