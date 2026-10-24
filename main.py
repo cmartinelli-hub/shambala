@@ -9,9 +9,14 @@ import os
 # SHAMBALA_ENV_FILE permite apontar para um arquivo de configuração alternativo
 # (usado pelo ambiente de testes, que NUNCA deve ler o .env do projeto — foi a
 # ausência dessa separação que permitiu um teste atingir o banco de dev).
+# REV-01/TASK_010: o arquivo explicitamente nomeado é a AUTORIDADE da execução
+# — ele sobrepõe variáveis homônimas do shell, para que um destino pedido no
+# ambiente nunca seja substituído silenciosamente pelo conteúdo do arquivo (ou
+# o contrário). Quem quer divergir, diverge às claras: runner/launcher abortam
+# antes de qualquer efeito quando o destino solicitado não bate com o arquivo.
 _env_file = os.environ.get("SHAMBALA_ENV_FILE")
 if _env_file:
-    load_dotenv(_env_file)
+    load_dotenv(_env_file, override=True)
 else:
     load_dotenv()
 
@@ -30,6 +35,8 @@ async def lifespan(app: FastAPI):
         from tests.trava_isolamento import exigir_ambiente_de_teste
         with conectar() as _conn:
             info = exigir_ambiente_de_teste(_conn)
+        # A linha inclui o token da execução corrente: provas de suíte que
+        # aceitem este log só valem para ESTE processo/esta subida (REV-01).
         print(f"[TESTE] Ambiente descartável confirmado: {info}", flush=True)
 
     criar_tabelas()
