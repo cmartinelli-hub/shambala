@@ -16,6 +16,7 @@ Uso (recomendado): bash tests/rodar_testes.sh
 """
 import io
 import os
+import re
 import sys
 import json
 import threading
@@ -856,7 +857,7 @@ def c19(ctx: Ctx):
            VALUES (%s, '2026-10-17'::date, 0)""", (tid,))
     ctx.conn.commit()
     st, html = _http("GET",
-        f"/relatorios/presenca-trabalhador?trabalhador_id={tid}"
+        f"/relatorios/presenca-trabalhador?trabalhador=Segunda%20Confirmada"
         "&data_ini=2026-10-15&data_fim=2026-10-20")
     assert_eq(st, 200)
     assert "Código digitado" in html, "origem traduzida"
@@ -865,11 +866,11 @@ def c19(ctx: Ctx):
     # O dia da semana EXIBIDO na linha bate com o filtro ISODOW correspondente:
     # só-segunda mantém 19/10 e corta 17/10; só-sábado corta 19/10.
     st, html_s = _http("GET",
-        f"/relatorios/presenca-trabalhador?trabalhador_id={tid}"
+        f"/relatorios/presenca-trabalhador?trabalhador=Segunda%20Confirmada"
         "&data_ini=2026-10-15&data_fim=2026-10-20&dia_semana=0")
     assert "19/10/2026" in html_s and "17/10/2026" not in html_s, "filtro segunda"
     st, html_b = _http("GET",
-        f"/relatorios/presenca-trabalhador?trabalhador_id={tid}"
+        f"/relatorios/presenca-trabalhador?trabalhador=Segunda%20Confirmada"
         "&data_ini=2026-10-15&data_fim=2026-10-20&dia_semana=5")
     assert "17/10/2026" in html_b and "19/10/2026" not in html_b, "filtro sábado"
     # na linha de 19/10 o dia exibido é Segunda-feira (e 17/10 é Sábado)
@@ -885,7 +886,7 @@ def c19(ctx: Ctx):
                     estado_base_esperado=token, atendente_id=1)
     ctx.conn.commit()
     st, html = _http("GET",
-        f"/relatorios/presenca-trabalhador?trabalhador_id={tid}"
+        f"/relatorios/presenca-trabalhador?trabalhador=Segunda%20Confirmada"
         "&data_ini=2026-10-15&data_fim=2026-10-20")
     assert "19/10/2026" not in html, "fato anulado não participa do relatório"
     assert "Presenças: 0" in html, "linha de auditoria não conta como presença"
@@ -904,7 +905,7 @@ def c20(ctx: Ctx):
         st, html = _http("GET", f"/relatorios/presenca-trabalhadores?{qs}")
         assert_eq(st, 200, f"sem 500 para {qs}")
         assert marca in html, f"mensagem clara esperada ({marca}) em {qs}"
-        st, html = _http("GET", f"/relatorios/presenca-trabalhador?trabalhador_id=1&{qs}")
+        st, html = _http("GET", f"/relatorios/presenca-trabalhador?{qs}")
         assert_eq(st, 200)
         assert marca in html
     st, html = _http("GET",
@@ -912,6 +913,18 @@ def c20(ctx: Ctx):
         "&dia_semana=9&origem=hacker")
     assert_eq(st, 200, "filtro inválido não derruba a rota")
     assert "permitidos" in html or "desconhecida" in html
+    # seletor: texto fora da lista é recusado nos dois relatórios — a
+    # consulta nunca roda como "todos". A mensagem precisa estar na TELA:
+    # o literal do script do navegador não pode contar como prova.
+    for rota in ("/relatorios/presenca-trabalhadores",
+                 "/relatorios/presenca-trabalhador"):
+        st, html = _http("GET",
+            f"{rota}?data_ini=2026-05-01&data_fim=2026-05-31"
+            "&trabalhador=" + urllib.parse.quote("Ninguém Qualquer Silva"))
+        assert_eq(st, 200, f"recusa de nome fora da lista sem 500 em {rota}")
+        visivel = re.sub(r"<script\b.*?</script>", "", html, flags=re.S)
+        assert "Selecione um trabalhador da lista" in visivel, \
+            f"{rota} deveria pedir a seleção da lista"
 
 
 # ── 7. Migração ──────────────────────────────────────────────────────────────

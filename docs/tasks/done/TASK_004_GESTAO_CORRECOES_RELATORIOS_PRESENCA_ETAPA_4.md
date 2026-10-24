@@ -287,8 +287,10 @@ nenhum grupo do DEV recebeu a permissão nova em demonstração.
    teste na tela de Permissões e conferir que o operador passa a ver só o que
    a permissão manda (leitor vê histórico sem formulário; sem escrever não há
    POST possível).
-8. Relatórios → geral e individual com filtro de **trabalhador pesquisável
-   por nome**, dia entre os 7 e origem; nenhum percentual; inativo com
+8. Relatórios → geral e individual com filtro de **trabalhador por seleção da
+   lista** (campo em branco = todos; texto que não bate com um cadastro mostra
+   "Selecione um trabalhador da lista" e a consulta não roda como todos), dia
+   entre os 7 e origem; nenhum percentual; inativo com
    registro aparece com selo; "🖨 Imprimir" esconde controles no PDF do
    navegador.
 9. Encerrar as provas **inativando** o fictício (não excluí-lo: enquanto houver
@@ -377,4 +379,50 @@ o baseline intocado. **A conferência visual autenticada é do dono**, pelo
 roteiro acima. O fluxo com sessão real (gestão, correção, conflito, relatórios e
 impressão nos dois visores) foi validado no banco descartável, com usuário de
 teste — 168/168, RC=0 —, o que prova o código, não a aparência do DEV.
+
+## Adendo — semântica do seletor de trabalhador (2026-10-24)
+
+Refino do ajuste 4 do adendo de acabamento, a pedido do dono; **substitui** a
+regra dele que dizia "nome que não bate com ninguém = nenhum filtro". Vale para
+os dois relatórios.
+
+| Regra | Comportamento |
+|---|---|
+| Campo vazio | **Todos** — a consulta roda sem filtro de trabalhador |
+| Texto sem correspondência exata com um cadastro da lista | recusa: a tela mostra **"Selecione um trabalhador da lista"** e a consulta **não roda como todos**. No navegador o envio é barrado antes (`setCustomValidity`); pela URL direta quem recusa é o servidor (defesa em profundidade) |
+| Nomes iguais | identificação suficiente na lista: nome repetido ganha o **código do crachá ativo** entre parênteses — no DEV, `Marcia Alvarenga (1349)` (id 66) e `Marcia Alvarenga (7900)` (id 67) são opções distintas; sem código ativo, o fallback é `(#id)` |
+| Parâmetro | o formulário passou a enviar `trabalhador` (o texto da lista), não o `trabalhador_id` oculto; o servidor resolve o texto contra a própria lista. Os links da tabela geral para o individual carregam o mesmo display (`\| urlencode`), e um nome válido na URL reaparece selecionado no campo |
+
+Implementação: `_opcoes_trabalhadores`/`_resolver_trabalhador` em
+`rotas/relatorios.py` (fonte única dos dois seletores, com o join canônico do
+código ativo), `MSG_SELECAO_TRABALHADOR` renderizada no bloco de erro das duas
+telas, e o script de cada template só valida — não resolve mais id nenhum.
+
+### Validação deste adendo
+
+- Cenário novo no navegador: duas "Ema Teste Duplicado" (códigos 1101/1102, só a
+  1102 tem lançamento). N9 apura as 6 opções, exige os dois displays sufixados,
+  digitar o nome ambíguo **não dispara consulta** (campo inválido, URL não muda),
+  URL com nome fora da lista mostra a recusa **sem listar ninguém**, o sufixo
+  escolhe o cadastro certo e o link da linha aponta para a mesma Ema. N10 confere
+  o nome no campo e o deep link geral→individual. H8/C19 passaram ao parâmetro
+  `trabalhador`; C20 ganhou a recusa server-side dos dois relatórios.
+- **A primeira versão de C20 provava sozinha**: a mensagem literal também existe
+  no script do navegador, e a asserção no HTML inteiro passava mesmo com o
+  servidor aceitando "todos". Corrigida para excluir `<script>` da medição.
+- Prova de mutação: reverter a recusa para "todos" fez **N9 falhar (10/11)** e,
+  após o endurecimento, **C20 falhar (20/21)**; reestabelecido o código, tudo
+  voltou a verde.
+- Suítes afetadas: 19/19, 21/21, 11/11. Runner completo: **168/168, RC=0**
+  (27+12+8+10+19+18+18+24+21+11), DEV inalterado antes/depois.
+
+### DEV depois deste adendo
+
+Restart do serviço existente da 9000 (HTTP, zero DDL) — listener novo
+`2080319`. Baseline idêntico (`trab=70 pres=15 cod=70 ativos=70 retirados=0
+corr=0 concessoes=0`), `GET /login` → 200, relatórios sem login → 303, log do
+processo novo sem traceback/erro. O par duplicado real do DEV (Marcia
+Alvarenga 66/67) foi lido por consulta somente-leitura; a conferência visual do
+seletor autenticado permanece com o dono, pelo roteiro.
+
 

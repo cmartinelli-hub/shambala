@@ -12,12 +12,12 @@
 <form method="get" class="barra-busca rel-controles" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
     <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
         Trabalhador
-        <input type="text" id="rel-trab-nome" list="rel-trab-opcoes" autocomplete="off"
-               placeholder="— todos —" style="padding:0.4rem 0.6rem;min-width:12rem">
-        <input type="hidden" name="trabalhador_id" value="{{ trabalhador_id or '' }}">
+        <input type="text" id="rel-trab-nome" name="trabalhador" list="rel-trab-opcoes"
+               autocomplete="off" placeholder="— todos —" value="{{ trabalhador_filtro }}"
+               style="padding:0.4rem 0.6rem;min-width:12rem">
         <datalist id="rel-trab-opcoes">
             {% for t in trabalhadores %}
-            <option value="{{ t.nome_completo }}" label="{{ t.id }}"></option>
+            <option value="{{ t.display }}"></option>
             {% endfor %}
         </datalist>
     </label>
@@ -122,32 +122,25 @@
     Nenhum registro de presença encontrado para este trabalhador no período.
 </p>
 {% endif %}
-{% elif not erro and trabalhador_id %}
-<p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
-    Trabalhador não encontrado.
-</p>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script id="rel-trab-lista" type="application/json">{{ trabalhadores | tojson }}</script>
 <script>
-// O nome pesquisado decide o filtro: só vale quando bate exatamente com um
-// trabalhador; texto desconhecido equivale a "todos".
+// O campo decide o filtro só com um cadastro da lista: vazio significa
+// "todos"; texto que não bate exatamente com uma opção é recusado aqui
+// (o envio não dispara) e também no servidor, nunca vira consulta "todos".
 (function () {
-    const campoNome = document.getElementById('rel-trab-nome');
-    const campoId = document.querySelector('input[name="trabalhador_id"]');
-    const opcoes = JSON.parse(document.getElementById('rel-trab-lista').textContent);
-    function sincronizar() {
-        const escolhida = opcoes.find(function (o) {
-            return o.nome_completo === campoNome.value;
-        });
-        campoId.value = escolhida ? String(escolhida.id) : '';
-    }
-    const atual = opcoes.find(function (o) { return String(o.id) === campoId.value; });
-    if (atual) campoNome.value = atual.nome_completo;
-    campoNome.addEventListener('input', sincronizar);
-    document.querySelector('form.barra-busca').addEventListener('submit', sincronizar);
+    const campo = document.getElementById('rel-trab-nome');
+    const exibe = JSON.parse(document.getElementById('rel-trab-lista').textContent)
+                    .map(function (o) { return o.display; });
+    campo.addEventListener('input', function () {
+        campo.setCustomValidity(
+            campo.value && !exibe.includes(campo.value)
+                ? 'Selecione um trabalhador da lista' : '');
+    });
+    campo.dispatchEvent(new Event('input'));
 })();
 </script>
 {% endblock %}

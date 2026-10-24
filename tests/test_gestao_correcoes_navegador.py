@@ -103,16 +103,25 @@ def _preparar_cenas():
         exigir_ambiente_de_teste(conn)
         _limpa_negocio(conn)
         ids = {}
+        # "Ema Teste Duplicado" duas vezes de propósito: é a cena em que os
+        # seletores de relatório precisam distinguir cadastros de mesmo nome.
         for nome, ativo in (("Alice Chegada QR", 1), ("Bruno Recepcao", 1),
-                            ("Carla Sem Registro", 1), ("Dami Inativo", 0)):
-            ids[nome] = conn.execute(
+                            ("Carla Sem Registro", 1), ("Dami Inativo", 0),
+                            ("Ema Teste Duplicado", 1), ("Ema Teste Duplicado", 1)):
+            ids.setdefault(nome, []).append(conn.execute(
                 "INSERT INTO trabalhadores (nome_completo, ativo) VALUES (%s, %s) "
-                "RETURNING id", (nome, ativo)).fetchone()["id"]
+                "RETURNING id", (nome, ativo)).fetchone()["id"])
+        ema = ids["Ema Teste Duplicado"]
+        for i, tid in enumerate(ema):
+            conn.execute(
+                "INSERT INTO trabalhador_codigo (codigo, trabalhador_id, criado_em) "
+                "VALUES (%s, %s, '2026-10-01 00:00:00')", (f"110{i + 1}", tid))
         hoje = _hoje_sp(conn)
         ontem = conn.execute("SELECT (%s::date - 1)::text AS d", (hoje,)).fetchone()["d"]
-        _facto(conn, ids["Alice Chegada QR"], hoje, 1, "08:00", "terminal_qr")
-        _facto(conn, ids["Bruno Recepcao"], hoje, 1, "07:30", "recepcao")
-        _facto(conn, ids["Dami Inativo"], ontem, 1, "09:00", "recepcao")
+        _facto(conn, ids["Alice Chegada QR"][0], hoje, 1, "08:00", "terminal_qr")
+        _facto(conn, ids["Bruno Recepcao"][0], hoje, 1, "07:30", "recepcao")
+        _facto(conn, ids["Dami Inativo"][0], ontem, 1, "09:00", "recepcao")
+        _facto(conn, ema[1], ontem, 1, "09:10", "recepcao")
         conn.commit()
     CENAS.clear()
     CENAS.update(ids=ids, hoje=hoje, ontem=ontem,
@@ -120,8 +129,8 @@ def _preparar_cenas():
                  ontem_br="/".join(reversed(ontem.split("-"))))
 
 
-def _id_por_nome(nome):
-    return CENAS["ids"][nome]
+def _id_por_nome(nome, idx=0):
+    return CENAS["ids"][nome][idx]
 
 
 def _token_atual(conn, tid, data):
@@ -448,45 +457,78 @@ def n8():
 #  Relatórios e impressão
 # ══════════════════════════════════════════════════════════════════════════
 
-@cenario("N9 relatório geral: sem percentual, 7 dias, origem pesquisável; impressão limpa")
+@cenario("N9 relatório geral: nota limpa, seletor só aceita cadastro da lista; impressão")
 def n9():
+    qs_hoje = f"data_ini={CENAS['hoje']}&data_fim={CENAS['hoje']}"
+    qs_ontem = f"data_ini={CENAS['ontem']}&data_fim={CENAS['ontem']}"
     with _operador(largura=SMARTPHONE[0], altura=SMARTPHONE[1]) as op:
-        pagina = op.abrir(
-            f"/relatorios/presenca-trabalhadores?data_ini={CENAS['hoje']}"
-            f"&data_fim={CENAS['hoje']}")
+        pagina = op.abrir(f"/relatorios/presenca-trabalhadores?{qs_hoje}")
         corpo = pagina.inner_text("body")
         assert "% Presença" not in corpo and "% Falta" not in corpo, \
             "percentuais removidos deveriam permanecer fora"
         assert "Sem registro não significa falta" in corpo, "faltou a nota do dono"
         assert "denominador" not in corpo.lower(), "jargão interno ainda aparece na tela"
-        assert "Alice Chegada QR" in corpo and "Bruno Recepcao" in corpo
-        # o campo Trabalhador é pesquisável por nome e decide o filtro
-        assert_eq(pagina.locator("#rel-trab-opcoes option").count(), 4,
-                  "o seletor deveria carregar as 4 pessoas do cenário")
-        assert "Bruno Recepcao" in pagina.locator("#rel-trab-opcoes").inner_html(), \
-            "o datalist precisa trazer os nomes (não pode vir vazio)"
+        assert "Alice Chegada QR" in corpo and "Bruno Recepcao" in corpo, \
+            "campo vazio deveria listar todos"
+        # cada cadastro é uma opção; campo vazio = todos (prova acima, pois a
+        # URL aberta não levou parâmetro de trabalhador)
+        assert_eq(pagina.locator("#rel-trab-opcoes option").count(), 6,
+                  "o seletor deveria carregar os 6 cadastros do cenário")
+        lista = pagina.locator("#rel-trab-opcoes").inner_html()
+        assert "Bruno Recepcao" in lista, "o datalist precisa trazer os nomes (não pode vir vazio)"
+        # nomes iguais têm identificação suficiente para distinguir os cadastros
+        assert "Ema Teste Duplicado (1101)" in lista \
+            and "Ema Teste Duplicado (1102)" in lista, \
+            "nomes repetidos precisam de código no seletor"
+        # nome exato filtra
         pagina.fill("#rel-trab-nome", "Alice Chegada QR")
         pagina.click('button[type="submit"]')
         pagina.wait_for_load_state("networkidle")
         corpo = pagina.inner_text("body")
         assert "Alice Chegada QR" in corpo, "o filtro por nome sumiu com quem deveria ficar"
         assert "Bruno Recepcao" not in corpo, "o filtro por nome não filtrou nada"
-        assert_eq(pagina.locator('input[name="trabalhador_id"]').input_value(),
-                  str(_id_por_nome("Alice Chegada QR")),
-                  "o nome digitado deveria resolver para o id do trabalhador")
+        assert "trabalhador=Alice+Chegada+QR" in pagina.url, \
+            "a consulta deveria sair com o nome escolhido"
         assert_eq(pagina.locator("#rel-trab-nome").input_value(), "Alice Chegada QR",
                   "a seleção deveria permanecer visível depois do filtro")
-        # digitado avulso, sem corresponder a ninguém, volta o relatório completo
-        pagina.fill("#rel-trab-nome", "Ninguém Com Esse Nome")
+        # nome repetido, digitado sem sufixo, é ambíguo: o navegador recusa
+        # antes de consultar — nada roda como "todos"
+        pagina.fill("#rel-trab-nome", "Ema Teste Duplicado")
+        assert not pagina.locator("#rel-trab-nome").evaluate("el => el.checkValidity()"), \
+            "nome ambíguo não deveria ser aceito pelo seletor"
+        url_antes = pagina.url
         pagina.click('button[type="submit"]')
-        pagina.wait_for_load_state("networkidle")
-        assert "Bruno Recepcao" in pagina.inner_text("body"), \
-            "nome desconhecido deveria equivale a nenhum filtro"
-        pagina = op.abrir(
-            f"/relatorios/presenca-trabalhadores?data_ini={CENAS['hoje']}"
-            f"&data_fim={CENAS['hoje']}&trabalhador_id={_id_por_nome('Bruno Recepcao')}")
+        pagina.wait_for_timeout(400)
+        assert_eq(pagina.url, url_antes, "a consulta ambígua não deveria ter sido enviada")
+        # texto fora da lista: recusa explícita na tela, nunca "todos"
+        # (URL direta — o mesmo caminho que um link antigo ou digitado usa)
+        pagina = op.abrir("/relatorios/presenca-trabalhadores?" + qs_hoje
+                          + "&trabalhador=" + urllib.parse.quote("Ninguém Com Esse Nome"))
+        corpo = pagina.inner_text("body")
+        assert "Selecione um trabalhador da lista" in corpo, "a recusa deveria estar na tela"
+        assert "Bruno Recepcao" not in corpo and "Alice Chegada QR" not in corpo, \
+            "nome fora da lista não pode consultar como 'todos'"
+        # duplicata escolhida pelo sufixo: só o cadastro certo é consultado
+        # (o fato de ontem é da 1102; a 1101 não tem lançamento nenhum)
+        pagina = op.abrir("/relatorios/presenca-trabalhadores?" + qs_ontem
+                          + "&trabalhador=" + urllib.parse.quote("Ema Teste Duplicado (1102)"))
+        corpo = pagina.inner_text("body")
+        assert "Ema Teste Duplicado" in corpo, "a Ema (1102) tem lançamento ontem"
+        assert "Dami Inativo" not in corpo, "filtrar por uma Ema não deveria trazer mais ninguém"
+        href = urllib.parse.unquote(
+            pagina.locator("table tbody tr a").first.get_attribute("href"))
+        assert "trabalhador=Ema Teste Duplicado (1102)" in href, \
+            f"o link da linha deveria apontar para o cadastro escolhido: {href}"
+        pagina = op.abrir("/relatorios/presenca-trabalhadores?" + qs_ontem
+                          + "&trabalhador=" + urllib.parse.quote("Ema Teste Duplicado (1101)"))
+        corpo = pagina.inner_text("body")
+        assert "Nenhum lançamento no período." in corpo, "a Ema (1101) não tem lançamento"
+        assert "Dami Inativo" not in corpo, "o filtro da 1101 vazou para outros cadastros"
+        # URL com nome válido reaparece como seleção no campo
+        pagina = op.abrir("/relatorios/presenca-trabalhadores?" + qs_hoje
+                          + "&trabalhador=" + urllib.parse.quote("Bruno Recepcao"))
         assert_eq(pagina.locator("#rel-trab-nome").input_value(), "Bruno Recepcao",
-                  "um id na URL deveria reaparecer como nome no campo")
+                  "um nome na URL deveria reaparecer selecionado no campo")
         assert_eq(pagina.locator('select[name="dia_semana"] option').count(), 8,
                   "o filtro de dia deveria oferecer Todos + os 7 dias")
         assert_eq(pagina.locator('select[name="origem"] option').count(), 6,
@@ -503,18 +545,29 @@ def n9():
         _evidencia(pagina, "n9-geral-tela-smartphone")
 
 
-@cenario("N10 relatório individual: dia da semana em PT, origem e impressão")
+@cenario("N10 relatório individual: dia da semana em PT, origem, deep link e impressão")
 def n10():
-    tid = _id_por_nome("Dami Inativo")
+    qs_ontem = f"data_ini={CENAS['ontem']}&data_fim={CENAS['ontem']}"
     with _operador() as op:
         pagina = op.abrir(
-            f"/relatorios/presenca-trabalhador?trabalhador_id={tid}"
-            f"&data_ini={CENAS['ontem']}&data_fim={CENAS['ontem']}")
+            "/relatorios/presenca-trabalhador?trabalhador="
+            + urllib.parse.quote("Dami Inativo") + "&" + qs_ontem)
         corpo = pagina.inner_text("body")
         assert "Dami Inativo" in corpo
         assert CENAS["ontem_br"] in corpo
         assert "inativo" in corpo, "situação do trabalhador deveria ser sinalizada"
         assert "Recepção" in corpo, "origem traduzida na linha"
+        assert_eq(pagina.locator("#rel-trab-nome").input_value(), "Dami Inativo",
+                  "o nome da URL deveria aparecer selecionado no campo")
+        # link do relatório geral abre o cadastro escolhido no individual
+        pagina = op.abrir(f"/relatorios/presenca-trabalhadores?{qs_ontem}")
+        pagina.click("table tbody tr:has-text('Dami Inativo') a")
+        pagina.wait_for_load_state("networkidle")
+        corpo = pagina.inner_text("body")
+        assert "Dami Inativo" in corpo and CENAS["ontem_br"] in corpo, \
+            "o deep link do relatório geral deveria abrir a ficha individual"
+        assert_eq(pagina.locator("#rel-trab-nome").input_value(), "Dami Inativo",
+                  "o deep link deveria levar o nome no campo do seletor")
         pagina.emulate_media(media="print")
         assert not pagina.locator(".barra-busca").is_visible(), \
             "a impressão não deveria mostrar os controles"

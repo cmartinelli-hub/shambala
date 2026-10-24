@@ -37,12 +37,12 @@
     </label>
     <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
         Trabalhador
-        <input type="text" id="rel-trab-nome" list="rel-trab-opcoes" autocomplete="off"
-               placeholder="todos" style="padding:0.4rem 0.6rem;min-width:12rem">
-        <input type="hidden" name="trabalhador_id" value="{{ trabalhador_id or '' }}">
+        <input type="text" id="rel-trab-nome" name="trabalhador" list="rel-trab-opcoes"
+               autocomplete="off" placeholder="todos" value="{{ trabalhador_filtro }}"
+               style="padding:0.4rem 0.6rem;min-width:12rem">
         <datalist id="rel-trab-opcoes">
             {% for t in opcoes_trabalhadores %}
-            <option value="{{ t.nome_completo }}" label="{{ t.id }}"></option>
+            <option value="{{ t.display }}"></option>
             {% endfor %}
         </datalist>
     </label>
@@ -74,7 +74,7 @@
         {% for t in trabalhadores %}
         <tr>
             <td>
-                <a href="/relatorios/presenca-trabalhador?trabalhador_id={{ t.id }}&data_ini={{ data_ini }}&data_fim={{ data_fim }}&dia_semana={{ dia_semana }}&origem={{ origem }}">{{ t.nome_completo }}</a>
+                <a href="/relatorios/presenca-trabalhador?trabalhador={{ t.display | urlencode }}&data_ini={{ data_ini }}&data_fim={{ data_fim }}&dia_semana={{ dia_semana }}&origem={{ origem }}">{{ t.nome_completo }}</a>
                 {% if not t.ativo %}<span style="background:#efebe9;color:#5d4037;border-radius:6px;padding:0.1rem 0.4rem;font-size:0.75rem">inativo</span>{% endif %}
             </td>
             <td style="text-align:center;color:#27ae60;font-weight:600">{{ t.presencas }}</td>
@@ -102,22 +102,19 @@
 {% block scripts %}
 <script id="rel-trab-lista" type="application/json">{{ opcoes_trabalhadores | tojson }}</script>
 <script>
-// O nome pesquisado decide o filtro: só vale quando bate exatamente com um
-// trabalhador; texto desconhecido volta ao relatório completo.
+// O campo decide o filtro só com um cadastro da lista: vazio significa
+// "todos"; texto que não bate exatamente com uma opção é recusado aqui
+// (o envio não dispara) e também no servidor, nunca vira consulta "todos".
 (function () {
-    const campoNome = document.getElementById('rel-trab-nome');
-    const campoId = document.querySelector('input[name="trabalhador_id"]');
-    const opcoes = JSON.parse(document.getElementById('rel-trab-lista').textContent);
-    function sincronizar() {
-        const escolhida = opcoes.find(function (o) {
-            return o.nome_completo === campoNome.value;
-        });
-        campoId.value = escolhida ? String(escolhida.id) : '';
-    }
-    const atual = opcoes.find(function (o) { return String(o.id) === campoId.value; });
-    if (atual) campoNome.value = atual.nome_completo;
-    campoNome.addEventListener('input', sincronizar);
-    document.querySelector('form.barra-busca').addEventListener('submit', sincronizar);
+    const campo = document.getElementById('rel-trab-nome');
+    const exibe = JSON.parse(document.getElementById('rel-trab-lista').textContent)
+                    .map(function (o) { return o.display; });
+    campo.addEventListener('input', function () {
+        campo.setCustomValidity(
+            campo.value && !exibe.includes(campo.value)
+                ? 'Selecione um trabalhador da lista' : '');
+    });
+    campo.dispatchEvent(new Event('input'));
 })();
 </script>
 {% endblock %}

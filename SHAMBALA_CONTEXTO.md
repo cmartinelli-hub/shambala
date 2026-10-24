@@ -681,8 +681,11 @@ GET/POST  /checkin-trabalhador/{id}/correcao  ← correções e lançamentos ret
                                           GET=ler, POST=escrever; motivo obrigatório;
                                           data passada/hoje; conflito detectado)
 GET       /relatorios/presenca-trabalhadores   ← período/dia (7 dias)/origem/trabalhador
-                                          (nome pesquisável); sem percentuais; inativos
-                                          com fato participam
+                                          (parâmetro `trabalhador` = texto da lista;
+                                          vazio=todos, fora da lista=recusa "Selecione
+                                          um trabalhador da lista"; nomes repetidos
+                                          distinguem-se pelo código do crachá); sem
+                                          percentuais; inativos com fato participam
 
 POST      /terminal/ativar               ← operador (checkin.trabalhadores:escrever) habilita
                                           o aparelho da entrada; encerra a sessão COMUM

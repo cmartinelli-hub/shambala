@@ -308,6 +308,44 @@ async def frequencia(
 # construção). Sem registro NÃO é falta — as colunas contam apenas os
 # registros explícitos de presença e de ausência.
 
+MSG_SELECAO_TRABALHADOR = "Selecione um trabalhador da lista"
+
+
+def _opcoes_trabalhadores(conn) -> list:
+    """Listagem dos seletores de relatório, com display desempateado.
+
+    Nome repetido ganha o código do crachá (ou o id, para quem não tem)
+    para que dois cadastros nunca ofereçam a mesma opção.
+    """
+    rows = [dict(r) for r in conn.execute(
+        """SELECT t.id, t.nome_completo, t.ativo,
+                  (SELECT c.codigo FROM trabalhador_codigo c
+                    WHERE c.trabalhador_id = t.id AND c.estado = 'ativo'
+                    LIMIT 1) AS codigo
+           FROM trabalhadores t
+           ORDER BY t.nome_completo""").fetchall()]
+    repetidos: dict = {}
+    for r in rows:
+        repetidos[r["nome_completo"]] = repetidos.get(r["nome_completo"], 0) + 1
+    for r in rows:
+        d = r["nome_completo"]
+        if repetidos[d] > 1:
+            d = f"{d} ({r['codigo'] if r['codigo'] else '#' + str(r['id'])})"
+        r["display"] = d
+    return rows
+
+
+def _resolver_trabalhador(opcoes: list, texto: str):
+    """Texto do seletor → (id, aceito). Vazio = todos; fora da lista = recusa."""
+    texto = (texto or "").strip()
+    if not texto:
+        return None, True
+    for o in opcoes:
+        if o["display"] == texto:
+            return o["id"], True
+    return None, False
+
+
 @router.get("/presenca-trabalhadores", response_class=HTMLResponse)
 async def presenca_geral_trabalhadores(
     request: Request,
@@ -315,29 +353,19 @@ async def presenca_geral_trabalhadores(
     data_fim: str = Query(""),
     dia_semana: str = Query(""),
     origem: str = Query(""),
-    trabalhador_id: str = Query(""),
+    trabalhador: str = Query(""),
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
-
-    # O seletor pesquisável pode enviar vazio (todos) ou um id escolhido.
-    try:
-        trabalhador_id = int(trabalhador_id) if trabalhador_id else 0
-    except ValueError:
-        trabalhador_id = 0
 
     ini_padrao, fim_padrao = _mes_atual()
     data_ini = data_ini or ini_padrao
     data_fim = data_fim or fim_padrao
 
     with conectar() as conn:
-        opcoes_trabalhadores = [
-            dict(r) for r in conn.execute(
-                "SELECT id, nome_completo FROM trabalhadores "
-                "ORDER BY nome_completo"
-            ).fetchall()
-        ]
+        opcoes_trabalhadores = _opcoes_trabalhadores(conn)
+    tid_selecionado, aceite = _resolver_trabalhador(opcoes_trabalhadores, trabalhador)
 
     contexto_base = {
         "request": request,
@@ -346,7 +374,7 @@ async def presenca_geral_trabalhadores(
         "data_fim": data_fim,
         "dia_semana": dia_semana,
         "origem": origem,
-        "trabalhador_id": trabalhador_id,
+        "trabalhador_filtro": trabalhador,
         "opcoes_trabalhadores": opcoes_trabalhadores,
         "nomes_dia": _NOMES_DIA_REL,
         "origens_filtro": _ORIGENS_RELATORIO,
@@ -354,21 +382,19 @@ async def presenca_geral_trabalhadores(
     }
 
     erro = _validar_periodo(data_ini, data_fim)
-    if erro:
-        return templates.TemplateResponse(
-            "relatorios/presenca_trabalhadores.html",
-            {**contexto_base, "trabalhadores": [], "erro": erro})
-
     params: list = [data_ini, data_fim]
-    filtro_dia, filtro_origem, erro = _filtro_relatorio(dia_semana, origem, params)
-    filtro_trab = ""
-    if trabalhador_id:
-        filtro_trab = " AND t.id = %s"
-        params.append(trabalhador_id)
+    filtro_dia = filtro_origem = filtro_trab = ""
+    if not erro:
+        filtro_dia, filtro_origem, erro = _filtro_relatorio(dia_semana, origem, params)
+    if not erro and not aceite:
+        erro = MSG_SELECAO_TRABALHADOR
     if erro:
         return templates.TemplateResponse(
             "relatorios/presenca_trabalhadores.html",
             {**contexto_base, "trabalhadores": [], "erro": erro})
+    if tid_selecionado:
+        filtro_trab = " AND t.id = %s"
+        params.append(tid_selecionado)
 
     with conectar() as conn:
         rows = conn.execute(
@@ -395,9 +421,14 @@ async def presenca_geral_trabalhadores(
             params,
         ).fetchall()
 
+    displays = {o["id"]: o["display"] for o in opcoes_trabalhadores}
+    linhas = [dict(r) for r in rows]
+    for r in linhas:
+        r["display"] = displays.get(r["id"], r["nome_completo"])
+
     return templates.TemplateResponse("relatorios/presenca_trabalhadores.html", {
         **contexto_base,
-        "trabalhadores": [dict(r) for r in rows],
+        "trabalhadores": linhas,
         "erro": None,
     })
 
@@ -407,7 +438,7 @@ async def presenca_geral_trabalhadores(
 @router.get("/presenca-trabalhador", response_class=HTMLResponse)
 async def presenca_individual(
     request: Request,
-    trabalhador_id: str = Query(""),
+    trabalhador_filtro: str = Query("", alias="trabalhador"),
     data_ini: str = Query(""),
     data_fim: str = Query(""),
     dia_semana: str = Query(""),
@@ -417,11 +448,6 @@ async def presenca_individual(
     if redir:
         return redir
 
-    try:
-        trabalhador_id = int(trabalhador_id) if trabalhador_id else 0
-    except ValueError:
-        trabalhador_id = 0
-
     ini_padrao, fim_padrao = _mes_atual()
     data_ini = data_ini or ini_padrao
     data_fim = data_fim or fim_padrao
@@ -429,17 +455,16 @@ async def presenca_individual(
     with conectar() as conn:
         # Lista completa para o seletor: inativos continuam consultáveis —
         # o passado não desaparece após a inativação.
-        trabalhadores_lista = conn.execute(
-            "SELECT id, nome_completo, ativo FROM trabalhadores "
-            "ORDER BY nome_completo"
-        ).fetchall()
-        trabalhadores_lista = [dict(r) for r in trabalhadores_lista]
+        trabalhadores_lista = _opcoes_trabalhadores(conn)
+
+    tid_selecionado, aceite = _resolver_trabalhador(
+        trabalhadores_lista, trabalhador_filtro)
 
     from rotas.permissoes import usuario_pode
     contexto_base = {
         "request": request,
         "atendente": atendente,
-        "trabalhador_id": trabalhador_id,
+        "trabalhador_filtro": trabalhador_filtro,
         "data_ini": data_ini,
         "data_fim": data_fim,
         "dia_semana": dia_semana,
@@ -454,16 +479,15 @@ async def presenca_individual(
     }
 
     erro = _validar_periodo(data_ini, data_fim)
-    if erro:
-        return templates.TemplateResponse(
-            "relatorios/presenca_individual.html",
-            {**contexto_base, "trabalhadores": trabalhadores_lista,
-             "trabalhador": None,
-             "registros": [], "presencas": 0, "ausencias": 0, "erro": erro})
-
     params_filtro: list = []
-    filtro_dia, filtro_origem, erro = _filtro_relatorio(
-        dia_semana, origem, params_filtro)
+    filtro_dia = filtro_origem = ""
+    if not erro:
+        filtro_dia, filtro_origem, erro = _filtro_relatorio(
+            dia_semana, origem, params_filtro)
+    if not erro and not aceite:
+        # Nome digitado sem corresponder a um cadastro: nada é listado como
+        # "todos" — a tela pede a seleção e a consulta do trabalhador não roda.
+        erro = MSG_SELECAO_TRABALHADOR
     if erro:
         return templates.TemplateResponse(
             "relatorios/presenca_individual.html",
@@ -477,14 +501,14 @@ async def presenca_individual(
     ausencias = 0
 
     with conectar() as conn:
-        if trabalhador_id:
+        if tid_selecionado:
             trabalhador = conn.execute(
                 "SELECT id, nome_completo, ativo FROM trabalhadores WHERE id = %s",
-                (trabalhador_id,),
+                (tid_selecionado,),
             ).fetchone()
             if trabalhador:
                 trabalhador = dict(trabalhador)
-                params = [trabalhador_id, data_ini, data_fim] + params_filtro
+                params = [tid_selecionado, data_ini, data_fim] + params_filtro
                 hist = conn.execute(
                     f"""SELECT tp.presente, tp.hora_chegada, tp.hora_saida,
                               tp.origem_chegada, tp.data::text AS data,

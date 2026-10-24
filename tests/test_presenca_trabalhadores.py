@@ -619,7 +619,7 @@ def h8(ctx: Ctx):
     for ds, (data_br, excluidas) in esperado.items():
         st, html = _http(
             "GET",
-            f"/relatorios/presenca-trabalhador?trabalhador_id={tid}"
+            "/relatorios/presenca-trabalhador?trabalhador=Filtros%20de%20Dia"
             f"&data_ini=2026-10-17&data_fim=2026-10-23&dia_semana={ds}")
         assert_eq(st, 200, f"relatório dia_semana={ds}")
         assert data_br in html, f"filtro {ds}: esperado {data_br} presente"
