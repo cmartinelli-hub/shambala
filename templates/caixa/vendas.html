@@ -7,6 +7,18 @@
     <a href="/caixa/pdv{% if caixa_id %}?caixa_id={{ caixa_id }}{% endif %}" class="btn btn-primario btn-sm">← Voltar ao PDV</a>
 </div>
 
+{% if cancelado %}
+<div style="background:#e8f7ee;border:1px solid #1da851;border-radius:var(--raio);padding:.6rem 1rem;margin-bottom:1rem;color:#0d6b33">
+    ✔ Venda #{{ cancelado }} cancelada. Os efeitos comprováveis foram revertidos e o registro
+    (motivo, autor, instante) está na própria linha abaixo e no comprovante.
+</div>
+{% endif %}
+{% if erro == 'sem_permissao' %}
+<div style="background:#fdecea;border:1px solid #c0392b;border-radius:var(--raio);padding:.6rem 1rem;margin-bottom:1rem;color:#8e2418">
+    Somente administradores podem cancelar vendas.
+</div>
+{% endif %}
+
 <form method="get" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
     <select name="caixa_id" style="padding:.35rem .6rem">
         <option value="0">Todos os caixas</option>
@@ -71,8 +83,18 @@
         <td>
             {% if v.status == 'concluida' %}
                 <span style="color:#1da851;font-weight:600">Concluída</span>
-            {% else %}
+            {% elif v.status == 'cancelada' %}
                 <span style="color:#999">Cancelada</span>
+                {% if v.cancelamento_motivo %}
+                <div style="font-size:.72rem;color:var(--cor-texto-suave);text-decoration:none">
+                    {{ v.cancelamento_em|data_hora_br }} — {{ v.cancelante_nome or '—' }}<br>
+                    {{ v.cancelamento_motivo }}
+                </div>
+                {% else %}
+                <div style="font-size:.72rem;color:#b26a00;text-decoration:none">cancelamento antigo, sem prova de reversão</div>
+                {% endif %}
+            {% else %}
+                <span style="color:#999">{{ v.status }}</span>
             {% endif %}
         </td>
         <td>
@@ -82,10 +104,14 @@
                     onclick="window.open('/caixa/vendas/{{ v.id }}/comprovante','_blank')">
                 &#x1F5A8;
             </button>
-            <form method="post" action="/caixa/vendas/{{ v.id }}/cancelar" style="display:inline;margin:0">
-                <button class="btn btn-alerta btn-sm"
-                        onclick="return confirm('Cancelar venda #{{ v.id }}?')">Cancelar</button>
-            </form>
+            {% if e_admin %}
+            <a class="btn btn-alerta btn-sm" href="/caixa/vendas/{{ v.id }}/cancelar">Cancelar</a>
+            {% endif %}
+            {% elif v.status == 'cancelada' %}
+            <button class="btn btn-secundario btn-sm"
+                    onclick="window.open('/caixa/vendas/{{ v.id }}/comprovante','_blank')">
+                &#x1F5A8; Comprovante
+            </button>
             {% endif %}
         </td>
     </tr>

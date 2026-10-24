@@ -479,6 +479,11 @@ def _migrar(conn):
         ("produtos", "caixa_id", "INTEGER REFERENCES caixas(id)"),
         ("caixas", "usa_produtos", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("vendas_pdv", "doacao_valor", "NUMERIC(10,2) NOT NULL DEFAULT 0"),
+        # TASK_007: instante (America/Sao_Paulo, segundos) gravado só na
+        # finalização de vendas NOVAS. Linhas antigas ficam NULL — nunca é
+        # preenchido por heurística; em fiado, NULL significa "sem prova de
+        # temporalidade" e bloqueia o cancelamento reversível.
+        ("vendas_pdv", "criada_em", "TEXT"),
         ("financeiro_movimentacoes", "forma_pagamento", "TEXT"),
         ("financeiro_movimentacoes", "conta_id", "INTEGER REFERENCES contas_financeiras(id)"),
         ("financeiro_movimentacoes", "data_pagamento", "TEXT"),
@@ -938,6 +943,27 @@ def criar_tabelas():
                 referencia_id   INTEGER,
                 atendente_id    INTEGER REFERENCES atendentes(id),
                 created_at      TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text
+            )
+        """)
+
+        # ── Cancelamento de venda (TASK_007 / FIN-02) ──
+        # Uma linha por cancelamento EFETIVO: UNIQUE(venda_id) garante que
+        # repetição/clique duplo/concorrência nunca produz segunda reversão.
+        # FK sem CASCADE: apagar a venda não apaga a prova do cancelamento.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vendas_pdv_cancelamento (
+                id                      SERIAL PRIMARY KEY,
+                venda_id                INTEGER NOT NULL UNIQUE
+                                        REFERENCES vendas_pdv(id),
+                atendente_id            INTEGER NOT NULL REFERENCES atendentes(id),
+                motivo                  TEXT NOT NULL CHECK (motivo <> ''),
+                criado_em               TEXT NOT NULL,
+                sessao_movimento_id     INTEGER REFERENCES caixa_movimentos(id),
+                valor_sessao_revertido  NUMERIC(12,2) NOT NULL DEFAULT 0,
+                total_venda             NUMERIC(12,2) NOT NULL,
+                doacao_venda            NUMERIC(12,2) NOT NULL DEFAULT 0,
+                forma_pagamento         TEXT NOT NULL,
+                estoque_revertido       TEXT NOT NULL DEFAULT '[]'
             )
         """)
 

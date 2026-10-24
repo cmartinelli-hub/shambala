@@ -99,7 +99,9 @@
             <td>{% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}R$ {{ "%.2f"|format(v.fiado_credito_usado) }}{% else %}—{% endif %}</td>
             <td>{{ v.caixa_nome }}</td>
             <td>
-                {% if v.fiado_pago %}
+                {% if v.status == 'cancelada' %}
+                <span style="color:#999;font-weight:600">Cancelada (não somada)</span>
+                {% elif v.fiado_pago %}
                 <span style="color:#1da851;font-weight:600">Pago</span>
                 {% else %}
                 <span style="color:#c0392b;font-weight:600">Pendente</span>

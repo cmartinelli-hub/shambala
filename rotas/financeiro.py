@@ -741,6 +741,11 @@ async def relatorio_fiados(request: Request, trabalhador_id: int = 0):
                 ).fetchall()
 
                 for v in vendas:
+                    # TASK_007: canceladas não compõem os totais; continuam
+                    # listadas como histórico explícito (a listagem já as traz,
+                    # identificadas pelo status).
+                    if v["status"] == "cancelada":
+                        continue
                     v_total = float(v["total"])
                     total_gasto += v_total
                     if v["fiado_pago"]:

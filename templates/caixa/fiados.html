@@ -97,7 +97,8 @@
 {% if _cancelado_ok %}
 <div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
      padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
-    ✅ Fiado cancelado com sucesso! O crédito usado foi estornado.
+    ✅ Venda de fiado #{{ _cancelado_ok }} cancelada: os efeitos comprováveis foram
+    revertidos e a dívida atual foi ajustada. Motivo, autor e instante estão no registro.
 </div>
 {% endif %}
 {% if _erro == 'sem_permissao' %}
@@ -240,9 +241,7 @@
                         </form>
                         <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
                         {% if e_admin %}
-                        <form method="post" action="/caixa/fiados/{{ v.id }}/cancelar" style="display:inline" onsubmit="return confirm('⚠️ Cancelar o fiado #{{ v.id }} (R$ {{ "%.2f"|format(_devido) }})?\n\nO crédito usado será estornado. Esta ação não pode ser desfeita.')">
-                            <button class="btn btn-sm btn-perigo">🗑 Cancelar</button>
-                        </form>
+                        <a href="/caixa/vendas/{{ v.id }}/cancelar" class="btn btn-sm btn-perigo">🗑 Cancelar</a>
                         {% endif %}
                     </td>
                 </tr>

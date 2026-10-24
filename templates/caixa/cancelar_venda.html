@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block titulo %}Cancelar venda{% endblock %}
+
+{% block conteudo %}
+<div class="cabecalho-secao">
+    <h2>Cancelamento integral da venda #{{ venda.id }}</h2>
+    <a href="/caixa/vendas?caixa_id={{ venda.caixa_id }}&data={{ venda.data_venda }}" class="btn btn-secundario btn-sm">← Voltar às vendas</a>
+</div>
+
+{% if bloqueios %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);padding:.8rem 1.2rem;margin-bottom:1rem">
+    <strong style="color:#721c24">Este cancelamento não pode ser executado por aqui:</strong>
+    <ul style="margin:.5rem 0 0 1.2rem;color:#721c24">
+        {% for m in bloqueios %}<li>{{ m }}</li>{% endfor %}
+    </ul>
+    <div style="margin-top:.6rem;color:#721c24;font-size:.85rem">
+        Nenhum efeito parcial foi ou será produzido. Caso o documento precise ser
+        tratado, use um fluxo administrativo adequado (fora deste cancelamento).
+    </div>
+</div>
+{% else %}
+<div style="background:var(--cor-superficie);border-radius:var(--raio);box-shadow:var(--sombra);padding:1rem 1.4rem;margin-bottom:1rem">
+    <table style="width:auto;font-size:.95rem">
+        <tr><td style="padding-right:1rem;color:var(--cor-texto-suave)">Data</td><td>{{ venda.data_venda|data_br }}</td></tr>
+        <tr><td style="color:var(--cor-texto-suave)">Caixa</td><td>{{ caixa_nome }}</td></tr>
+        <tr><td style="color:var(--cor-texto-suave)">Forma</td>
+            <td>{% if venda.forma_pagamento == 'especie' %}💵 Espécie{% elif venda.forma_pagamento == 'pix' %}📱 PIX{% elif venda.forma_pagamento == 'fiado' %}📝 Fiado{% else %}{{ venda.forma_pagamento }}{% endif %}</td></tr>
+        <tr><td style="color:var(--cor-texto-suave)">Total</td><td><strong>R$ {{ "%.2f"|format(venda.total) }}</strong></td></tr>
+        {% if venda.doacao_valor and venda.doacao_valor > 0 %}
+        <tr><td style="color:var(--cor-texto-suave)">Doação na venda</td><td>R$ {{ "%.2f"|format(venda.doacao_valor) }}</td></tr>
+        {% endif %}
+    </table>
+
+    {% if itens %}
+    <h3 style="margin-top:1rem">Itens da venda</h3>
+    <table class="tabela" style="width:auto">
+        <thead><tr><th>Qtd</th><th>Produto</th><th>Preço unit.</th><th>Subtotal</th></tr></thead>
+        <tbody>
+        {% for i in itens %}
+        <tr><td>{{ i.quantidade }}</td><td>{{ i.nome_produto }}</td>
+            <td>R$ {{ "%.2f"|format(i.preco_unitario) }}</td>
+            <td>R$ {{ "%.2f"|format(i.subtotal) }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+<div style="background:#fff8e6;border:1px solid #b26a00;border-radius:var(--raio);padding:1rem 1.2rem;margin-bottom:1.2rem">
+    <strong>Esta ação é um CANCELAMENTO INTEGRAL.</strong>
+    <p style="margin:.4rem 0 0">Se confirmada, a operação registrada incorretamente será anulada
+    e o que for comprovavelmente efeito dela será revertido:</p>
+    <ul style="margin:.5rem 0 0 1.2rem">
+        {% if efeitos.estoque %}
+            {% for e in efeitos.estoque %}
+            <li>{{ e.quantidade }} × “{{ e.nome }}” voltam ao estoque (saldo atual {{ e.saldo_atual }} → {{ e.saldo_atual + e.quantidade }})</li>
+            {% endfor %}
+        {% endif %}
+        {% if efeitos.sessao %}
+            <li>A sessão de caixa perde R$ {{ "%.2f"|format(efeitos.sessao.valor) }} do total de vendas{% if efeitos.doacao and efeitos.doacao > 0 %} (inclui a doação de R$ {{ "%.2f"|format(efeitos.doacao) }} lançada junto){% endif %}</li>
+        {% endif %}
+        {% if venda.forma_pagamento == 'fiado' %}
+            <li>O valor deixa de compor a dívida atual do trabalhador (documento e histórico preservados)</li>
+        {% endif %}
+        <li>Nada é estornado em dinheiro: dinheiro devolvido ou mercadoria perdida são outros fluxos</li>
+    </ul>
+</div>
+
+<form method="post" action="/caixa/vendas/{{ venda.id }}/cancelar"
+      onsubmit="return confirm('Confirmo o CANCELAMENTO INTEGRAL da venda #{{ venda.id }} com as reversões descritas acima?')">
+    <label style="display:block;font-weight:700;margin-bottom:.3rem">Motivo do cancelamento (obrigatório)</label>
+    <textarea name="motivo" rows="3" required maxlength="500" placeholder="Ex.: venda lançada duas vezes no fechamento do dia"
+              style="width:100%;max-width:640px;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font:inherit">{{ motivo_digitado }}</textarea>
+    <input type="hidden" name="confirmar" value="1">
+    <div style="margin-top:1rem;display:flex;gap:.6rem">
+        <button type="submit" class="btn btn-perigo">Cancelar a venda integralmente</button>
+        <a href="/caixa/vendas?caixa_id={{ venda.caixa_id }}" class="btn btn-secundario">Voltar sem fazer nada</a>
+    </div>
+</form>
+{% endif %}
+{% endblock %}

@@ -248,8 +248,10 @@ async def finalizar_venda(
         cur = conn.execute(
             """INSERT INTO vendas_pdv
                (caixa_id, data_venda, total, forma_pagamento, troco, status, atendente_id,
-                fiado_trabalhador_id, fiado_credito_usado, caixa_movimento_id, doacao_valor)
-               VALUES (%s, %s, %s, %s, %s, 'concluida', %s, %s, %s, %s, %s)
+                fiado_trabalhador_id, fiado_credito_usado, caixa_movimento_id, doacao_valor,
+                criada_em)
+               VALUES (%s, %s, %s, %s, %s, 'concluida', %s, %s, %s, %s, %s,
+                       (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp(0)::text)
                RETURNING id""",
             (caixa_id, date.today().isoformat(), total,
              forma_pagamento, troco, atendente["id"],
@@ -371,7 +373,8 @@ async def gerar_pix_qr(request: Request, valor: str = "0", caixa_id: int = 0):
 # ── Histórico de vendas ───────────────────────────────────────────────────────
 
 @router.get("/vendas", response_class=HTMLResponse)
-async def listar_vendas(request: Request, caixa_id: int = 0, data: str = ""):
+async def listar_vendas(request: Request, caixa_id: int = 0, data: str = "",
+                        cancelado: int = 0, erro: str = ""):
     atendente, redir = _guard(request)
     if redir:
         return redir
@@ -388,10 +391,15 @@ async def listar_vendas(request: Request, caixa_id: int = 0, data: str = ""):
             params.append(caixa_id)
 
         vendas = conn.execute(
-            f"""SELECT v.*, c.nome AS caixa_nome, a.nome_completo AS atendente_nome
+            f"""SELECT v.*, c.nome AS caixa_nome, a.nome_completo AS atendente_nome,
+                       x.motivo AS cancelamento_motivo,
+                       x.criado_em AS cancelamento_em,
+                       xa.nome_completo AS cancelante_nome
                 FROM vendas_pdv v
                 JOIN caixas c ON c.id = v.caixa_id
                 LEFT JOIN atendentes a ON a.id = v.atendente_id
+                LEFT JOIN vendas_pdv_cancelamento x ON x.venda_id = v.id
+                LEFT JOIN atendentes xa ON xa.id = x.atendente_id
                 WHERE {' AND '.join(filtros)}
                 ORDER BY v.id DESC""",
             params
@@ -421,21 +429,85 @@ async def listar_vendas(request: Request, caixa_id: int = 0, data: str = ""):
         "data_ref": data_ref,
         "total_dia": total_dia,
         "por_pgto": [dict(p) for p in por_pgto],
+        "cancelado": cancelado,
+        "erro": erro,
+        "e_admin": e_admin(request),
     })
 
 
 @router.post("/vendas/{id}/cancelar")
-async def cancelar_venda(request: Request, id: int):
+async def cancelar_venda(request: Request, id: int,
+                         motivo: str = Form(""), confirmar: str = Form("")):
+    """Cancelamento integral rastreável (TASK_007): serviço único, motivo
+    obrigatório, confirmação explícita e reversões apenas comprováveis."""
     atendente, redir = _guard(request)
     if redir:
         return redir
+    if not e_admin(request):
+        return RedirectResponse(url="/caixa/vendas?erro=sem_permissao", status_code=303)
 
+    avisos: list = []
+    from servico_cancelamento import JaCancelada, CancelamentoBloqueado, VendaNaoEncontrada, cancelar
+    try:
+        with conectar() as conn:
+            if not confirmar or confirmar != "1":
+                raise CancelamentoBloqueado(["Confirme explicitamente o cancelamento integral."])
+            resultado = cancelar(conn, id, motivo, atendente["id"])
+            caixa_id = conn.execute("SELECT caixa_id FROM vendas_pdv WHERE id=%s",
+                                    (id,)).fetchone()["caixa_id"]
+        return RedirectResponse(
+            url=f"/caixa/vendas?caixa_id={caixa_id}&cancelado={resultado['venda_id']}",
+            status_code=303)
+    except CancelamentoBloqueado as e:
+        avisos = e.motivos
+    except JaCancelada as e:
+        avisos = (["Esta venda já foi cancelada com reversão registrada."]
+                  if e.com_prova else
+                  ["Esta venda já consta como cancelada no histórico legado — "
+                   "não existe prova de reversão associada. Nenhum efeito novo foi produzido."])
+    except VendaNaoEncontrada:
+        return HTMLResponse("<p>Venda não encontrada.</p>", status_code=404)
+    return await _pagina_cancelar(request, atendente, id, avisos=avisos,
+                                  motivo_digitado=motivo)
+
+
+async def _pagina_cancelar(request: Request, atendente, id: int,
+                           avisos: list | None = None, motivo_digitado: str = ""):
+    """Tela de confirmação: venda, data, forma, total e efeitos propostos —
+    ou os motivos que bloqueiam o cancelamento. Nada é gravado aqui."""
+    from servico_cancelamento import avaliar, VendaNaoEncontrada
     with conectar() as conn:
-        v = conn.execute("SELECT caixa_id FROM vendas_pdv WHERE id=%s", (id,)).fetchone()
-        conn.execute("UPDATE vendas_pdv SET status='cancelada' WHERE id=%s", (id,))
+        try:
+            aval = avaliar(conn, id)
+        except VendaNaoEncontrada:
+            return HTMLResponse("<p>Venda não encontrada.</p>", status_code=404)
+        venda = aval["venda"]
+        caixa = conn.execute("SELECT nome FROM caixas WHERE id=%s",
+                             (venda["caixa_id"],)).fetchone()
+        itens = conn.execute(
+            """SELECT nome_produto, quantidade, preco_unitario, subtotal
+               FROM vendas_pdv_itens WHERE venda_id = %s ORDER BY id""", (id,)).fetchall()
+    return templates.TemplateResponse("caixa/cancelar_venda.html", {
+        "request": request,
+        "atendente": atendente,
+        "venda": venda,
+        "caixa_nome": caixa["nome"] if caixa else f"#{venda['caixa_id']}",
+        "itens": [dict(i) for i in itens],
+        "efeitos": aval["efeitos"],
+        "bloqueios": (aval["bloqueios"] if not avisos else avisos),
+        "ja_cancelada": aval["ja_cancelada"],
+        "motivo_digitado": motivo_digitado,
+    })
 
-    caixa_id = v["caixa_id"] if v else 0
-    return RedirectResponse(url=f"/caixa/vendas?caixa_id={caixa_id}", status_code=303)
+
+@router.get("/vendas/{id}/cancelar", response_class=HTMLResponse)
+async def cancelar_venda_pagina(request: Request, id: int):
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+    if not e_admin(request):
+        return RedirectResponse(url="/caixa/vendas?erro=sem_permissao", status_code=303)
+    return await _pagina_cancelar(request, atendente, id)
 
 
 @router.get("/vendas/{id}/escpos")
@@ -458,6 +530,8 @@ async def escpos_venda(request: Request, id: int, via: str = ""):
         if not venda:
             return JSONResponse({"erro": "Venda não encontrada"}, status_code=404)
 
+        cancelamento = _consulta_cancelamento(conn, id)
+
         itens = conn.execute(
             "SELECT nome_produto, quantidade, preco_unitario, subtotal "
             "FROM vendas_pdv_itens WHERE venda_id = %s ORDER BY id",
@@ -476,8 +550,24 @@ async def escpos_venda(request: Request, id: int, via: str = ""):
             if trab_row:
                 trabalhador = dict(trab_row)
 
-    dados = _gerar_bytes_escpos(dict(venda), [dict(i) for i in itens], centro_nome, trabalhador, via == "caixa")
+    dados = _gerar_bytes_escpos(dict(venda), [dict(i) for i in itens], centro_nome, trabalhador,
+                                via == "caixa", cancelamento=cancelamento)
     return Response(content=dados, media_type="application/octet-stream")
+
+
+def _consulta_cancelamento(conn, venda_id: int):
+    """Prova do cancelamento efetivo (TASK_007), para comprovante/consulta.
+    Retorna None quando não há registro — inclusive para cancelamentos do
+    legado, que seguem sem prova de reversão (não se inventa histórico)."""
+    row = conn.execute(
+        """SELECT x.motivo, x.criado_em, x.valor_sessao_revertido,
+                  x.estoque_revertido, a.nome_completo AS autor_nome
+           FROM vendas_pdv_cancelamento x
+           LEFT JOIN atendentes a ON a.id = x.atendente_id
+           WHERE x.venda_id = %s""",
+        (venda_id,)
+    ).fetchone()
+    return dict(row) if row else None
 
 
 @router.get("/vendas/{id}/comprovante", response_class=HTMLResponse)
@@ -521,7 +611,10 @@ async def comprovante_venda(request: Request, id: int, via: str = ""):
             if trab_row:
                 trabalhador = dict(trab_row)
 
-    recibo = _gerar_recibo(venda, itens, centro_nome, trabalhador, via == "caixa")
+        cancelamento = _consulta_cancelamento(conn, id)
+
+    recibo = _gerar_recibo(venda, itens, centro_nome, trabalhador, via == "caixa",
+                           cancelamento=cancelamento)
 
     return templates.TemplateResponse("caixa/comprovante.html", {
         "request": request,
@@ -531,6 +624,7 @@ async def comprovante_venda(request: Request, id: int, via: str = ""):
         "recibo": recibo,
         "trabalhador": trabalhador,
         "via_caixa": via == "caixa",
+        "cancelamento": cancelamento,
     })
 
 
@@ -1341,70 +1435,43 @@ async def pagar_divida_fiado(
 
 
 @router.post("/fiados/{venda_id}/cancelar")
-async def cancelar_fiado(request: Request, venda_id: int):
-    """Cancela um lançamento de fiado (apenas admin). Restaura crédito usado e marca a venda como cancelada."""
+async def cancelar_fiado(request: Request, venda_id: int,
+                         motivo: str = Form(""), confirmar: str = Form("")):
+    """Cancelamento de fiado: apenas o serviço único (TASK_007).
+
+    Esta rota já foi um atalho que estornava valores por conta própria
+    (inclusive o total inteiro de um fiado pago — FIN-06). Agora ela
+    encaminha o caso elegível ao mesmo serviço da rota de vendas e recusa
+    qualquer outro com motivo claro. Não há reembolso de fiado pago aqui.
+    """
     atendente, redir = _guard(request)
     if redir:
         return redir
-
     if not e_admin(request):
         return RedirectResponse(url="/caixa/fiados?erro=sem_permissao", status_code=303)
 
-    with conectar() as conn:
-        venda = conn.execute(
-            """SELECT id, total, fiado_credito_usado, fiado_trabalhador_id,
-                      caixa_movimento_id, fiado_pago, fiado_data_pagamento,
-                      caixa_id
-               FROM vendas_pdv WHERE id = %s AND forma_pagamento = 'fiado' AND status = 'concluida'""",
-            (venda_id,)
-        ).fetchone()
+    if not confirmar or confirmar != "1" or not (motivo or "").strip():
+        # sem motivo/confirmação: manda para a tela única de confirmação
+        return RedirectResponse(url=f"/caixa/vendas/{venda_id}/cancelar", status_code=303)
 
-        if not venda:
-            return RedirectResponse(url="/caixa/fiados?erro=nao_encontrada", status_code=303)
-
-        # Restaura crédito antecipado que foi usado nesta compra
-        credito = float(venda["fiado_credito_usado"] or 0)
-        if credito > 0:
-            conn.execute(
-                "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
-                (credito, venda["fiado_trabalhador_id"])
-            )
-            conn.execute(
-                """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
-                   VALUES (%s, 'credito', %s, %s)""",
-                (venda["fiado_trabalhador_id"], credito, f"Estorno venda #{venda_id}")
-            )
-
-        # Se já foi pago, reverte no financeiro
-        if venda["fiado_pago"]:
-            estorno_conta_id = conta_id_por_tipo(conn, 'especie')
-            conn.execute(
-                """INSERT INTO financeiro_movimentacoes
-                   (tipo, categoria, valor, descricao, caixa_id, conta_id)
-                   VALUES ('saida', 'cancelamento_fiado', %s, %s, %s, %s)""",
-                (float(venda["total"]), f"Cancelamento venda fiado #{venda_id} — estorno",
-                 venda["caixa_id"], estorno_conta_id)
-            )
-
-        # Marca a venda como cancelada e limpa flags de fiado
-        conn.execute(
-            """UPDATE vendas_pdv
-               SET status = 'cancelada',
-                   fiado_pago = FALSE,
-                   fiado_data_pagamento = NULL,
-                   observacao = COALESCE(observacao || '; ', '') || %s
-               WHERE id = %s""",
-            (f"Cancelado por #{atendente['id']} em {date.today().isoformat()}", venda_id)
-        )
-
-        # Reverte o total de vendas no movimento de caixa (se ainda aberto)
-        if venda["caixa_movimento_id"]:
-            conn.execute(
-                "UPDATE caixa_movimentos SET total_vendas = total_vendas - %s WHERE id = %s AND status = 'aberto'",
-                (float(venda["total"]), venda["caixa_movimento_id"])
-            )
-
-    return RedirectResponse(url="/caixa/fiados?cancelado_ok=1", status_code=303)
+    from servico_cancelamento import JaCancelada, CancelamentoBloqueado, VendaNaoEncontrada, cancelar
+    avisos: list = []
+    try:
+        with conectar() as conn:
+            resultado = cancelar(conn, venda_id, motivo, atendente["id"])
+        return RedirectResponse(url="/caixa/fiados?cancelado_ok="
+                                f"{resultado['venda_id']}", status_code=303)
+    except CancelamentoBloqueado as e:
+        avisos = e.motivos
+    except JaCancelada as e:
+        avisos = (["Esta venda já foi cancelada com reversão registrada."]
+                  if e.com_prova else
+                  ["Esta venda já consta como cancelada no histórico legado — "
+                   "não existe prova de reversão associada. Nenhum efeito novo foi produzido."])
+    except VendaNaoEncontrada:
+        return HTMLResponse("<p>Venda não encontrada.</p>", status_code=404)
+    return await _pagina_cancelar(request, atendente, venda_id, avisos=avisos,
+                                  motivo_digitado=motivo)
 
 
 @router.post("/fiados/credito/{trabalhador_id}")
@@ -1770,8 +1837,11 @@ async def fechar_caixa(
         return redir
 
     with conectar() as conn:
+        # FOR UPDATE: serializa com o cancelamento (TASK_007). Ou a venda é
+        # cancelada antes do fechamento (e sai do total), ou o fechamento
+        # trava a sessão primeiro e o cancelamento seguinte é bloqueado.
         mov = conn.execute(
-            "SELECT * FROM caixa_movimentos WHERE id = %s AND status = 'aberto'",
+            "SELECT * FROM caixa_movimentos WHERE id = %s AND status = 'aberto' FOR UPDATE",
             (caixa_movimento_id,)
         ).fetchone()
         if not mov:
@@ -2001,7 +2071,8 @@ async def exportar_pdf_fechamento(request: Request, mov_id: int):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str,
-                         trabalhador: dict = None, via_caixa: bool = False) -> bytes:
+                         trabalhador: dict = None, via_caixa: bool = False,
+                         cancelamento: dict = None) -> bytes:
     ESC = b'\x1b'
     GS  = b'\x1d'
     LF  = b'\n'
@@ -2032,6 +2103,20 @@ def _gerar_bytes_escpos(venda: dict, itens: list, centro_nome: str,
     buf = bytearray()
     buf += INIT
     buf += ALINHAR_ESQU
+
+    if (venda.get('status') or '') == 'cancelada' or cancelamento:
+        buf += ALINHAR_CENT
+        buf += DUPLO_ON + NEGRITO_ON
+        buf += linha("CANCELADA")
+        buf += NEGRITO_OFF + DUPLO_OFF
+        buf += ALINHAR_ESQU
+        if cancelamento:
+            motivo = (cancelamento.get('motivo') or '')[:38]
+            buf += linha(f"Motivo: {motivo}")
+            buf += linha(f"Em: {(cancelamento.get('criado_em') or '')[:19]}")
+        else:
+            buf += linha("Cancelamento legado: sem prova de reversao")
+        buf += separador()
 
     # ── Itens em destaque (fonte dupla) ───────────────────────────────────────
     COLS_D = COLS // 2  # 21 colunas efetivas em fonte 2×2
@@ -2364,7 +2449,8 @@ def _gerar_payload_pix(chave: str, valor: float, descricao: str = "") -> str:
 
 
 def _gerar_recibo(venda, itens, centro_nome: str,
-                  trabalhador: dict = None, via_caixa: bool = False) -> str:
+                  trabalhador: dict = None, via_caixa: bool = False,
+                  cancelamento: dict = None) -> str:
     """Gera texto formatado para impressora de cupom 80 colunas."""
     from datetime import datetime
 
@@ -2377,6 +2463,20 @@ def _gerar_recibo(venda, itens, centro_nome: str,
     linhas.append(centro_nome.center(L))
     linhas.append("")
     linhas.append(f"COMPROVANTE DE VENDA #{venda['id']}".center(L))
+    if (venda.get("status") or "") == "cancelada" or cancelamento:
+        linhas.append(">>> V E N D A   C A N C E L A D A <<<".center(L))
+        if cancelamento:
+            instante = cancelamento.get("criado_em") or ""
+            try:
+                instante = datetime.strptime(instante[:19], "%Y-%m-%d %H:%M:%S") \
+                             .strftime("%d/%m/%Y %H:%M:%S")
+            except (ValueError, TypeError):
+                pass
+            linhas.append(f"Cancelada em: {instante}")
+            linhas.append(f"Por: {cancelamento.get('autor_nome') or '—'}")
+            linhas.append(f"Motivo: {(cancelamento.get('motivo') or '')[:60]}")
+        else:
+            linhas.append("Cancelamento do legado: sem prova de reversão.")
     linhas.append(f"Data: {data_str}    Hora: {hora_str}")
     linhas.append(f"Caixa: {venda['caixa_nome']}")
     if venda.get("atendente_nome"):

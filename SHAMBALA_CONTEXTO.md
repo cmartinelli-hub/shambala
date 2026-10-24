@@ -465,6 +465,18 @@ total (NUMERIC 10,2), forma_pagamento (especie/pix/fiado), troco (NUMERIC 10,2)
 status (concluida/cancelada), atendente_id (FK atendentes nullable), observacao
 caixa_movimento_id (FK caixa_movimentos), doacao_valor (NUMERIC 10,2)
 fiado_trabalhador_id (FK), fiado_pago, fiado_data_pagamento, fiado_credito_usado (NUMERIC 10,2)
+criada_em (TEXT, instante do servidor America/Sao_Paulo, timestamp(0)) — metadado PROSPECTIVO
+  gravado só a partir da TASK_007; vendas antigas permanecem NULL e nunca são backfilled
+```
+
+**`vendas_pdv_cancelamento`** (TASK_007 — prova durável do cancelamento efetivo)
+```
+id, venda_id (FK vendas_pdv, UNIQUE — um cancelamento efetivo por venda),
+atendente_id (FK atendentes, autor), motivo (NOT NULL, não vazio),
+criado_em (TEXT, instante SP), sessao_movimento_id (FK nullable),
+valor_sessao_revertido, total_venda, doacao_venda, forma_pagamento,
+estoque_revertido (JSON com saldo anterior/posterior por produto)
+FKs RESTRICT: a prova sobrevive à inativação do autor; sem exclusão em cascata
 ```
 
 **`vendas_pdv_itens`**
@@ -481,7 +493,8 @@ GET       /caixa/pdv?caixa_id=N             ← PDV (terminal de venda)
 POST      /caixa/pdv/finalizar              ← finalizar venda (form)
 GET       /caixa/pix-qr?valor=X&caixa_id=N ← gera QR PIX + transmite ao segundo monitor
 GET       /caixa/vendas?caixa_id=N&data=D   ← histórico de vendas do dia
-POST      /caixa/vendas/{id}/cancelar       ← cancelar venda
+POST      /caixa/vendas/{id}/cancelar       ← cancelamento integral rastreável (TASK_007; admin, motivo+confirmação)
+GET       /caixa/vendas/{id}/cancelar       ← tela de prévia/confirmação do cancelamento
 GET       /caixa/vendas/{id}/comprovante    ← comanda imprimível (popup/print)
 GET       /caixa/produtos/buscar?q=X        ← JSON autocomplete + código de barras
 GET       /caixa/produtos                   ← lista de produtos
@@ -527,6 +540,33 @@ POST      /caixa/caixas/{id}/toggle-ativo   ← ativar/desativar caixa
 - Validação completa antes de qualquer escrita; venda, itens, estoque, crédito e
   acumuladores da sessão vivem numa única transação (`conectar()`), com lock de
   trabalhador e da linha de sessão — falha em qualquer gravação reverte tudo.
+
+### Cancelamento de venda com reversão rastreável (TASK_007 / FIN-02)
+- Um único serviço (`servico_cancelamento.py`) decide e executa; as rotas
+  `GET/POST /caixa/vendas/{id}/cancelar` e `/caixa/fiados/{venda}/cancelar` apenas
+  delegam. Cancelar é restrito a administrador (`e_admin`), exige motivo não vazio e
+  confirmação explícita após prévia dos efeitos.
+- `avaliar()` classifica com os vínculos realmente persistidos: elegível só quando o
+  efeito é comprovável — sessão aberta do mesmo caixa, baixas de estoque originais por
+  item, fiado não pago sem recebimento nem movimento de crédito posterior à venda
+  (`criada_em`). Tudo ambíguo (sessão ausente/fechada/externa, venda sem vínculo,
+  fiado pago/parcial, legado sem instante) **bloqueia com motivo legível e zero efeitos**
+  — nada é recalculado nem "encaixado" (recalcular a sessão inteira é FIN-04).
+- `cancelar()` executa numa transação única, com travas na ordem venda → produtos
+  (`ORDER BY id`) → `caixa_movimentos` (`status='aberto'`): devolve o estoque com
+  movimento `entrada` compensatório sobre o saldo atual travado, subtrai `total + doação`
+  do `total_vendas` da sessão, muda `status='cancelada'` e grava a prova durável em
+  `vendas_pdv_cancelamento` (motivo, autor, instante, valor revertido, estoque
+  revertido; UNIQUE(venda_id) dá idempotência no banco). Documentos originais nunca
+  são apagados.
+- Fechamento de caixa passou a travar a sessão (`FOR UPDATE`), serializando com o
+  cancelamento; totais operacionais excluem `cancelada`, o histórico mostra o
+  cancelamento quando existe, e o comprovante de venda cancelada traz o aviso — com a
+  frase "sem prova de reversão" para o legado já cancelado.
+- Metadado prospectivo: `vendas_pdv.criada_em` (instante America/Sao_Paulo, gravado na
+  finalização). Linhas antigas ficam NULL e nunca são preenchidas por heurística.
+- Fora do escopo (bloqueado, não implementado): reembolso de fiado pago (FIN-06),
+  lançamento financeiro após fechamento (FIN-03/FIN-04), devolução parcial/perda.
 
 ### PIX (geração de payload)
 - Payload EMV completo com CRC16 (`_gerar_payload_pix` em `rotas/caixa.py`)
@@ -812,7 +852,8 @@ GET       /caixa/pdv                    ← terminal de venda
 POST      /caixa/pdv/finalizar
 GET       /caixa/pix-qr                 ← gera e transmite QR Code PIX
 GET       /caixa/vendas                 ← histórico de vendas
-POST      /caixa/vendas/{id}/cancelar
+GET       /caixa/vendas/{id}/cancelar   ← prévia/confirmação (TASK_007)
+POST      /caixa/vendas/{id}/cancelar   ← cancelamento integral rastreável (TASK_007)
 GET       /caixa/vendas/{id}/comprovante
 GET       /caixa/produtos/buscar        ← autocomplete + código de barras
 GET       /caixa/produtos
@@ -887,6 +928,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `servico_correcao_presenca.py` | Escrita corrigida única da presença (TASK_004): validar, travar, conferir o estado, aplicar e auditar na mesma transação |
 | `servico_codigo_trabalhador.py` | Regra única do código de 4 dígitos: emitir, trocar, preparar, resolver, QR |
 | `servico_pdv.py` | Precificação do PDV no servidor (TASK_006/FIN-01): validar quantidades, consultar preço vigente com trava, somar em Decimal ROUND_HALF_UP e detectar divergência de preço sem escrever nada |
+| `servico_cancelamento.py` | Cancelamento de venda (TASK_007/FIN-02): avaliar elegibilidade pelos vínculos persistidos e reverter só efeitos comprováveis (estoque, sessão, doação) numa transação única com prova em `vendas_pdv_cancelamento` |
 | `preparar_codigos_trabalhadores.py` | Operação local: emite os códigos que faltam (simulação / `--aplicar`) |
 | `requirements.txt` | Dependências Python do projeto |
 | `instalar.sh` | Script de instalação automatizada |
@@ -912,7 +954,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `rotas/doacoes.py` | Cestas básicas, rastreamento |
 | `rotas/mala_direta.py` | Envio em massa WhatsApp/email |
 | `rotas/permissoes.py` | Controle RBAC (grupos + permissões Unix ler/escrever/apagar) |
-| `rotas/caixa.py` | PDV, produtos, caixas, QR Code PIX, histórico de vendas, comprovante — finalização usa `servico_pdv` como única fonte de valores |
+| `rotas/caixa.py` | PDV, produtos, caixas, QR Code PIX, histórico de vendas, comprovante — finalização usa `servico_pdv` como única fonte de valores; cancelamento (GET/POST) e fechamento delegam ao `servico_cancelamento` / travam a sessão |
 
 ---
 
@@ -1118,6 +1160,7 @@ shambala/
 - ✅ Terminal de presença fixo na entrada: QR lido por câmera e digitação (TASK_003)
 - ✅ Gestão do dia, correções retroativas auditadas e relatórios de presença (TASK_004)
 - ✅ PDV com preços e totais calculados no servidor; divergência de preço revisada sem escrita (TASK_006 / FIN-01)
+- ✅ Cancelamento de venda com reversão rastreável dos efeitos comprováveis, idempotência pelo banco e prova durável; casos ambíguos bloqueados sem efeito (TASK_007 / FIN-02)
 - ✅ Mala direta via WhatsApp e email
 - ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas

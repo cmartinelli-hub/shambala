@@ -112,6 +112,22 @@
         <div class="info">Comanda #{{ venda.id }} &mdash; {{ venda.data_venda|data_br }} &mdash; {{ venda.caixa_nome }}</div>
     </div>
 
+    {% if venda.status == 'cancelada' or cancelamento %}
+    <div style="text-align:center;margin:8px 0;padding:8px;border:2px solid #c00;border-radius:4px;color:#c00;font-weight:bold">
+        <div style="font-size:12pt">V E N D A   C A N C E L A D A</div>
+        {% if cancelamento %}
+        <div style="font-size:8pt;font-weight:normal;margin-top:4px">
+            Cancelada em {{ cancelamento.criado_em|data_hora_br }} por {{ cancelamento.autor_nome or '—' }}<br>
+            Motivo: {{ cancelamento.motivo }}
+        </div>
+        {% else %}
+        <div style="font-size:8pt;font-weight:normal;margin-top:4px">
+            Cancelamento do legado: sem prova de reversão associada.
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="itens">
         {% for item in itens %}
         <div class="item">
