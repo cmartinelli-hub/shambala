@@ -204,7 +204,8 @@ UNIQUE(trabalhador_id, dia_semana)
 ```
 id, trabalhador_id (FK), data (DATE), dia_trabalho_id (FK nullable)
 presente (0/1), hora_chegada (TEXT nullable), hora_saida (TEXT nullable)
-origem_chegada (TEXT nullable: terminal_qr | terminal_codigo | recepcao)
+origem_chegada (TEXT nullable: terminal_qr | terminal_codigo | recepcao
+                 | correcao_administrativa)
 UNIQUE(trabalhador_id, data)   ← a data é própria; dia_trabalho é opcional
 ```
 A presença não depende de existir dia de atendimento; `data` é sempre a data
@@ -217,6 +218,38 @@ por migração idempotente (`banco._migrar`) e só é escrita por
 `servico_presenca.registrar_chegada(origem=…)`; `OrigemInvalida` recusa origem
 desconhecida. Repetição não altera horário nem origem: quem já está presente
 mantém a primeira chegada.
+
+`correcao_administrativa` **não é canal de chegada**: é a marca de que o fato
+foi escrito pelo serviço de correção (TASK_004). `registrar_chegada` recusa
+essa origem explicitamente; só `servico_correcao_presenca.aplicar_correcao` a
+produce. `registrar_ausencia_explicita` nunca rebaixa uma presença: sobre fato
+presente devolve `exige_correcao` e não grava nada — alteração de fato já
+lançado passa obrigatoriamente pela trilha auditada.
+
+### `trabalhador_presenca_correcao`
+```
+id, trabalhador_id (FK RESTRICT), data_fato (DATE),
+operacao (lancamento_retroativo | correcao_horario | conversao_ausencia
+          | conversao_presenca | anulacao),
+anterior_* / novo_* (presente, hora_chegada, hora_saida, origem,
+                     dia_trabalho_id)   ← snapshots planos; todos os
+                     anterior_* nulos = não havia registro; todos os novo_*
+                     nulos = anulado (Sem registro)
+motivo (TEXT NOT NULL, nunca vazio), atendente_id (FK nullable),
+criado_em (TEXT com fuso de São Paulo)
+```
+Apêndice de auditoria: a interface **não** faz UPDATE nem DELETE aqui; cada
+correção grava fato + linha de auditoria **na mesma transação** (falhou a
+auditoria, o fato não persiste). A anulação é um `DELETE` da linha operacional
+— como ausência de linha já significa "Sem registro" em todo o código, o
+`UNIQUE(trabalhador_id, data)` fica livre e uma chegada legítima posterior
+recria o fato sem apagar nada do histórico; as linhas de auditoria são
+auto-suficientes (não referenciam o id descartável da presença). A escrita
+concorrência é serializada por `FOR UPDATE` na linha do trabalhador (a mesma
+trava da chegada do terminal) e protegida contra sobrescreimento pelo token
+`estado_base` do formulário, re-confestado depois do bloqueio: divergiu,
+`ConflitoCorrecao` e nada é gravado. Fatos anteriores à TASK_004 não têm linha
+de auditoria — é o legado esperado, nunca inventado.
 
 ### `trabalhador_codigo`
 ```
@@ -321,6 +354,9 @@ padrão**: quem não tem a linha em `grupos_permissoes` não acessa nem vê o
 card no menu. Membros do grupo **Admin (id=1)** têm bypass total. Chaves de
 módulo: `ROTULOS_ROTA` em `rotas/permissoes.py` (fonte da tela de
 Permissões). Seed de migração dos grupos antigos: `semear_permissoes.py`.
+Módulos novos **nunca são concedidos em seed** — `checkin.trabalhadores.correcoes`
+(TASK_004) nasce sem linha em nenhum grupo: só Admin enxerga, até alguém
+conceder na tela de Permissões.
 
 ### `usuarios_grupos`
 ```
@@ -630,10 +666,22 @@ POST      /cadastros/trabalhadores/{id}/codigo/gerar
 POST      /cadastros/trabalhadores/{id}/codigo/trocar (confirmar=1)
 GET       /cadastros/trabalhadores/{id}/carteirinha   ← impressão individual
 GET       /cadastros/trabalhadores/carteirinhas?ids=… | ?todos=ativos  ← lote A4
-GET       /checkin-trabalhador                 ← presença (módulo checkin.trabalhadores)
+GET       /checkin-trabalhador                 ← gestão do dia (módulo checkin.trabalhadores):
+                                          data consultável (?data=, default hoje SP),
+                                          busca + filtros server-side, dia passado é
+                                          consulta somente leitura; refresco parcial
+                                          sem recarregar a página
+GET       /checkin-trabalhador/dados           ← JSON da grade (mesma guarda `ler`)
 POST      /checkin-trabalhador/{id}/presente
-POST      /checkin-trabalhador/{id}/ausente
-GET       /relatorios/presenca-trabalhadores   ← relatório mensal por dia
+POST      /checkin-trabalhador/{id}/ausente   ← nunca rebaixa presença: sobre fato
+                                          presente devolve o aviso que aponta a
+                                          correção autorizada
+GET/POST  /checkin-trabalhador/{id}/correcao  ← correções e lançamentos retroativos
+                                          (módulo checkin.trabalhadores.correcoes;
+                                          GET=ler, POST=escrever; motivo obrigatório;
+                                          data passada/hoje; conflito detectado)
+GET       /relatorios/presenca-trabalhadores   ← período/dia (7 dias)/origem; sem
+                                          percentuais; inativos com fato participam
 
 POST      /terminal/ativar               ← operador (checkin.trabalhadores:escrever) habilita
                                           o aparelho da entrada; encerra a sessão COMUM
@@ -802,6 +850,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `maiusculas.py` | Capitalização inteligente de nomes |
 | `normalizar_telefones.py` | Padronização de telefones para `(XX) XXXXX-XXXX` |
 | `servico_presenca.py` | Regra única da presença do trabalhador (chegada, ausência, data SP) |
+| `servico_correcao_presenca.py` | Escrita corrigida única da presença (TASK_004): validar, travar, conferir o estado, aplicar e auditar na mesma transação |
 | `servico_codigo_trabalhador.py` | Regra única do código de 4 dígitos: emitir, trocar, preparar, resolver, QR |
 | `preparar_codigos_trabalhadores.py` | Operação local: emite os códigos que faltam (simulação / `--aplicar`) |
 | `requirements.txt` | Dependências Python do projeto |
@@ -1030,6 +1079,8 @@ shambala/
 - ✅ Dias de atendimento configuráveis
 - ✅ Gestão de trabalhadores com presença (TASK_001)
 - ✅ Códigos de 4 dígitos e carteirinhas com QR imprimíveis (TASK_002)
+- ✅ Terminal de presença fixo na entrada: QR lido por câmera e digitação (TASK_003)
+- ✅ Gestão do dia, correções retroativas auditadas e relatórios de presença (TASK_004)
 - ✅ Mala direta via WhatsApp e email
 - ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas

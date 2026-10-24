@@ -5,8 +5,11 @@
 <a href="/menu" class="btn-voltar">← Menu</a>
 <div class="cabecalho-secao">
     <div>
-        <h1>Check-in de Trabalhadores</h1>
-        <p class="subtitulo">📅 {{ dia.data | data_br }} — registre a chegada; não é preciso abrir o dia de atendimento</p>
+        <h1>Gestão do dia — Presença de Trabalhadores</h1>
+        <p class="subtitulo">📅 {{ data_exibida }} — {{ dia_nome }}
+            {%- if data == hoje %} (hoje){% endif %} ·
+            ✔ {{ qtd_presentes }} presente{{ 's' if qtd_presentes != 1 }} ·
+            registro pela chegada, sem precisar abrir o dia de atendimento</p>
         {% if pode_ativar_terminal %}
         <div class="terminal-ativar">
             <form method="post" action="/terminal/ativar" onsubmit="return confirm('Ativar o terminal de presença NESTE aparelho? A sua sessão de administração neste navegador será encerrada; para voltar ao sistema é preciso entrar de novo.');">
@@ -24,39 +27,54 @@
 </div>
 {% endif %}
 
-{% if erro %}
-<div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
-    <span>{{ erro }}</span>
+{% if somente_leitura %}
+<div class="form-aviso" style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
+    <span>🔒 {{ data_exibida }} é dia passado — consulta somente leitura.
+        Para corrigir ou lançar retroativamente use <strong>Corrigir/lançar</strong>
+        {%- if not pode_corrigir %} (exige a permissão de correções){% endif %}.</span>
 </div>
 {% endif %}
 
-{% if not trabalhadores_agenda %}
+<div id="trab-checkin-erro-conexao" hidden
+     style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
+    <span>⚠️ Não foi possível atualizar agora — mostrando os últimos dados carregados.</span>
+</div>
+
+<!-- Consulta: formulário GET, funciona sem JavaScript -->
+<form method="get" action="/checkin-trabalhador" id="gestao-form"
+      class="trab-checkin-busca" style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-bottom:1rem">
+    <button type="button" class="btn btn-pequeno" data-nav="prev" title="Dia anterior">←</button>
+    <input type="date" name="data" value="{{ data }}" class="trab-checkin-busca-input" style="width:auto">
+    <button type="button" class="btn btn-pequeno" data-nav="next" title="Dia seguinte">→</button>
+    <button type="button" class="btn btn-pequeno" data-nav="hoje">Hoje</button>
+
+    <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar por nome…"
+           class="trab-checkin-busca-input" autocomplete="off" style="flex:1;min-width:10rem">
+    <select name="filtro">
+        <option value="todos" {% if filtro == 'todos' %}selected{% endif %}>Todos</option>
+        <option value="presentes" {% if filtro == 'presentes' %}selected{% endif %}>Presentes</option>
+        <option value="sem_registro" {% if filtro == 'sem_registro' %}selected{% endif %}>Sem registro</option>
+        <option value="ausencias" {% if filtro == 'ausencias' %}selected{% endif %}>Ausências registradas</option>
+    </select>
+    <label style="display:inline-flex;align-items:center;gap:.3rem">
+        <input type="checkbox" name="so_agenda" value="1" {% if so_agenda %}checked{% endif %}>
+        só agenda do dia
+    </label>
+    <button type="submit" class="btn btn-secundario">Aplicar</button>
+    <button type="button" class="btn btn-pequeno" id="trab-checkin-atualizar" title="Recarregar a lista sem trocar de página">↻ Atualizar</button>
+</form>
+
+{% if not lista %}
 <div class="vazio">
     <div class="vazio-icone">🤝</div>
-    <h3>Nenhum trabalhador ativo cadastrado</h3>
-    <p>Cadastre os trabalhadores em Cadastros → Trabalhadores.</p>
+    <h3>Nenhum trabalhador nesta consulta</h3>
+    <p>Ajuste a busca/filtros ou cadastre trabalhadores em Cadastros → Trabalhadores.</p>
 </div>
 {% else %}
 
-{% set presenca_map = {} %}
-{% for p in presencas %}
-{% set _ = presenca_map.__setitem__(p.trabalhador_id, p) %}
-{% endfor %}
-
-<!-- Barra de busca -->
-<div class="trab-checkin-busca">
-    <span class="trab-checkin-busca-icon">🔍</span>
-    <input type="text" id="trab-checkin-input" placeholder="Buscar trabalhador…"
-           class="trab-checkin-busca-input" autocomplete="off">
-    <span class="trab-checkin-contador" id="trab-checkin-contador">
-        {{ trabalhadores_agenda|length }} trabalhador{{ 'es' if trabalhadores_agenda|length != 1 }}
-    </span>
-</div>
-
 <div class="trab-checkin-grid" id="trab-checkin-grid">
-    {% for t in trabalhadores_agenda %}
-    <div class="trab-checkin-card">
+    {% for t in lista %}
+    <div class="trab-checkin-card" data-id="{{ t.id }}">
         <div class="trab-checkin-header">
             <div class="trab-checkin-avatar">
                 {% if t.foto_trabalhador %}
@@ -67,21 +85,23 @@
             </div>
             <div class="trab-checkin-info">
                 <h3 class="trab-checkin-nome">{{ t.nome_completo }}</h3>
-                {% if t.na_agenda %}
-                <span class="trab-checkin-status status-aguardando">📌 agenda de hoje</span>
+                {% if not t.ativo %}
+                <span class="trab-checkin-status" style="background:#efebe9;color:#5d4037">🚫 inativo (histórico)</span>
                 {% endif %}
-                {% if t.id in presenca_map %}
-                    {% if presenca_map[t.id].presente %}
-                    <span class="trab-checkin-status status-presente">✔ Presente{% if presenca_map[t.id].hora_chegada %} — {{ presenca_map[t.id].hora_chegada }}{% endif %}</span>
-                    {% else %}
-                    <span class="trab-checkin-status status-ausente">✕ Ausente</span>
-                    {% endif %}
-                {% else %}
+                {% if t.na_agenda %}
+                <span class="trab-checkin-status status-aguardando">📌 agenda deste dia</span>
+                {% endif %}
+                {% if t.presente is none %}
                 <span class="trab-checkin-status status-aguardando">⏳ Sem registro</span>
+                {% elif t.presente %}
+                <span class="trab-checkin-status status-presente">✔ Presente{% if t.hora_chegada %} — {{ t.hora_chegada }}{% endif %}
+                    · {{ rotulo_origem(t.origem_chegada) }}</span>
+                {% else %}
+                <span class="trab-checkin-status status-ausente">✕ Ausência registrada</span>
                 {% endif %}
             </div>
         </div>
-        {% if t.id not in presenca_map %}
+        {% if not somente_leitura and pode_escrever and t.ativo and t.presente is none %}
         <div class="trab-checkin-acoes">
             <form method="post" action="/checkin-trabalhador/{{ t.id }}/presente" style="display:inline">
                 <button type="submit" class="btn btn-trab-presente">✔ Presente</button>
@@ -91,36 +111,128 @@
             </form>
         </div>
         {% endif %}
+        {% if pode_corrigir %}
+        <div class="trab-checkin-acoes">
+            <a class="btn btn-pequeno btn-secundario"
+               href="/checkin-trabalhador/{{ t.id }}/correcao?data={{ data }}">✎ Corrigir/lançar nesta data</a>
+        </div>
+        {% endif %}
     </div>
     {% endfor %}
 </div>
+{% endif %}
 
 <script>
 (function() {
-    const input = document.getElementById('trab-checkin-input');
+    const form = document.getElementById('gestao-form');
+    if (!form) return;
     const grid = document.getElementById('trab-checkin-grid');
-    const contador = document.getElementById('trab-checkin-contador');
-    const cards = grid ? Array.from(grid.querySelectorAll('.trab-checkin-card')) : [];
-    if (!input || !grid) return;
+    const inputData = form.querySelector('[name="data"]');
+    const avisoErro = document.getElementById('trab-checkin-erro-conexao');
+    const hoje = "{{ hoje }}";
 
-    input.addEventListener('input', () => {
-        const q = input.value.trim().toLowerCase();
-        let visiveis = 0;
-        cards.forEach(card => {
-            const nome = card.querySelector('.trab-checkin-nome');
-            if (!nome) return;
-            const match = nome.textContent.toLowerCase().includes(q);
-            card.style.display = match ? '' : 'none';
-            if (match) visiveis++;
+    // Navegação de data preserva busca e filtros (mesma página, via GET)
+    form.querySelectorAll('[data-nav]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.nav === 'hoje') {
+                inputData.value = hoje;
+            } else {
+                const d = new Date(inputData.value + 'T12:00:00Z');
+                d.setUTCDate(d.getUTCDate() + (btn.dataset.nav === 'prev' ? -1 : 1));
+                inputData.value = d.toISOString().slice(0, 10);
+            }
+            form.submit();
         });
-        const total = cards.length;
-        if (q) {
-            contador.textContent = `${visiveis} de ${total} encontrado${visiveis !== 1 ? 's' : ''}`;
-        } else {
-            contador.textContent = `${total} trabalhador${total !== 1 ? 'es' : ''}`;
-        }
     });
+
+    const podeEscrever = {{ 'true' if (pode_escrever and not somente_leitura) else 'false' }};
+    const podeCorrigir = {{ 'true' if pode_corrigir else 'false' }};
+    const ROTULOS_ORIGEM = {
+        terminal_qr: "QR",
+        terminal_codigo: "Código digitado",
+        recepcao: "Recepção",
+        correcao_administrativa: "Correção administrativa"
+    };
+
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g,
+            c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function cardHTML(t) {
+        const foto = t.foto_trabalhador
+            ? '/static/fotos/' + encodeURIComponent(t.foto_trabalhador)
+            : '/cadastros/trabalhadores/foto-placeholder/' + encodeURIComponent((t.nome_completo[0] || '?'));
+        let selos = '';
+        if (!t.ativo) selos += '<span class="trab-checkin-status" style="background:#efebe9;color:#5d4037">🚫 inativo (histórico)</span>';
+        if (t.na_agenda) selos += '<span class="trab-checkin-status status-aguardando">📌 agenda deste dia</span>';
+        let estado;
+        if (t.presente === null || t.presente === undefined)
+            estado = '<span class="trab-checkin-status status-aguardando">⏳ Sem registro</span>';
+        else if (t.presente)
+            estado = '<span class="trab-checkin-status status-presente">✔ Presente' +
+                (t.hora_chegada ? ' — ' + esc(t.hora_chegada) : '') +
+                ' · ' + esc(ROTULOS_ORIGEM[t.origem_chegada] || 'Não informada') + '</span>';
+        else
+            estado = '<span class="trab-checkin-status status-ausente">✕ Ausência registrada</span>';
+
+        let acoes = '';
+        if (podeEscrever && t.ativo && (t.presente === null || t.presente === undefined)) {
+            acoes += '<div class="trab-checkin-acoes">' +
+                '<form method="post" action="/checkin-trabalhador/' + t.id + '/presente" style="display:inline">' +
+                '<button type="submit" class="btn btn-trab-presente">✔ Presente</button></form> ' +
+                '<form method="post" action="/checkin-trabalhador/' + t.id + '/ausente" style="display:inline">' +
+                '<button type="submit" class="btn btn-trab-ausente">✕ Ausente</button></form></div>';
+        }
+        if (podeCorrigir) {
+            acoes += '<div class="trab-checkin-acoes"><a class="btn btn-pequeno btn-secundario" ' +
+                'href="/checkin-trabalhador/' + t.id + '/correcao?data=' + encodeURIComponent(atualData()) +
+                '">✎ Corrigir/lançar nesta data</a></div>';
+        }
+
+        return '<div class="trab-checkin-card" data-id="' + t.id + '">' +
+            '<div class="trab-checkin-header">' +
+            '<div class="trab-checkin-avatar"><img src="' + foto + '" alt="' + esc(t.nome_completo) + '" class="trab-checkin-avatar-img"></div>' +
+            '<div class="trab-checkin-info"><h3 class="trab-checkin-nome">' + esc(t.nome_completo) + '</h3>' +
+            selos + estado + '</div></div>' + acoes + '</div>';
+    }
+
+    let controlador = null;
+    let emFuga = false;
+
+    function atualData() { return inputData.value; }
+
+    async function atualizar() {
+        if (emFuga) return;
+        emFuga = true;
+        if (controlador) controlador.abort();
+        controlador = new AbortController();
+        const params = new URLSearchParams(new FormData(form));
+        try {
+            const resp = await fetch('/checkin-trabalhador/dados?' + params.toString(),
+                                     { signal: controlador.signal });
+            if (!resp.ok) throw new Error('http ' + resp.status);
+            const dados = await resp.json();
+            if (grid) grid.innerHTML = (dados.lista || []).map(cardHTML).join('');
+            avisoErro.hidden = true;
+            // Data consultada pode ter virado para "hoje" no servidor
+            if (dados.data && dados.data !== inputData.value) inputData.value = dados.data;
+        } catch (e) {
+            if (e.name !== 'AbortError') avisoErro.hidden = false;  // mantém resultados
+        } finally {
+            emFuga = false;
+        }
+    }
+
+    document.getElementById('trab-checkin-atualizar').addEventListener('click', atualizar);
+
+    // Polling moderado só enquanto a tela está visível e mostrando hoje;
+    // dia passado é estático e não precisa de refresco automático.
+    setInterval(() => {
+        if (document.visibilityState === 'visible' && atualData() === hoje) {
+            atualizar();
+        }
+    }, 30000);
 })();
 </script>
-{% endif %}
 {% endblock %}

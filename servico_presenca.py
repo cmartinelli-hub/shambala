@@ -11,9 +11,29 @@ A origem da chegada (`origem_chegada`) é gravada junto com o horário:
 `recepcao`, `terminal_qr` ou `terminal_codigo`. Registros anteriores a este
 campo ficam com origem nula — origem desconhecida (legado) — e nunca é
 presumida nem preenchida retroativamente.
+
+`correcao_administrativa` (TASK_004) é origem de FATO LANÇADO/CONVERTIDO pelo
+fluxo autorizado de correções — quem a escreve é exclusivamente
+`servico_correcao_presenca`. `registrar_chegada` a recusa: nem recepção nem
+terminal podem fabricar origem administrativa (ou obter tratamento privilegiado).
 """
 
-ORIGENS_CHEGADA = ("recepcao", "terminal_qr", "terminal_codigo")
+ORIGENS_CHEGADA = ("recepcao", "terminal_qr", "terminal_codigo",
+                   "correcao_administrativa")
+ORIGEM_ADMINISTRATIVA = "correcao_administrativa"
+
+# Rótulo por origem para as telas. NULL não tem chave: é "Não informada"
+# (legado), nunca presumida.
+ROTULOS_ORIGEM = {
+    "terminal_qr": "QR",
+    "terminal_codigo": "Código digitado",
+    "recepcao": "Recepção",
+    ORIGEM_ADMINISTRATIVA: "Correção administrativa",
+}
+
+
+def rotulo_origem(origem):
+    return ROTULOS_ORIGEM.get(origem, "Não informada")
 
 
 class OrigemInvalida(Exception):
@@ -56,6 +76,10 @@ def registrar_chegada(conn, trabalhador_id: int, origem: str = "recepcao") -> di
     """
     if origem not in ORIGENS_CHEGADA:
         raise OrigemInvalida(f"origem de chegada desconhecida: {origem!r}")
+    if origem == ORIGEM_ADMINISTRATIVA:
+        # Origem de correção autorizada, escrita só pelo serviço de correções.
+        # Chegada normal (recepção/terminal) não pode produzi-la.
+        raise OrigemInvalida("origem administrativa não é chegada normal")
 
     # A mesma trava de linha que garantir_codigo/trocar_codigo usam: quem chegar
     # junto (terminal, recepção, troca de código) espera a vez e re-lê o estado
@@ -115,13 +139,26 @@ def registrar_chegada(conn, trabalhador_id: int, origem: str = "recepcao") -> di
 
 
 def registrar_ausencia_explicita(conn, trabalhador_id: int) -> dict:
-    """Marca ausência explícita na data local (mantém o que a tela já oferecia).
+    """Registra ausência explícita na data local, quando isso não altera um fato.
 
-    Ausência nunca apaga horário de chegada já registrado; ausência de
-    registro não é falta — aqui só existe registro explícito.
+    TASK_004 redesenhou esta função: o upsert antigo rebaixava uma presença
+    para ausência em silêncio (sem trava, sem motivo, sem auditoria) e deixava
+    o horário velho pendurado na linha. Hoje:
+
+    - sem registro na data: cria a ausência (lançamento normal da recepção,
+      `resultado="registrada"`) — não é correção e não gera auditoria;
+    - já ausente: não escreve nada (`"ja_ausente"`) — repetição não fabrica
+      correção nem muda horário;
+    - já presente: RECUSA (`"exige_correcao"`) — alterar um fato já lançado
+      só pelo fluxo autorizado de correções, com motivo e auditoria.
+
+    Ausência sem registro não é falta; ausência registrada nunca carrega
+    horário de chegada.
     """
+    # A mesma trava da chegada: recepção marcando ausente e terminal marcando
+    # presença no mesmo instante não podem cruzar entre leitura e escrita.
     trab = conn.execute(
-        "SELECT id, nome_completo, ativo FROM trabalhadores WHERE id = %s",
+        "SELECT id, nome_completo, ativo FROM trabalhadores WHERE id = %s FOR UPDATE",
         (trabalhador_id,),
     ).fetchone()
     if not trab:
@@ -130,21 +167,44 @@ def registrar_ausencia_explicita(conn, trabalhador_id: int) -> dict:
         raise TrabalhadorInativo(f"trabalhador {trabalhador_id} está inativo")
 
     data, _hora = _agora_sao_paulo(conn)
+    atual = conn.execute(
+        """SELECT presente, hora_chegada FROM trabalhador_presenca
+            WHERE trabalhador_id = %s AND data = %s::date""",
+        (trabalhador_id, data),
+    ).fetchone()
+    if atual and atual["presente"]:
+        return {
+            "resultado": "exige_correcao",
+            "trabalhador_id": trab["id"],
+            "nome_completo": trab["nome_completo"],
+            "data": data,
+            "hora_chegada": atual["hora_chegada"],
+            "presente": 1,
+            "criado": False,
+        }
+    if atual:
+        return {
+            "resultado": "ja_ausente",
+            "trabalhador_id": trab["id"],
+            "nome_completo": trab["nome_completo"],
+            "data": data,
+            "hora_chegada": atual["hora_chegada"],
+            "presente": 0,
+            "criado": False,
+        }
     row = conn.execute(
         """INSERT INTO trabalhador_presenca
                (trabalhador_id, data, presente, hora_chegada, hora_saida)
            VALUES (%s, %s::date, 0, NULL, NULL)
-           ON CONFLICT (trabalhador_id, data) DO UPDATE
-             SET presente = 0
-           RETURNING (xmax = 0) AS criado, presente, hora_chegada,
-                     data::text AS data""",
+           RETURNING presente, data::text AS data""",
         (trabalhador_id, data),
     ).fetchone()
     return {
+        "resultado": "registrada",
         "trabalhador_id": trab["id"],
         "nome_completo": trab["nome_completo"],
         "data": row["data"],
-        "hora_chegada": row["hora_chegada"],
-        "presente": row["presente"],
-        "criado": bool(row["criado"]),
+        "hora_chegada": None,
+        "presente": 0,
+        "criado": True,
     }

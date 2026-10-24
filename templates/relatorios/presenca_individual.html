@@ -5,16 +5,18 @@
 <div class="cabecalho-secao">
     <h2>Presença do Trabalhador</h2>
     <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
+    <button type="button" class="btn btn-secundario" onclick="window.print()" title="Imprimir este relatório">🖨 Imprimir</button>
 </div>
 
 <!-- Filtro -->
-<form method="get" class="barra-busca" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
+<form method="get" class="barra-busca rel-controles" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
     <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
         Trabalhador
         <select name="trabalhador_id" style="padding:0.4rem 0.6rem;min-width:200px">
             <option value="">— Selecione —</option>
             {% for t in trabalhadores %}
-            <option value="{{ t.id }}" {% if t.id == trabalhador_id %}selected{% endif %}>{{ t.nome_completo }}</option>
+            <option value="{{ t.id }}" {% if t.id == trabalhador_id %}selected{% endif %}>
+                {{ t.nome_completo }}{% if not t.ativo %} (inativo){% endif %}</option>
             {% endfor %}
         </select>
     </label>
@@ -28,46 +30,56 @@
         Dia
         <select name="dia_semana" style="padding:0.4rem 0.6rem">
             <option value="" {% if not dia_semana %}selected{% endif %}>Todos</option>
-            {% for d in dias_atendimento %}
-            <option value="{{ d.dia_semana }}" {% if dia_semana == d.dia_semana|string %}selected{% endif %}>{{ d.descricao }}</option>
+            {% for nome in nomes_dia %}
+            <option value="{{ loop.index0 }}" {% if dia_semana == loop.index0|string %}selected{% endif %}>{{ nome }}</option>
             {% endfor %}
+        </select>
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Origem
+        <select name="origem" style="padding:0.4rem 0.6rem">
+            <option value="" {% if not origem %}selected{% endif %}>Todas</option>
+            <option value="terminal_qr" {% if origem == 'terminal_qr' %}selected{% endif %}>QR</option>
+            <option value="terminal_codigo" {% if origem == 'terminal_codigo' %}selected{% endif %}>Código digitado</option>
+            <option value="recepcao" {% if origem == 'recepcao' %}selected{% endif %}>Recepção</option>
+            <option value="correcao_administrativa" {% if origem == 'correcao_administrativa' %}selected{% endif %}>Correção administrativa</option>
+            <option value="nao_informada" {% if origem == 'nao_informada' %}selected{% endif %}>Não informada (legado)</option>
         </select>
     </label>
     <button type="submit" class="btn btn-primario">Filtrar</button>
 </form>
 
+{% if erro %}
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
+{% endif %}
+
 <p style="color:var(--cor-texto-suave);font-size:0.85rem;margin:-0.5rem 0 1rem">
-    Considera apenas os registros existentes no período (chegadas e ausências marcadas).
-    Ausência de registro não é falta; a taxa não mede assiduidade pela agenda.
+    Só os <strong>registros explícitos</strong> do período aparecem aqui: presença e ausência
+    registrada. Não ter lançamento <strong>não é falta</strong> e não entra em nenhuma conta;
+    lançamentos anulados deixaram de existir (ficam apenas no histórico de correções).
 </p>
 
 {% if trabalhador %}
 <!-- Resumo -->
 <div class="card-form" style="margin-bottom:1.5rem">
-    <p><strong>Trabalhador:</strong> {{ trabalhador.nome_completo }}</p>
-    <p>
-        <strong>Período:</strong> {{ data_ini | data_br }} — {{ data_fim | data_br }}
-    </p>
+    <p><strong>Trabalhador:</strong> {{ trabalhador.nome_completo }}
+        {%- if not trabalhador.ativo %} · <span style="background:#efebe9;color:#5d4037;border-radius:6px;padding:0.1rem 0.4rem;font-size:0.75rem">inativo — histórico preservado</span>{% endif %}</p>
+    <p><strong>Período:</strong> {{ data_ini | data_br }} — {{ data_fim | data_br }}</p>
     {% if not dia_semana %}
-    <p><strong>Serviço:</strong> Todos os dias</p>
+    <p><strong>Dia:</strong> Todos os dias da semana</p>
     {% else %}
-    <p><strong>Dia:</strong>
-        {% for d in dias_atendimento %}
-        {% if d.dia_semana|string == dia_semana %}{{ d.descricao }}{% endif %}
-        {% endfor %}
-    </p>
+    <p><strong>Dia:</strong> {{ nomes_dia[dia_semana|int] }}</p>
+    {% endif %}
+    {% if origem %}
+    <p><strong>Origem:</strong> {{ rotulo_origem(None if origem == 'nao_informada' else origem) }}</p>
     {% endif %}
     <p>
         <strong style="color:#27ae60">Presenças: {{ presencas }}</strong>
         &nbsp;&nbsp;
-        <strong style="color:#c0392b">Faltas: {{ faltas }}</strong>
-        {% if presencas + faltas > 0 %}
-        {% set freq = (100 * presencas / (presencas + faltas)) | round(1) %}
-        &nbsp;&nbsp;
-        Taxa de presença: <strong>{{ freq }}%</strong>
-        &nbsp;|&nbsp;
-        Faltas: <strong>{{ (100 - freq) | round(1) }}%</strong>
-        {% endif %}
+        <strong style="color:#c0392b">Ausências registradas: {{ ausencias }}</strong>
     </p>
 </div>
 
@@ -81,22 +93,27 @@
             <th style="text-align:center">Situação</th>
             <th style="text-align:center">Chegada</th>
             <th style="text-align:center">Saída</th>
+            <th style="text-align:center">Origem</th>
         </tr>
     </thead>
     <tbody>
         {% for r in registros %}
         <tr>
-            <td>{{ r.data | data_br }}</td>
+            <td>{{ r.data | data_br }}
+                {% if r.ajustado %}<span title="Este lançamento já foi corrigido (o detalhe está no histórico de alterações)"
+                    style="background:#ede7f6;color:#4527a0;border-radius:6px;padding:0.1rem 0.4rem;font-size:0.75rem">✎ ajustado</span>{% endif %}
+            </td>
             <td style="text-align:center">{{ r.dia_nome }}</td>
             <td style="text-align:center;font-weight:600">
                 {% if r.presente %}
                 <span style="color:#27ae60">Presente</span>
                 {% else %}
-                <span style="color:#c0392b">Faltou</span>
+                <span style="color:#c0392b">Ausência registrada</span>
                 {% endif %}
             </td>
             <td style="text-align:center">{{ r.hora_chegada or '—' }}</td>
             <td style="text-align:center">{{ r.hora_saida or '—' }}</td>
+            <td style="text-align:center">{{ rotulo_origem(r.origem_chegada) if r.presente else '—' }}</td>
         </tr>
         {% endfor %}
     </tbody>
@@ -106,5 +123,23 @@
     Nenhum registro de presença encontrado para este trabalhador no período.
 </p>
 {% endif %}
+{% elif not erro and trabalhador_id %}
+<p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
+    Trabalhador não encontrado.
+</p>
 {% endif %}
+{% endblock %}
+
+{% block estilos %}
+<style>
+@media (max-width: 480px) {
+    /* em telas de bolso as colunas apertam para caber sem vazamento horizontal */
+    th, td { padding: 0.5rem 0.35rem; font-size: 0.8rem; }
+}
+@media print {
+    .barra-busca, .btn, .btn-voltar, nav, .sidebar { display: none !important; }
+    table { width: 100%; }
+    a { color: inherit; text-decoration: none; }
+}
+</style>
 {% endblock %}

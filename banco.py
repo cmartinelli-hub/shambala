@@ -1171,6 +1171,44 @@ def criar_tabelas():
             )
         """)
 
+        # ── Auditoria de correções de presença (TASK_004) ──
+        # Trilha append-only de quem corrigiu/lançou retroativo/anulou. Não é uma
+        # plataforma geral de auditoria: é a tabela própria deste fato, no mesmo
+        # padrão de estoque_movimentos (anterior/posterior + motivo + atendente +
+        # instante do servidor em SP). Auto-suficiente por linha: guarda o fato
+        # inteiro (anterior e novo), inclusive quando a linha operacional some
+        # (anulação). Por isso referencia trabalhador_id + data_fato, nunca o id
+        # descartável de trabalhador_presenca, e a FK da pessoa é RESTRICT — a
+        # auditoria não desaparece junto com nada. Sem UPDATE/DELETE pela interface.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trabalhador_presenca_correcao (
+                id                       SERIAL PRIMARY KEY,
+                trabalhador_id           INTEGER NOT NULL REFERENCES trabalhadores(id) ON DELETE RESTRICT,
+                data_fato                DATE NOT NULL,
+                operacao                 TEXT NOT NULL CHECK (operacao IN
+                    ('lancamento_retroativo','correcao_horario','conversao_ausencia',
+                     'conversao_presenca','anulacao')),
+                anterior_presente        INTEGER,
+                anterior_hora_chegada    TEXT,
+                anterior_hora_saida      TEXT,
+                anterior_origem          TEXT,
+                anterior_dia_trabalho_id INTEGER,
+                novo_presente            INTEGER,
+                novo_hora_chegada        TEXT,
+                novo_hora_saida          TEXT,
+                novo_origem              TEXT,
+                novo_dia_trabalho_id     INTEGER,
+                motivo                   TEXT NOT NULL CHECK (motivo <> ''),
+                atendente_id             INTEGER REFERENCES atendentes(id),
+                criado_em                TEXT NOT NULL DEFAULT
+                    (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp::text
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS ix_presenca_correcao_trab_data
+                ON trabalhador_presenca_correcao (trabalhador_id, data_fato)
+        """)
+
         # ── Biblioteca ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS livros (

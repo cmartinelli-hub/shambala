@@ -5,9 +5,10 @@
 <div class="cabecalho-secao">
     <h2>Presenças dos Trabalhadores</h2>
     <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
+    <button type="button" class="btn btn-secundario" onclick="window.print()" title="Imprimir este relatório">🖨 Imprimir</button>
 </div>
 
-<form method="get" class="barra-busca" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
+<form method="get" class="barra-busca rel-controles" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
     <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
         De <input type="date" name="data_ini" value="{{ data_ini }}" style="padding:0.4rem 0.6rem">
     </label>
@@ -18,17 +19,43 @@
         Dia
         <select name="dia_semana" style="padding:0.4rem 0.6rem">
             <option value="" {% if not dia_semana %}selected{% endif %}>Todos</option>
-            {% for d in dias_atendimento %}
-            <option value="{{ d.dia_semana }}" {% if dia_semana == d.dia_semana|string %}selected{% endif %}>{{ d.descricao }}</option>
+            {% for nome in nomes_dia %}
+            <option value="{{ loop.index0 }}" {% if dia_semana == loop.index0|string %}selected{% endif %}>{{ nome }}</option>
             {% endfor %}
         </select>
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Origem
+        <select name="origem" style="padding:0.4rem 0.6rem">
+            <option value="" {% if not origem %}selected{% endif %}>Todas</option>
+            <option value="terminal_qr" {% if origem == 'terminal_qr' %}selected{% endif %}>QR</option>
+            <option value="terminal_codigo" {% if origem == 'terminal_codigo' %}selected{% endif %}>Código digitado</option>
+            <option value="recepcao" {% if origem == 'recepcao' %}selected{% endif %}>Recepção</option>
+            <option value="correcao_administrativa" {% if origem == 'correcao_administrativa' %}selected{% endif %}>Correção administrativa</option>
+            <option value="nao_informada" {% if origem == 'nao_informada' %}selected{% endif %}>Não informada (legado)</option>
+        </select>
+    </label>
+    <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem">
+        Trabalhador
+        <input type="number" name="trabalhador_id" value="{{ trabalhador_id or '' }}"
+               min="1" placeholder="todos" style="padding:0.4rem 0.6rem;width:7rem">
     </label>
     <button type="submit" class="btn btn-primario">Filtrar</button>
 </form>
 
+{% if erro %}
+<div class="form-erro">
+    <span class="form-erro-icone">⚠️</span>
+    <span>{{ erro }}</span>
+</div>
+{% endif %}
+
 <p style="color:var(--cor-texto-suave);font-size:0.85rem;margin:-0.5rem 0 1rem">
-    Contabiliza apenas os registros existentes no período (chegadas e ausências marcadas).
-    Ausência de registro não é falta; os percentuais não medem assiduidade pela agenda.
+    Contas apenas dos <strong>registros explícitos</strong> do período: o denominador é
+    cada lançamento existente (presença ou ausência registrada), não a agenda nem o total de dias.
+    Ausência de registro <strong>não é falta</strong>; lançamentos anulados não entram
+    (a correção fica no histórico, fora das contagens). O selo “inativo” mantém o passado
+    consultável — inativar não apaga a história de ninguém.
 </p>
 
 {% if trabalhadores %}
@@ -37,50 +64,49 @@
         <tr>
             <th>Trabalhador</th>
             <th style="text-align:center">Presenças</th>
-            <th style="text-align:center">Faltas</th>
-            <th style="text-align:center">Total</th>
-            <th style="text-align:center">% Presença</th>
-            <th style="text-align:center">% Falta</th>
+            <th style="text-align:center">Ausências registradas</th>
+            <th style="text-align:center">Registros explícitos</th>
         </tr>
     </thead>
     <tbody>
         {% for t in trabalhadores %}
-        {% if t.total_dias > 0 %}
         <tr>
             <td>
-                <a href="/relatorios/presenca-trabalhador?trabalhador_id={{ t.id }}&data_ini={{ data_ini }}&data_fim={{ data_fim }}&dia_semana={{ dia_semana }}">{{ t.nome_completo }}</a>
+                <a href="/relatorios/presenca-trabalhador?trabalhador_id={{ t.id }}&data_ini={{ data_ini }}&data_fim={{ data_fim }}&dia_semana={{ dia_semana }}&origem={{ origem }}">{{ t.nome_completo }}</a>
+                {% if not t.ativo %}<span style="background:#efebe9;color:#5d4037;border-radius:6px;padding:0.1rem 0.4rem;font-size:0.75rem">inativo</span>{% endif %}
             </td>
             <td style="text-align:center;color:#27ae60;font-weight:600">{{ t.presencas }}</td>
-            <td style="text-align:center">{% if t.faltas > 0 %}{{ t.faltas }}{% else %}0{% endif %}</td>
+            <td style="text-align:center">{% if t.ausencias > 0 %}{{ t.ausencias }}{% else %}0{% endif %}</td>
             <td style="text-align:center">{{ t.total_dias }}</td>
-            <td style="text-align:center">{{ (100 * t.presencas / t.total_dias) | round(1) }}%</td>
-            <td style="text-align:center">{{ (100 * t.faltas / t.total_dias) | round(1) }}%</td>
         </tr>
-        {% endif %}
         {% endfor %}
     </tbody>
     <tfoot>
         <tr style="font-weight:600;border-top:2px solid var(--cor-borda)">
             <td>Total</td>
             <td style="text-align:center">{{ trabalhadores | sum(attribute='presencas') }}</td>
-            <td style="text-align:center">{{ trabalhadores | sum(attribute='faltas') }}</td>
+            <td style="text-align:center">{{ trabalhadores | sum(attribute='ausencias') }}</td>
             <td style="text-align:center">{{ trabalhadores | sum(attribute='total_dias') }}</td>
-            <td style="text-align:center">
-                {% if (trabalhadores | sum(attribute='total_dias')) > 0 %}
-                {{ (100 * (trabalhadores | sum(attribute='presencas')) / (trabalhadores | sum(attribute='total_dias'))) | round(1) }}%
-                {% endif %}
-            </td>
-            <td style="text-align:center">
-                {% if (trabalhadores | sum(attribute='total_dias')) > 0 %}
-                {{ (100 * (trabalhadores | sum(attribute='faltas')) / (trabalhadores | sum(attribute='total_dias'))) | round(1) }}%
-                {% endif %}
-            </td>
         </tr>
     </tfoot>
 </table>
-{% else %}
+{% elif not erro %}
 <p style="color:var(--cor-texto-suave);text-align:center;margin-top:2rem">
-    Nenhum trabalhador com registros no período.
+    Nenhum trabalhador com registro explícito no período.
 </p>
 {% endif %}
+{% endblock %}
+
+{% block estilos %}
+<style>
+@media (max-width: 480px) {
+    /* em telas de bolso as colunas apertam para caber sem vazamento horizontal */
+    th, td { padding: 0.5rem 0.35rem; font-size: 0.8rem; }
+}
+@media print {
+    .barra-busca, .btn, .btn-voltar, nav, .sidebar { display: none !important; }
+    table { width: 100%; }
+    a { color: inherit; text-decoration: none; }
+}
+</style>
 {% endblock %}

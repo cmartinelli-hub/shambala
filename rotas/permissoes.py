@@ -42,6 +42,10 @@ ROTULOS_ROTA = {
     "financeiro.compras": "Compras",
     "caixa": "Caixa / PDV",
     "checkin.trabalhadores": "Check-in Trabalhadores",
+    # Correções/lançamentos retroativos de presença (TASK_004). Permissão
+    # específica: não é concedida automaticamente a ninguém (Admin tem bypass
+    # próprio). O rótulo na tela deixa claro o que cada ação autoriza.
+    "checkin.trabalhadores.correcoes": "Check-in Trabalhadores — Correções e histórico",
     "biblioteca": "Biblioteca",
     "doacoes": "Doações",
 }

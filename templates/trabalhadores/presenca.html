@@ -40,19 +40,33 @@
         <div class="presenca-card-header">
             <span class="presenca-data">📅 {{ r.data | data_br }}</span>
             <span class="presenca-status {% if r.presente %}status-presente{% else %}status-ausente{% endif %}">
-                {% if r.presente %}✔ Presente{% else %}✕ Ausente{% endif %}
+                {% if r.presente %}✔ Presente{% else %}✕ Ausência registrada{% endif %}
             </span>
+            {% if r.ajustado %}
+            <span class="presenca-status" style="background:#ede7f6;color:#4527a0"
+                  title="Este lançamento já foi corrigido">✎ ajustado</span>
+            {% endif %}
         </div>
         {% if r.presente %}
         <div class="presenca-card-dados">
             <div class="presenca-hora">
                 <span class="presenca-hora-label">Chegada</span>
-                <span class="presenca-hora-valor">{{ r.hora_chegada or '—' }}</span>
+                <span class="presenca-hora-valor">{{ r.hora_chegada or '— (desconhecido)' }}</span>
             </div>
             <div class="presenca-hora">
                 <span class="presenca-hora-label">Saída</span>
                 <span class="presenca-hora-valor">{{ r.hora_saida or '—' }}</span>
             </div>
+            <div class="presenca-hora">
+                <span class="presenca-hora-label">Origem</span>
+                <span class="presenca-hora-valor">{{ rotulo_origem(r.origem_chegada) }}</span>
+            </div>
+        </div>
+        {% endif %}
+        {% if pode_corrigir %}
+        <div style="margin-top:.5rem">
+            <a class="btn btn-pequeno btn-secundario"
+               href="/checkin-trabalhador/{{ trabalhador.id }}/correcao?data={{ r.data }}">✎ Corrigir/lançar nesta data</a>
         </div>
         {% endif %}
     </div>
@@ -62,8 +76,40 @@
 <div class="vazio">
     <div class="vazio-icone">📋</div>
     <h3>Nenhum registro para este período</h3>
-    <p>Ajuste o filtro ou aguarde novos registros de presença.</p>
+    <p>Ajuste o filtro ou aguarde novos registros de presença.
+        {% if pode_corrigir %}Faltou lançar algo? Use ✎ Corrigir/lançar na gestão do dia.{% endif %}</p>
 </div>
+{% endif %}
+
+{% if pode_ver_correcoes %}
+<h2 style="margin-top:2rem">Histórico de alterações</h2>
+{% if correcoes %}
+<table class="tabela" style="width:100%">
+    <thead>
+        <tr>
+            <th>Data do fato</th><th>Quando corrigido</th><th>Operação</th>
+            <th>Antes</th><th>Depois</th><th>Motivo</th><th>Por quem</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in correcoes %}
+        <tr>
+            <td>{{ a.data_fato | data_br }}</td>
+            <td>{{ a.criado_em }}</td>
+            <td>{{ rotulos_operacao.get(a.operacao, a.operacao) }}</td>
+            <td>{% if a.anterior_presente is none %}Sem registro{% elif a.anterior_presente %}Presente {{ a.anterior_hora_chegada or '(desconhecido)' }} · {{ rotulo_origem(a.anterior_origem) }}{% else %}Ausência registrada{% endif %}</td>
+            <td>{% if a.novo_presente is none %}Sem registro (anulado){% elif a.novo_presente %}Presente {{ a.novo_hora_chegada or '(desconhecido)' }} · {{ rotulo_origem(a.novo_origem) }}{% else %}Ausência registrada{% endif %}</td>
+            <td>{{ a.motivo }}</td>
+            <td>{{ a.operador or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p class="form-hinta">Somente consulta: o histórico não pode ser editado nem apagado pela interface.
+    Registros anteriores a esta funcionalidade não têm linha de auditoria — origem “Não informada” é o legado esperado.</p>
+{% else %}
+<p class="subtitulo">Nenhuma alteração neste mês — todos os lançamentos estão no estado original.</p>
+{% endif %}
 {% endif %}
 {% endblock %}
 

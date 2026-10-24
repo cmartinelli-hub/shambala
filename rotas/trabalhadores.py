@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 from fastapi import APIRouter, Request, Form, Query, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 
 import os
 import uuid
@@ -9,7 +9,14 @@ from banco import conectar
 from rotas.auth import obter_atendente_logado
 from rotas.financeiro_mensalidades import sincronizar_mensalidades, atualizar_pendentes_futuras
 from servico_presenca import registrar_chegada, registrar_ausencia_explicita, \
-    TrabalhadorInexistente, TrabalhadorInativo
+    TrabalhadorInexistente, TrabalhadorInativo, rotulo_origem
+from servico_correcao_presenca import (
+    aplicar_correcao, ler_fato, estado_base as _estado_base_de,
+    operacoes_permitidas, historico_da_data, validar_data,
+    ConflitoCorrecao, MotivoObrigatorio, DataFutura, DataInvalida,
+    HorarioInvalido, OperacaoInvalida, FatoInexistente,
+    ROTULOS_OPERACAO,
+)
 from servico_codigo_trabalhador import CodigosEsgotados, TrabalhadorSemCodigo, \
     garantir_codigo, trocar_codigo, preparar_codigos_pendentes, qr_data_uri
 
@@ -645,6 +652,12 @@ async def historico_presenca(request: Request, id: int, mes: str = ""):
     if redir:
         return redir
 
+    from rotas.permissoes import usuario_pode
+    # A ficha da recepção não expõe nada de auditoria: o histórico de
+    # alterações só aparece para quem tem a leitura de correções.
+    pode_ver_correcoes = usuario_pode(
+        atendente["id"], "checkin.trabalhadores.correcoes", "ler")
+
     with conectar() as conn:
         trabalhador = conn.execute(
             "SELECT * FROM trabalhadores WHERE id = %s", (id,)
@@ -660,7 +673,13 @@ async def historico_presenca(request: Request, id: int, mes: str = ""):
 
         registros = conn.execute(
             """SELECT tp.id, tp.trabalhador_id, tp.dia_trabalho_id, tp.presente,
-                      tp.hora_chegada, tp.hora_saida, tp.data::text AS data
+                      tp.hora_chegada, tp.hora_saida, tp.origem_chegada,
+                      tp.data::text AS data,
+                      EXISTS (
+                          SELECT 1 FROM trabalhador_presenca_correcao c
+                           WHERE c.trabalhador_id = tp.trabalhador_id
+                             AND c.data_fato = tp.data
+                      ) AS ajustado
                FROM trabalhador_presenca tp
                WHERE tp.trabalhador_id = %s
                  AND to_char(tp.data, 'YYYY-MM') = %s
@@ -668,12 +687,36 @@ async def historico_presenca(request: Request, id: int, mes: str = ""):
             (id, mes_busca),
         ).fetchall()
 
+        correcoes = []
+        if pode_ver_correcoes:
+            rows = conn.execute(
+                """SELECT c.id, c.data_fato::text AS data_fato, c.operacao,
+                          c.anterior_presente, c.anterior_hora_chegada,
+                          c.anterior_origem, c.novo_presente, c.novo_hora_chegada,
+                          c.novo_origem, c.motivo, c.criado_em,
+                          a.nome_completo AS operador
+                   FROM trabalhador_presenca_correcao c
+                   LEFT JOIN atendentes a ON a.id = c.atendente_id
+                   WHERE c.trabalhador_id = %s
+                     AND to_char(c.data_fato, 'YYYY-MM') = %s
+                   ORDER BY c.id DESC""",
+                (id, mes_busca),
+            ).fetchall()
+            correcoes = [dict(r) for r in rows]
+
     return templates.TemplateResponse("trabalhadores/presenca.html", {
         "request": request,
         "atendente": atendente,
         "trabalhador": dict(trabalhador),
         "registros": [dict(r) for r in registros],
         "mes_atual": mes_busca,
+        "hoje": hoje,
+        "rotulo_origem": rotulo_origem,
+        "pode_ver_correcoes": pode_ver_correcoes,
+        "pode_corrigir": usuario_pode(
+            atendente["id"], "checkin.trabalhadores.correcoes", "escrever"),
+        "correcoes": correcoes,
+        "rotulos_operacao": ROTULOS_OPERACAO,
     })
 
 
@@ -690,74 +733,188 @@ def _guard_checkin(request: Request):
     return guarda_modulo(request, "checkin.trabalhadores")
 
 
+def _guarda_correcao(request: Request):
+    """Correções exigem o módulo específico checkin.trabalhadores.correcoes.
+
+    GET=ler, POST=escrever (padrão do guarda_modulo), conferidos no servidor a
+    cada acesso — inclusive URL direta. A sessão do terminal não chega aqui:
+    ela só é aceita pelas rotas de /terminal.
+    """
+    from rotas.permissoes import guarda_modulo
+    return guarda_modulo(request, "checkin.trabalhadores.correcoes")
+
+
 _MSG_STATUS = {
     "novo": "Chegada de {nome} registrada às {hora}.",
     "ja_registrada": "{nome} já estava presente hoje (chegada das {hora}) — nada foi alterado.",
     "ausente": "Ausência de {nome} registrada para hoje.",
+    "ausente_ja": "{nome} já estava registrado como ausente hoje — nada foi alterado.",
+    "ausente_existe": "{nome} já está presente hoje (chegada das {hora}). "
+                      "Para alterar um fato já lançado, use a correção autorizada.",
     "inativo": "Trabalhador inativo — presença não registrada.",
     "inexistente": "Trabalhador não encontrado.",
 }
 
+_FILTROS_VALIDOS = ("todos", "presentes", "sem_registro", "ausencias")
 
-@router_checkin_trab.get("", response_class=HTMLResponse)
-async def checkin_trabalhador_page(
-    request: Request, status: str = "", nome: str = "", hora: str = "",
-):
-    """Check-in de presença — independe de abertura do dia de atendimento.
 
-    Lista todos os ativos (a agenda da semana é indicação, não restrição) e
-    marca quem já tem registro na data local de São Paulo.
+def _hoje_sp(conn) -> str:
+    return conn.execute(
+        "SELECT ((NOW() AT TIME ZONE 'America/Sao_Paulo')::date)::text AS d"
+    ).fetchone()["d"]
+
+
+def _consulta_gestao(conn, data_iso: str, busca: str, filtro: str,
+                     so_agenda: bool) -> list:
+    """Grade da gestão do dia: trabalhadores com a presença da data consultada.
+
+    A agenda da semana é indicação, nunca restrição: a presença independe dela.
+    Inativos aparecem somente quando têm registro na data (histórico não
+    desaparece com a inativação); a ação normal de chegada continua restrita
+    aos ativos (o serviço recusa inativos).
     """
-    atendente, redir = _guard_checkin(request)
-    if redir:
-        return redir
+    dia_semana = conn.execute(
+        "SELECT EXTRACT(ISODOW FROM %s::date)::int - 1 AS d", (data_iso,)
+    ).fetchone()["d"]
 
-    # Botão de ativar o terminal (TASK_003): só para quem pode ESCREVER no
-    # check-in. Ativar não abre cadastro nem carteirinha pela recepção.
-    from rotas.permissoes import usuario_pode
-    pode_ativar_terminal = usuario_pode(atendente["id"], "checkin.trabalhadores", "escrever")
+    sql = """SELECT t.id, t.nome_completo, t.foto_trabalhador, t.ativo,
+                    (td.id IS NOT NULL) AS na_agenda,
+                    tp.presente, tp.hora_chegada, tp.origem_chegada
+               FROM trabalhadores t
+               LEFT JOIN trabalhador_dias td
+                      ON td.trabalhador_id = t.id AND td.dia_semana = %s
+               LEFT JOIN trabalhador_presenca tp
+                      ON tp.trabalhador_id = t.id AND tp.data = %s::date
+              WHERE (t.ativo = 1 OR tp.id IS NOT NULL)"""
+    params = [dia_semana, data_iso]
+    if busca:
+        # o padrão % é do LIKE, não do psycopg2 — usar um único %s
+        sql += " AND norm(t.nome_completo) LIKE norm(%s)"
+        params.append(f"%{busca}%")
+    if so_agenda:
+        sql += " AND td.id IS NOT NULL"
+    if filtro == "presentes":
+        sql += " AND tp.presente = 1"
+    elif filtro == "ausencias":
+        sql += " AND tp.presente = 0"
+    elif filtro == "sem_registro":
+        sql += " AND tp.id IS NULL"
+    sql += " ORDER BY t.nome_completo"
+    return [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+
+
+def _parse_gestao_params(conn, data: str, busca: str, filtro: str,
+                         so_agenda: str):
+    """Normaliza os parâmetros da consulta; data inválida cai para hoje com aviso."""
+    hoje = _hoje_sp(conn)
+    aviso_data = None
+    data_iso = _parse_data(data) if data else None
+    if data and not data_iso:
+        aviso_data = "Data inválida — exibindo hoje."
+    if not data_iso:
+        data_iso = hoje
+    if filtro not in _FILTROS_VALIDOS:
+        filtro = "todos"
+    return hoje, data_iso, (busca or "").strip(), filtro, \
+        bool(so_agenda), aviso_data
+
+
+def _contexto_gestao(request, atendente, status, nome, hora,
+                     data, busca, filtro, so_agenda):
+    """Monta o contexto comum entre a página e o endpoint JSON da gestão."""
+    with conectar() as conn:
+        hoje, data_iso, busca_txt, filtro_ok, agenda_only, aviso_data = \
+            _parse_gestao_params(conn, data, busca, filtro, so_agenda)
+        lista = _consulta_gestao(conn, data_iso, busca_txt, filtro_ok, agenda_only)
+        qtd_presentes = conn.execute(
+            """SELECT COUNT(*) AS n FROM trabalhador_presenca
+                WHERE data = %s::date AND presente = 1""",
+            (data_iso,),
+        ).fetchone()["n"]
 
     aviso = None
     modelo = _MSG_STATUS.get(status)
     if modelo:
         aviso = modelo.format(nome=nome, hora=hora) if nome or hora else None
+    if not aviso:
+        aviso = aviso_data
 
-    with conectar() as conn:
-        hoje = conn.execute(
-            "SELECT ((NOW() AT TIME ZONE 'America/Sao_Paulo')::date)::text AS d"
-        ).fetchone()["d"]
-        # Agenda de hoje: trabalhador_dias.dia_semana é 0=Segunda..6=Domingo
-        dia_semana = conn.execute(
-            "SELECT EXTRACT(ISODOW FROM %s::date)::int - 1 AS d", (hoje,)
-        ).fetchone()["d"]
+    from rotas.permissoes import usuario_pode
+    dConsulta = date.fromisoformat(data_iso)
+    return {
+        "atendente": atendente,
+        "hoje": hoje,
+        "data": data_iso,
+        "data_prev": (dConsulta - timedelta(days=1)).isoformat(),
+        "data_next": (dConsulta + timedelta(days=1)).isoformat(),
+        "data_exibida": "/".join(reversed(data_iso.split("-"))),
+        "dia_nome": _NOMES_DIA[_dia_semana_local(data_iso)],
+        "somente_leitura": data_iso < hoje,
+        "lista": lista,
+        "qtd_presentes": qtd_presentes,
+        "busca": busca_txt,
+        "filtro": filtro_ok,
+        "so_agenda": agenda_only,
+        "aviso": aviso,
+        "rotulo_origem": rotulo_origem,
+        "pode_escrever": usuario_pode(
+            atendente["id"], "checkin.trabalhadores", "escrever"),
+        # Link de correção só para quem tem a leitura do módulo específico —
+        # a recepção comum nem vê a porta do fluxo.
+        "pode_corrigir": usuario_pode(
+            atendente["id"], "checkin.trabalhadores.correcoes", "ler"),
+    }
 
-        trabalhadores_agenda = conn.execute(
-            """SELECT t.id, t.nome_completo, t.foto_trabalhador,
-                      (td.id IS NOT NULL) AS na_agenda
-               FROM trabalhadores t
-               LEFT JOIN trabalhador_dias td
-                      ON td.trabalhador_id = t.id AND td.dia_semana = %s
-               WHERE t.ativo = 1
-               ORDER BY t.nome_completo""",
-            (dia_semana,),
-        ).fetchall()
 
-        presencas = conn.execute(
-            """SELECT trabalhador_id, presente, hora_chegada
-               FROM trabalhador_presenca
-               WHERE data = %s::date""",
-            (hoje,),
-        ).fetchall()
+def _dia_semana_local(data_iso: str) -> int:
+    """0=Segunda..6=Domingo, calculado em Python (mesma regra do ISODOW no SQL)."""
+    return date.fromisoformat(data_iso).weekday()
+
+
+@router_checkin_trab.get("", response_class=HTMLResponse)
+async def checkin_trabalhador_page(
+    request: Request, status: str = "", nome: str = "", hora: str = "",
+    data: str = "", busca: str = "", filtro: str = "todos",
+    so_agenda: str = "",
+):
+    """Gestão do dia de presença — independe de abertura do atendimento.
+
+    Data consultada no servidor (default hoje em America/Sao_Paulo), busca e
+    filtros server-side. Dias passados são somente leitura nesta tela;
+    correções e lançamentos retroativos usam o fluxo autorizado.
+    """
+    atendente, redir = _guard_checkin(request)
+    if redir:
+        return redir
+
+    ctx = _contexto_gestao(request, atendente, status, nome, hora,
+                           data, busca, filtro, so_agenda)
+    ctx["pode_ativar_terminal"] = ctx["pode_escrever"]
 
     return templates.TemplateResponse("trabalhadores/checkin.html", {
-        "request": request,
-        "atendente": atendente,
-        "dia": {"data": hoje},
-        "trabalhadores_agenda": [dict(t) for t in trabalhadores_agenda],
-        "presencas": [dict(p) for p in presencas],
-        "aviso": aviso,
-        "erro": None,
-        "pode_ativar_terminal": pode_ativar_terminal,
+        "request": request, **ctx,
+    })
+
+
+@router_checkin_trab.get("/dados", response_class=JSONResponse)
+async def checkin_trabalhador_dados(
+    request: Request, data: str = "", busca: str = "", filtro: str = "todos",
+    so_agenda: str = "",
+):
+    """Mesmos dados da grade, em JSON, para atualização parcial da tela."""
+    atendente, redir = _guard_checkin(request)
+    if redir:
+        return redir
+
+    ctx = _contexto_gestao(request, atendente, "", "", "",
+                           data, busca, filtro, so_agenda)
+    return JSONResponse({
+        "data": ctx["data"],
+        "data_exibida": ctx["data_exibida"],
+        "dia_nome": ctx["dia_nome"],
+        "somente_leitura": ctx["somente_leitura"],
+        "qtd_presentes": ctx["qtd_presentes"],
+        "lista": ctx["lista"],
     })
 
 
@@ -809,7 +966,143 @@ async def marcar_ausente(request: Request, id: int):
                 status_code=303,
             )
 
+    # Os três desfechos do serviço (registrada / ja_ausente / exige_correcao):
+    # marcar ausente só cria ausência onde não havia fato; presença já
+    # lançada nunca é rebaixada aqui — isso é correção, com motivo e auditoria.
+    mapa = {"registrada": "ausente", "ja_ausente": "ausente_ja",
+            "exige_correcao": "ausente_existe"}
+    status = mapa.get(resultado.get("resultado"), "ausente")
     return RedirectResponse(url="/checkin-trabalhador?" + urlencode({
-        "status": "ausente",
+        "status": status,
         "nome": resultado["nome_completo"],
+        "hora": resultado.get("hora_chegada") or "—",
     }), status_code=303)
+
+
+# ── Correções e lançamentos retroativos (TASK_004) ───────────────────────────
+# Módulo próprio no RBAC: checkin.trabalhadores.correcoes. Nunca concedido em
+# seed; a recepção padrão não alcança nada daqui. guarda_modulo aplica
+# GET=ler / POST=escrever também no acesso direto à URL.
+
+_MSG_CORRECAO = {
+    "corrigido": "Correção aplicada: {detalhe}.",
+    "conflito": "A situação mudou desde que o formulário foi aberto. "
+                "Nada foi gravado — confira o estado atual e decida de novo.",
+    "erro_motivo": "Informe o motivo da correção — nada foi gravado.",
+    "erro_data": "Data inválida ou futura — nada foi gravado.",
+    "erro_horario": "Horário fora de HH:MM — nada foi gravado. "
+                    "Se o horário não é conhecido, deixe em branco.",
+    "erro_operacao": "Operação não permitida para este estado — nada foi gravado.",
+    "erro_fato": "Não há o registro esperado nesta data — nada foi gravado.",
+}
+
+
+@router_checkin_trab.get("/{id}/correcao", response_class=HTMLResponse)
+async def correcao_formulario(request: Request, id: int, data: str = "",
+                              status: str = "", detalhe: str = ""):
+    atendente, redir = _guarda_correcao(request)
+    if redir:
+        return redir
+
+    from rotas.permissoes import usuario_pode
+    pode_escrever = usuario_pode(
+        atendente["id"], "checkin.trabalhadores.correcoes", "escrever")
+
+    with conectar() as conn:
+        trabalhador = conn.execute(
+            "SELECT id, nome_completo, ativo FROM trabalhadores WHERE id = %s",
+            (id,),
+        ).fetchone()
+        if not trabalhador:
+            return RedirectResponse(url="/checkin-trabalhador", status_code=303)
+
+        hoje, data_iso, _, _, _, aviso_data = _parse_gestao_params(
+            conn, data, "", "todos", "")
+        fato = ler_fato(conn, id, data_iso)
+        alteracoes = historico_da_data(conn, id, data_iso)
+
+    aviso = _MSG_CORRECAO.get(status)
+    if aviso and "{detalhe}" in aviso:
+        aviso = aviso.format(detalhe=detalhe) if detalhe else \
+            "Correção aplicada."
+    if not aviso:
+        aviso = aviso_data
+
+    return templates.TemplateResponse("trabalhadores/correcao.html", {
+        "request": request,
+        "atendente": atendente,
+        "trabalhador": dict(trabalhador),
+        "data": data_iso,
+        "data_exibida": "/".join(reversed(data_iso.split("-"))),
+        "dia_nome": _NOMES_DIA[_dia_semana_local(data_iso)],
+        "hoje": hoje,
+        "fato": dict(fato) if fato else None,
+        "estado_base": _estado_base_de(fato),
+        "operacoes": operacoes_permitidas(fato),
+        "alteracoes": alteracoes,
+        "rotulos_operacao": ROTULOS_OPERACAO,
+        "rotulo_origem": rotulo_origem,
+        "pode_escrever": pode_escrever,
+        "aviso": aviso,
+    })
+
+
+@router_checkin_trab.post("/{id}/correcao")
+async def correcao_aplicar(
+    request: Request, id: int,
+    data: str = Form(""), operacao: str = Form(""), motivo: str = Form(""),
+    estado_base: str = Form(""), nova_hora: str = Form(""),
+    incluir_estado: str = Form(""),
+):
+    atendente, redir = _guarda_correcao(request)
+    if redir:
+        return redir
+
+    data_iso = _parse_data(data)
+    if not data_iso:
+        return _voltar_correcao(id, data, "erro_data")
+
+    try:
+        with conectar() as conn:
+            resultado = aplicar_correcao(
+                conn,
+                trabalhador_id=id,
+                data=data_iso,
+                operacao=operacao,
+                motivo=motivo,
+                estado_base_esperado=estado_base,
+                atendente_id=atendente["id"],
+                nova_hora=nova_hora or None,
+                incluir_estado=incluir_estado or None,
+            )
+    except ConflitoCorrecao:
+        return _voltar_correcao(id, data_iso, "conflito")
+    except MotivoObrigatorio:
+        return _voltar_correcao(id, data_iso, "erro_motivo")
+    except (DataFutura, DataInvalida):
+        return _voltar_correcao(id, data_iso, "erro_data")
+    except HorarioInvalido:
+        return _voltar_correcao(id, data_iso, "erro_horario")
+    except OperacaoInvalida:
+        return _voltar_correcao(id, data_iso, "erro_operacao")
+    except FatoInexistente:
+        return _voltar_correcao(id, data_iso, "erro_fato")
+
+    detalhe = "{} — {} em {}".format(
+        ROTULOS_OPERACAO.get(resultado["operacao"], resultado["operacao"]),
+        resultado["nome_completo"],
+        "/".join(reversed(resultado["data"].split("-"))),
+    )
+    return _voltar_correcao(id, data_iso, "corrigido", detalhe)
+
+
+def _voltar_correcao(id_: int, data_iso: str, status: str, detalhe: str = ""):
+    params = {"status": status}
+    if data_iso:
+        params["data"] = data_iso
+    if detalhe:
+        params["detalhe"] = detalhe
+    return RedirectResponse(
+        url=f"/checkin-trabalhador/{id_}/correcao?" + urlencode(params),
+        status_code=303,
+    )

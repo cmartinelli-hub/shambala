@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block titulo %}Correção de presença{% endblock %}
+
+{% macro estado_texto(presente, hora, origem) -%}
+    {%- if presente is none %}—{%
+    elif presente %}Presente{% if hora %} às {{ hora }}{% else %} (horário desconhecido){% endif %} · {{ rotulo_origem(origem) }}{%
+    else %}Ausência registrada{% endif %}
+{%- endmacro %}
+
+{% block conteudo %}
+<a href="/checkin-trabalhador?data={{ data }}" class="btn-voltar">← Gestão do dia</a>
+<div class="cabecalho-secao">
+    <div>
+        <h1>Correção de presença</h1>
+        <p class="subtitulo">
+            👤 {{ trabalhador.nome_completo }}
+            {%- if not trabalhador.ativo %} · 🚫 inativo (o histórico continua corrigível){% endif %}
+            — 📅 <strong>{{ data_exibida }}</strong> ({{ dia_nome }})
+        </p>
+    </div>
+</div>
+
+{% if aviso %}
+<div class="form-aviso" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
+    <span>{{ aviso }}</span>
+</div>
+{% endif %}
+
+<div style="background:#f5f5f5;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
+    <strong>Estado atual nesta data:</strong>
+    {{ estado_texto(fato.presente if fato else none,
+                    fato.hora_chegada if fato else none,
+                    fato.origem_chegada if fato else none) }}
+    {%- if not fato %} — nenhum lançamento (Sem registro){% endif %}
+</div>
+
+{% if not operacoes %}
+<div class="vazio">
+    <div class="vazio-icone">🔒</div>
+    <h3>Nada a corrigir aqui</h3>
+</div>
+{% elif not pode_escrever %}
+<div class="form-aviso" style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
+    <span>🔒 Você tem a <strong>leitura</strong> das correções (histórico abaixo), mas não a escrita —
+        o formulário não é exibido. O histórico desta data continua visível para consulta.</span>
+</div>
+{% else %}
+<form method="post" action="/checkin-trabalhador/{{ trabalhador.id }}/correcao"
+      onsubmit="return confirm('Confirmar esta correção? Ela será registrada no histórico com o seu nome e o motivo informado.');">
+    <input type="hidden" name="data" value="{{ data }}">
+    <input type="hidden" name="estado_base" value="{{ estado_base }}">
+
+    <div class="form-grupo">
+        <label class="form-label">O que será feito <span class="obrigatorio">*</span></label>
+        {% for op in operacoes %}
+        <label style="display:block;margin:.3rem 0">
+            <input type="radio" name="operacao" value="{{ op }}" required
+                   {% if op in ('incluir',) %}data-op-incluir="1"{% endif %}
+                   {% if op in ('corrigir_horario', 'chegar') %}data-op-hora="1"{% endif %}>
+            {% if op == 'corrigir_horario' %}Corrigir o horário de chegada (a origem registrada é preservada)
+            {% elif op == 'ausentar' %}Converter a presença em ausência registrada
+            {% elif op == 'chegar' %}Converter a ausência em presença (origem: correção administrativa)
+            {% elif op == 'incluir' %}Incluir lançamento que faltou (presença ou ausência)
+            {% elif op == 'anular' %}Anular o lançamento — a data volta a “Sem registro” (o histórico da anulação permanece)
+            {% endif %}
+        </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-grupo" id="bloco-estado-inclusao" hidden>
+        <label class="form-label">Estado a incluir</label>
+        <label style="display:inline-flex;gap:.3rem;margin-right:1rem">
+            <input type="radio" name="incluir_estado" value="presente" checked> Presença
+        </label>
+        <label style="display:inline-flex;gap:.3rem">
+            <input type="radio" name="incluir_estado" value="ausente"> Ausência registrada
+        </label>
+    </div>
+
+    <div class="form-grupo">
+        <label class="form-label">Horário de chegada (HH:MM)</label>
+        <input type="time" name="nova_hora" class="form-input" style="max-width:10rem">
+        <p class="form-hinta">Deixe <strong>em branco</strong> quando o horário não for conhecido —
+            em branco é “desconhecido” declarado, nunca 00:00 nem a hora atual.</p>
+    </div>
+
+    <div class="form-grupo">
+        <label class="form-label">Motivo da correção <span class="obrigatorio">*</span></label>
+        <textarea name="motivo" class="form-input" rows="3" required
+                  placeholder="Ex.: chegou às 08:05 e a chegada foi registrada às 09:40 pelo terminal"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primario">Aplicar correção</button>
+</form>
+
+<script>
+(function() {
+    const form = document.querySelector('form[method="post"]');
+    if (!form) return;
+    const blocoInclusao = document.getElementById('bloco-estado-inclusao');
+    form.querySelectorAll('[name="operacao"]').forEach(r => {
+        r.addEventListener('change', () => {
+            blocoInclusao.hidden = r.value !== 'incluir';
+        });
+    });
+})();
+</script>
+{% endif %}
+
+<h2 style="margin-top:2rem">Alterações desta data</h2>
+{% if not alteracoes %}
+<p class="subtitulo">Nenhuma alteração registrada para {{ data_exibida }} — este é o estado original do lançamento.</p>
+{% else %}
+<table class="tabela" style="width:100%">
+    <thead>
+        <tr>
+            <th>Quando</th><th>Operação</th><th>Antes</th><th>Depois</th>
+            <th>Motivo</th><th>Por quem</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in alteracoes %}
+        <tr>
+            <td>{{ a.criado_em }}</td>
+            <td>{{ rotulos_operacao.get(a.operacao, a.operacao) }}</td>
+            <td>{{ estado_texto(a.anterior_presente, a.anterior_hora_chegada, a.anterior_origem) }}</td>
+            <td>{{ estado_texto(a.novo_presente, a.novo_hora_chegada, a.novo_origem) }}
+                {%- if a.novo_presente is none %} — Sem registro (anulado){% endif %}</td>
+            <td>{{ a.motivo }}</td>
+            <td>{{ a.operador or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p class="form-hinta">O histórico de alterações é somente consulta: não pode ser editado nem apagado pela interface.</p>
+{% endif %}
+{% endblock %}
