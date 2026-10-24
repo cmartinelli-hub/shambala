@@ -368,3 +368,13 @@ Nenhum fato real foi corrigido, anulado ou apagado. Testes financeiros
 permanecem não aprovados; o `checkin.trabalhadores.correcoes` continua sem
 concessão a qualquer grupo do DEV.
 
+**O que NÃO foi provado no DEV.** As telas exigem sessão e a entrega não recebe
+credenciais do dono — por política tampoco se testa senha alheia nem se cria
+usuário para contornar. No DEV, portanto, provou-se apenas o que se vê sem
+login: o serviço no ar na 9000, o log limpo após a subida, o roteamento protegido
+(`/checkin-trabalhador`, `/terminal` e os relatórios devolvendo 303 → `/login`) e
+o baseline intocado. **A conferência visual autenticada é do dono**, pelo
+roteiro acima. O fluxo com sessão real (gestão, correção, conflito, relatórios e
+impressão nos dois visores) foi validado no banco descartável, com usuário de
+teste — 168/168, RC=0 —, o que prova o código, não a aparência do DEV.
+
