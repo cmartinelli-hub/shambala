@@ -35,21 +35,30 @@ from datetime import date, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from trava_isolamento import (  # noqa: E402
     exigir_arquivo_de_configuracao, exigir_ambiente_de_teste, AmbienteInseguro,
+    exigir_configuracao_consoante, provar_destino_do_servidor,
 )
 
-BANCO = os.environ.get("SHAMBALA_TEST_DB", "shambala_test_passes")
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _ARQ_ENV = os.environ.get("SHAMBALA_ENV_FILE") or os.path.join(_RAIZ, ".env.test")
-
-# (1) O banco descartável tem precedência sobre qualquer herança do ambiente.
-os.environ["SHAMBALA_DB_NAME"] = BANCO
 os.environ.setdefault("SHAMBALA_MODO_TESTE", "1")
-# (2) Carrega o .env EXCLUSIVO de teste e valida o ambiente antes de qualquer
-#     operação (aborta o processo se não for comprovadamente descartável).
-exigir_arquivo_de_configuracao(_ARQ_ENV)
+# (1) Contrato de identidade (TASK_010/REV-01): o arquivo NOMEADO é a autoridade
+#     do destino; SHAMBALA_TEST_DB apenas "solicita" — se divergir do arquivo,
+#     aborta antes de qualquer operação, sem substituição silenciosa em nenhum
+#     dos sentidos.
+BANCO = exigir_configuracao_consoante(
+    _ARQ_ENV, os.environ.get("SHAMBALA_TEST_DB"))["banco"]
+# (2) Valida nome + modo de teste ANTES de importar (a conexão efetiva é
+#     conferida em preparar_banco, e o servidor HTTP na prova de token).
+exigir_ambiente_de_teste()
+# Token desta execução (dado pelo runner; gerado localmente em uso avulso).
+TOKEN = os.environ.get("SHAMBALA_EXEC_TOKEN") or f"tp-avulso-p{os.getpid()}"
+os.environ["SHAMBALA_EXEC_TOKEN"] = TOKEN
 # (3) Só agora a aplicação é importada — e ela fixa a conexão no import.
 from banco import conectar, criar_tabelas, fechar_pool  # noqa: E402
 import banco  # noqa: E402
+from preparo_descartavel import (  # noqa: E402
+    garantir_banco_selado, recriar_banco, remover_se_nosso, selo_do_banco,
+)
 
 RESULTADOS = []
 FALHAS = []
@@ -68,7 +77,9 @@ def preparar_banco():
     """Garante o banco descartável com o schema criado.
 
     ABORTA se o ambiente não for comprovadamente de teste — a validação acontece
-    antes de criar, truncar ou alterar qualquer dado.
+    antes de criar, truncar ou alterar qualquer dado. A criação usa selo de
+    propriedade (TASK_010): banco preexistente sem selo desta infraestrutura
+    nunca é adotado nem apagado por convenção de nome.
     """
     try:
         with conectar() as conn:
@@ -77,26 +88,36 @@ def preparar_banco():
         print(f"\n[ABORTADO] ambiente inseguro: {e}", file=sys.stderr)
         raise SystemExit(2)
 
-    r = _psql_admin(f'CREATE DATABASE "{BANCO}"')
-    if r.returncode != 0 and "já existe" not in r.stderr and "already exists" not in r.stderr:
-        raise RuntimeError(f"não foi possível criar {BANCO}: {r.stderr}")
+    try:
+        garantir_banco_selado(BANCO, TOKEN)
+    except AmbienteInseguro as e:
+        print(f"\n[ABORTADO] preparo recusado: {e}", file=sys.stderr)
+        raise SystemExit(2)
     criar_tabelas()
     return info
 
 
 def preparar_banco_limpo():
-    """Modo isolado: derruba e recria o banco (exige nenhum app conectado)."""
-    _psql_admin(f'DROP DATABASE IF EXISTS "{BANCO}"')
-    r = _psql_admin(f'CREATE DATABASE "{BANCO}"')
-    if r.returncode != 0:
-        raise RuntimeError(f"não foi possível criar {BANCO}: {r.stderr}")
+    """Modo isolado: derruba e recria o banco (exige nenhum app conectado).
+
+    Só recria banco COM SELO desta infraestrutura; sem selo, aborta sem efeitos.
+    """
+    try:
+        recriar_banco(BANCO, TOKEN)
+    except AmbienteInseguro as e:
+        print(f"\n[ABORTADO] recriação recusada: {e}", file=sys.stderr)
+        raise SystemExit(2)
     criar_tabelas()
 
 
 def limpar_banco():
     fechar_pool()
     if os.environ.get("SHAMBALA_TEST_LIMPAR") == "1":
-        _psql_admin(f'DROP DATABASE IF EXISTS "{BANCO}"')
+        if selo_do_banco(BANCO) == TOKEN:
+            remover_se_nosso(BANCO, TOKEN)
+            print(f"  banco {BANCO} removido (selo desta execução)")
+        else:
+            print(f"  limpeza preservou {BANCO}: selo não pertence a esta execução")
 
 
 def teste(nome):

@@ -37,6 +37,7 @@ from test_tres_passes import (  # noqa: E402
 
 from banco import conectar, criar_tabelas, fechar_pool  # noqa: E402
 import banco  # noqa: E402
+from preparo_descartavel import recriar_banco, remover_se_nosso  # noqa: E402
 from servico_presenca import (  # noqa: E402
     registrar_chegada, registrar_ausencia_explicita,
     TrabalhadorInativo, TrabalhadorInexistente, _agora_sao_paulo,
@@ -131,14 +132,14 @@ def _banco_dedicado(nome: str):
 
     O nome DEVE conter '_test' (mesmo marcador da trava de isolamento) e não
     pode ser um banco proibido. Restaura a conexão original ao sair.
+
+    TASK_010: a recriação exige SELO desta infraestrutura (preparo_descartavel) —
+    banco preexistente sem selo nunca é apagado por convenção de nome; aborta.
     """
     if "_test" not in nome or nome in ("shambala", "postgres", "template0", "template1"):
         raise AmbienteInseguro(f"{nome} não é um banco marcadamente de teste")
     original = banco._DB_NAME
-    _psql_admin(f'DROP DATABASE IF EXISTS "{nome}"')
-    r = _psql_admin(f'CREATE DATABASE "{nome}"')
-    if r.returncode != 0:
-        raise RuntimeError(f"não foi possível criar {nome}: {r.stderr}")
+    recriar_banco(nome, tp.TOKEN)
     fechar_pool()
     banco._DB_NAME = nome
     try:
@@ -663,7 +664,7 @@ def main():
             traceback.print_exc()
     print(f"\n{ok}/{total} testes passaram (presença TASK_001)")
     with contextlib.suppress(Exception):
-        _psql_admin(f'DROP DATABASE IF EXISTS "{MIG_DB}"')
+        remover_se_nosso(MIG_DB, tp.TOKEN)
     limpar_banco()
     return 0 if ok == total else 1
 

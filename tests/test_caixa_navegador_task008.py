@@ -32,7 +32,10 @@ import http.cookiejar
 from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from trava_isolamento import exigir_ambiente_de_teste, exigir_arquivo_de_configuracao  # noqa: E402
+from trava_isolamento import (  # noqa: E402
+    exigir_ambiente_de_teste, exigir_configuracao_consoante,
+    provar_destino_do_servidor, AmbienteInseguro,
+)
 
 BASE = os.environ.get("SHAMBALA_TEST_BASE", "http://127.0.0.1:9011")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -52,7 +55,12 @@ def abortar(msg):
 arq_env = os.environ.get("SHAMBALA_ENV_FILE")
 if not arq_env:
     abortar("SHAMBALA_ENV_FILE ausente — recuso rodar sem arquivo de teste exclusivo.")
-exigir_arquivo_de_configuracao(arq_env)
+# TASK_010: o arquivo nomeado é a autoridade; destino SHAMBALA_TEST_DB
+# divergente aborta antes de qualquer escrita (REV-01).
+try:
+    exigir_configuracao_consoante(arq_env, os.environ.get("SHAMBALA_TEST_DB"))
+except AmbienteInseguro as e:
+    abortar(str(e))
 
 from banco import conectar, criar_tabelas, conta_id_por_tipo  # noqa: E402
 
@@ -60,18 +68,12 @@ with conectar() as conn:
     info = exigir_ambiente_de_teste(conn)
 print(f"[ok] conexão do script: {info}")
 
-log_app = os.environ.get("SHAMBALA_APP_LOG", "/tmp/shambala_test_app.log")
-if not os.path.exists(log_app):
-    abortar(f"log do servidor ausente em {log_app}: não é possível provar o banco do HTTP.")
-confirmacoes = re.findall(
-    r"Ambiente descartável confirmado: \{.*?'banco': '([^']*)'",
-    open(log_app, encoding="utf-8", errors="replace").read(),
-)
-if not confirmacoes:
-    abortar("o app nunca imprimiu 'Ambiente descartável confirmado' — destino não provado.")
-if confirmacoes[-1] != info["banco"]:
-    abortar(f"o servidor HTTP usa '{confirmacoes[-1]}', divergente do script '{info['banco']}'.")
-print(f"[ok] servidor HTTP ({BASE}) no mesmo banco descartável: {confirmacoes[-1]}")
+try:
+    prova = provar_destino_do_servidor(info["banco_efetivo"])
+except AmbienteInseguro as e:
+    abortar(str(e))
+print(f"[ok] servidor HTTP ({BASE}) na execução corrente, mesmo banco efetivo: "
+      f"{prova['banco_efetivo']} (token {prova['token']})")
 
 D = Decimal
 
@@ -266,6 +268,10 @@ def _semeadura():
         FIX["cx_a"] = caixa("Navegador Alpha")
         FIX["cx_b"] = caixa("Navegador Beta")
         FIX["cx_leg"] = caixa("Navegador Legado")
+        FIX["cx_zero"] = caixa("Navegador Zero")
+        FIX["cx_zero2"] = caixa("Navegador Zero 2")
+        FIX["cx_pix"] = caixa("Navegador PIX")
+        FIX["p_refri"] = produto(FIX["cx_pix"], "Refrigerante", "10.00")
         FIX["p_cafe"] = produto(FIX["cx_a"], "Café", "10.00")
         FIX["p_suco"] = produto(FIX["cx_a"], "Suco", "12.00")
         FIX["p_agua"] = produto(FIX["cx_b"], "Água", "10.00")
@@ -290,17 +296,28 @@ def _sessao_aberta(caixa_id):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-@cenario("C1 sem sessão aberta: a tela bloqueia o PDV e explica o que fazer")
+@cenario("C1 sem sessão aberta: PDV só em PIX; espécie permanece condicionada")
 def c1():
     with _operador() as op:
         pagina = op.abrir(f"/caixa/pdv?caixa_id={FIX['cx_a']}")
-        _esperar_texto(pagina, "precisa ser aberto antes")
-        verificar("C1 tela diz que o caixa precisa ser aberto", True)
-        verificar("C1 sem sessão não há botões de venda na tela",
-                  pagina.locator("#btn-finalizar").count() == 0)
+        # TASK_010/§3: PIX com conta financeira válida dispensa sessão; a tela
+        # oferece o PDV em modo PIX-only em vez da antiga tela de bloqueio.
+        _esperar_texto(pagina, "apenas por PIX")
+        verificar("C1 a tela orienta que só PIX está disponível sem sessão", True)
+        verificar("C1 PIX pré-selecionado; espécie e fiado bloqueados sem sessão",
+                  pagina.locator("#pgto-pix").is_checked()
+                  and pagina.locator("#pgto-especie").is_disabled()
+                  and pagina.locator("#pgto-fiado").is_disabled())
+        resp = op.context.request.post(
+            f"{BASE}/caixa/pdv/finalizar",
+            form={"caixa_id": str(FIX["cx_a"]), "caixa_movimento_id": "0",
+                  "forma_pagamento": "especie", "valor_recebido": "20.00",
+                  "itens_json": _cesta([(FIX["p_cafe"], 1)]), "imprimir": "0"})
+        verificar("C1 espécie sem sessão é recusada na rota (sessao_necessaria)",
+                  "sessao_necessaria" in resp.url, resp.url)
         verificar("C1 nada foi gravado",
                   escalar("SELECT COUNT(*) FROM vendas_pdv WHERE caixa_id=%s", (FIX["cx_a"],)) == 0)
-        _evidencia(pagina, "c1-pdv-caixa-fechado")
+        _evidencia(pagina, "c1-pdv-sem-sessao-pix-only")
 
 
 @cenario("C2 abrir sessão pela tela e vender em espécie")
@@ -516,6 +533,107 @@ def c8():
         pagina.wait_for_url("**/caixa/fechar**")
         _esperar_texto(pagina, "Sessão fechada")
         _evidencia(pagina, "c8-smartphone-fechado")
+
+
+@cenario("C9 desktop: abrir com R$ 0,00 e fechar sessão vazia com contado 0 (REV-02)")
+def c9():
+    with _operador() as op:
+        pagina = op.abrir(f"/caixa/abrir?caixa_id={FIX['cx_zero']}")
+        pagina.fill("#saldo_inicial", "0.00")
+        pagina.click('button[type="submit"]')
+        pagina.wait_for_url("**/caixa**")
+        sz = _sessao_aberta(FIX["cx_zero"])
+        m = consulta("SELECT * FROM caixa_movimentos WHERE id=%s", (sz,))[0]
+        verificar("C9 abertura padrão R$ 0,00 aceita pela tela",
+                  m["versao"] == "eventos" and dec(m["saldo_inicial"]) == D("0.00"),
+                  f"{m['versao']} / {m['saldo_inicial']}")
+        _evidencia(pagina, "c9-desktop-aberto-zero")
+
+        pagina = op.abrir(f"/caixa/fechar?caixa_movimento_id={sz}")
+        _esperar_texto(pagina, "R$ 0.00")
+        pagina.fill("#dinheiro_contado", "0.00")
+        pagina.click('button[type="submit"]')
+        pagina.wait_for_url("**/caixa/fechar**")
+        _esperar_texto(pagina, "Sessão fechada")
+        m = consulta("SELECT * FROM caixa_movimentos WHERE id=%s", (sz,))[0]
+        verificar("C9 sessão vazia fechada com contado 0 e divergência 0",
+                  m["status"] == "fechado" and dec(m["dinheiro_contado"]) == D("0.00")
+                  and dec(m["divergencia_contagem"]) == D("0.00")
+                  and dec(m["saldo_final"]) == D("0.00"),
+                  f"{m['status']} / {m['dinheiro_contado']} / {m['divergencia_contagem']}")
+        verificar("C9 fechamento sem eventos não inventa lançamentos financeiros",
+                  escalar("SELECT COUNT(*) FROM caixa_sessao_eventos "
+                          "WHERE sessao_id=%s", (sz,)) == 0
+                  and escalar("SELECT COUNT(*) FROM financeiro_movimentacoes "
+                              "WHERE descricao LIKE %s", (f"%fechamento #{sz}%",)) == 0)
+        _evidencia(pagina, "c9-desktop-fechado-zero")
+
+
+@cenario("C10 smartphone (412×915): abertura e fechamento com zero pela tela")
+def c10():
+    with _operador(largura=SMARTPHONE[0], altura=SMARTPHONE[1]) as op:
+        pagina = op.abrir(f"/caixa/abrir?caixa_id={FIX['cx_zero2']}")
+        pagina.fill("#saldo_inicial", "0.00")
+        pagina.click('button[type="submit"]')
+        pagina.wait_for_url("**/caixa**")
+        sz = _sessao_aberta(FIX["cx_zero2"])
+        verificar("C10 saldo inicial zero gravado no smartphone",
+                  dec(consulta("SELECT saldo_inicial FROM caixa_movimentos WHERE id=%s",
+                               (sz,))[0]["saldo_inicial"]) == D("0.00"))
+        pagina = op.abrir(f"/caixa/fechar?caixa_movimento_id={sz}")
+        caixa_campo = pagina.locator("#dinheiro_contado").bounding_box()
+        verificar("C10 campo de contagem cabe na tela do smartphone",
+                  caixa_campo is not None and caixa_campo["width"] <= SMARTPHONE[0],
+                  f"{caixa_campo}")
+        pagina.fill("#dinheiro_contado", "0")
+        pagina.click('button[type="submit"]')
+        pagina.wait_for_url("**/caixa/fechar**")
+        _esperar_texto(pagina, "Sessão fechada")
+        verificar("C10 fechado com contado 0 (texto '0' aceito)",
+                  escalar("SELECT status FROM caixa_movimentos WHERE id=%s", (sz,)) == "fechado")
+        _evidencia(pagina, "c10-smartphone-fechado-zero")
+
+
+@cenario("C11 TASK_010/§3: PIX funciona sem sessão aberta; espécie segue condicionada")
+def c11():
+    with _operador() as op:
+        pagina = op.abrir(f"/caixa/pdv?caixa_id={FIX['cx_pix']}")
+        _esperar_texto(pagina, "Carrinho")
+        verificar("C11 o PDV responde sem sessão aberta (não é mais a tela de bloqueio)",
+                  pagina.locator("#btn-finalizar").count() == 1)
+        verificar("C11 sem sessão: PIX pré-selecionado, espécie e fiado bloqueados",
+                  pagina.locator("#pgto-pix").is_checked()
+                  and pagina.locator("#pgto-especie").is_disabled()
+                  and pagina.locator("#pgto-fiado").is_disabled())
+        _esperar_texto(pagina, "apenas por PIX")
+
+        pagina.locator(".pdv-atalho-item", has_text=f"{PREFIXO} Refrigerante").first.click()
+        pagina.click("#btn-finalizar")
+        pagina.wait_for_selector("#btn-finalizar-pix", state="visible", timeout=10000)
+        pagina.click("#btn-finalizar-pix")
+        pagina.wait_for_url("**/caixa/pdv**")
+        v = consulta("SELECT id, caixa_movimento_id, forma_pagamento, status "
+                     "FROM vendas_pdv WHERE caixa_id=%s ORDER BY id DESC LIMIT 1",
+                     (FIX["cx_pix"],))
+        verificar("C11 venda PIX sem sessão concluída, gaveta desvinculada (NULL)",
+                  v and v[0]["forma_pagamento"] == "pix" and v[0]["status"] == "concluida"
+                  and v[0]["caixa_movimento_id"] is None, f"{v}")
+        verificar("C11 vender por PIX não abriu sessão de caixa",
+                  escalar("SELECT COUNT(*) FROM caixa_movimentos WHERE caixa_id=%s",
+                          (FIX["cx_pix"],)) == 0)
+        _evidencia(pagina, "c11-pix-sem-sessao")
+
+        # espécie sem sessão: a tela bloqueia e o POST direto é recusado
+        resp = op.context.request.post(
+            f"{BASE}/caixa/pdv/finalizar",
+            form={"caixa_id": str(FIX["cx_pix"]), "caixa_movimento_id": "0",
+                  "forma_pagamento": "especie", "valor_recebido": "10.00",
+                  "itens_json": _cesta([(FIX["p_refri"], 1)]), "imprimir": "0"})
+        verificar("C11 espécie sem sessão é recusada (sessao_necessaria)",
+                  "sessao_necessaria" in resp.url, resp.url)
+        verificar("C11 a recusa de espécie não criou nada",
+                  escalar("SELECT COUNT(*) FROM vendas_pdv WHERE caixa_id=%s",
+                          (FIX["cx_pix"],)) == 1)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

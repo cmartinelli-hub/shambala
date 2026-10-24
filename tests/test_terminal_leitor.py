@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from trava_isolamento import exigir_ambiente_de_teste  # noqa: E402
 
 from test_tres_passes import (  # noqa: E402
-    assert_eq, preparar_banco, limpar_banco, _garantir_admin, BASE,
+    assert_eq, preparar_banco, limpar_banco, _garantir_admin, BASE, BANCO,
 )
 from test_codigo_trabalhador import _limpa_negocio  # noqa: E402
 from test_terminal_presenca import (  # noqa: E402
@@ -823,7 +823,8 @@ def l24(pasta):
     origem = f"http://{endereco}:{PORTA_INSEGURA}"
     log = "/tmp/shambala_test_app_inseguro.log"
 
-    ambiente = {**os.environ, "SHAMBALA_ENV_FILE": os.path.join(RAIZ, ".env.test"),
+    arquivo_env = os.environ.get("SHAMBALA_ENV_FILE") or os.path.join(RAIZ, ".env.test")
+    ambiente = {**os.environ, "SHAMBALA_ENV_FILE": arquivo_env,
                 "SHAMBALA_MODO_TESTE": "1", "PYTHONPATH": RAIZ}
     processo = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "main:app", "--host", endereco,
@@ -831,6 +832,13 @@ def l24(pasta):
         cwd=RAIZ, env=ambiente, stdout=open(log, "wb"), stderr=subprocess.STDOUT)
     try:
         _aguardar_app(origem, processo)
+        # TASK_010/REV-01: prova do destino EFETIVO deste sub-processo, pelo log
+        # dele e com o token da execução corrente (herdado do runner).
+        from trava_isolamento import provar_destino_do_servidor, AmbienteInseguro
+        try:
+            provar_destino_do_servidor(BANCO, log=log)
+        except AmbienteInseguro as e:
+            raise AssertionError(f"sub-app da LAN sem destino provado: {e}")
         frasco = http.cookiejar.CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(frasco))
         corpo = urllib.parse.urlencode({"nome_usuario": "admin", "senha": "teste123"}).encode()

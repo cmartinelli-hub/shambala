@@ -36,10 +36,12 @@ from trava_isolamento import exigir_ambiente_de_teste, AmbienteInseguro  # noqa:
 
 from test_tres_passes import (  # noqa: E402
     Ctx, assert_eq, preparar_banco, limpar_banco, _garantir_admin, BASE, _SemRedirect,
+    TOKEN,
 )
 
 from banco import conectar, criar_tabelas, fechar_pool  # noqa: E402
 import banco  # noqa: E402
+from preparo_descartavel import recriar_banco, remover_se_nosso  # noqa: E402
 import psycopg2  # noqa: E402  (código de erro da FK — integridade, não driver)
 from servico_codigo_trabalhador import (  # noqa: E402
     CodigosEsgotados, codigo_valido,
@@ -312,10 +314,7 @@ def _banco_dedicado(nome: str):
     if "_test" not in nome or nome in ("shambala", "postgres", "template0", "template1"):
         raise AmbienteInseguro(f"{nome} não é um banco marcadamente de teste")
     original = banco._DB_NAME
-    _psql_admin(f'DROP DATABASE IF EXISTS "{nome}"')
-    r = _psql_admin(f'CREATE DATABASE "{nome}"')
-    if r.returncode != 0:
-        raise RuntimeError(f"não foi possível criar {nome}: {r.stderr}")
+    recriar_banco(nome, TOKEN)  # TASK_010: só recria banco com selo da infraestrutura
     fechar_pool()
     banco._DB_NAME = nome
     try:
@@ -1259,7 +1258,7 @@ def main():
     print(f"\n{ok}/{total} testes passaram (TASK_002 códigos e carteirinhas)"
           + (f" — {pulados} pulado(s)" if pulados else ""))
     with contextlib.suppress(Exception):
-        _psql_admin(f'DROP DATABASE IF EXISTS "{COD_DB}"')
+        remover_se_nosso(COD_DB, TOKEN)
     limpar_banco()
     return 0 if ok == total else 1
 

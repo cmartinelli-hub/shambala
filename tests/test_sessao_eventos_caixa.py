@@ -22,7 +22,10 @@ from datetime import date
 from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from trava_isolamento import exigir_ambiente_de_teste, exigir_arquivo_de_configuracao  # noqa: E402
+from trava_isolamento import (  # noqa: E402
+    exigir_ambiente_de_teste, exigir_configuracao_consoante,
+    provar_destino_do_servidor, AmbienteInseguro,
+)
 
 BASE = os.environ.get("SHAMBALA_TEST_BASE", "http://127.0.0.1:9014")
 PREFIXO = "T008S"
@@ -37,7 +40,13 @@ def abortar(msg):
 arq_env = os.environ.get("SHAMBALA_ENV_FILE")
 if not arq_env:
     abortar("SHAMBALA_ENV_FILE ausente — recuso rodar sem arquivo de teste exclusivo.")
-exigir_arquivo_de_configuracao(arq_env)
+# TASK_010: o arquivo nomeado é a autoridade; um destino SHAMBALA_TEST_DB
+# divergente aborta aqui, antes de qualquer escrita (REV-01).
+try:
+    config = exigir_configuracao_consoante(
+        arq_env, os.environ.get("SHAMBALA_TEST_DB"))
+except AmbienteInseguro as e:
+    abortar(str(e))
 
 from banco import conectar, criar_tabelas, conta_id_por_tipo  # noqa: E402
 
@@ -45,18 +54,12 @@ with conectar() as conn:
     info = exigir_ambiente_de_teste(conn)
 print(f"[ok] conexão do script: {info}")
 
-log_app = os.environ.get("SHAMBALA_APP_LOG", "/tmp/shambala_t008_app.log")
-if not os.path.exists(log_app):
-    abortar(f"log do servidor ausente em {log_app}: não é possível provar o banco do HTTP.")
-confirmacoes = re.findall(
-    r"Ambiente descartável confirmado: \{.*?'banco': '([^']*)'",
-    open(log_app, encoding="utf-8", errors="replace").read(),
-)
-if not confirmacoes:
-    abortar("o app nunca imprimiu 'Ambiente descartável confirmado' — destino não provado.")
-if confirmacoes[-1] != info["banco"]:
-    abortar(f"o servidor HTTP usa '{confirmacoes[-1]}', divergente do script '{info['banco']}'.")
-print(f"[ok] servidor HTTP ({BASE}) no mesmo banco descartável: {confirmacoes[-1]}")
+try:
+    prova = provar_destino_do_servidor(info["banco_efetivo"])
+except AmbienteInseguro as e:
+    abortar(str(e))
+print(f"[ok] servidor HTTP ({BASE}) na execução corrente, mesmo banco efetivo: "
+      f"{prova['banco_efetivo']} (token {prova['token']})")
 
 D = Decimal
 
@@ -780,6 +783,20 @@ verificar("lançamento PIX existe e aponta para a conta PIX",
               "AND forma_pagamento='pix' AND conta_id=%s", (cid_pix,)) == c_pix_b,
           f"{c_pix_b}")
 
+# TASK_010/§3: a TELA acompanha a rota — PDV sem sessão oferece só PIX
+st, corpo, _ = req("GET", f"/caixa/pdv?caixa_id={cx_livre}")
+corpo = (corpo or b"").decode("utf-8", "replace")
+verificar("rota da tela: PDV sem sessão responde em modo PIX (sem tela de bloqueio)",
+          st == 200 and "Caixa sem sessão aberta" in corpo and "Caixa Fechado" not in corpo,
+          f"HTTP {st}")
+verificar("rota da tela: sem sessão, espécie e fiado chegam desabilitados no HTML",
+          'id="pgto-especie"' in corpo and "disabled" in corpo.split('id="pgto-especie"')[1][:80])
+st, _, loc = req("POST", "/caixa/pdv/finalizar", {
+    "caixa_id": str(cx_livre), "forma_pagamento": "especie", "valor_recebido": "10.00",
+    "itens_json": cesta_livre("Tentativa", 1, 10), "imprimir": "0"})
+verificar("rota: espécie sem sessão continua recusada (sessao_necessaria)",
+          erro_em(loc, "sessao_necessaria"), loc)
+
 # ═════════════════════════════════════════════════════════════════════════════
 print("\n══ CASO 11 — ABERTURA CONCORRENTE ══")
 
@@ -903,6 +920,15 @@ verificar("recebimento PIX em sessão LEGADO também é recusado",
           and escalar("SELECT status FROM financeiro_movimentacoes WHERE id=%s", (mm_c2,))
           == "pendente", loc)
 
+st, _, loc = req("POST", "/financeiro/mensalidades/receber", {
+    "trabalhador_id": str(t_legado), "mov_ids": f"{mm_c1},{mm_c2}",
+    "forma_pagamento": "especie", "sessao_id": str(sl)})
+verificar("LOTE contra sessão LEGADO é recusado antes de baixar qualquer parcela",
+          erro_em(loc, "sessao_legada_recebimento")
+          and escalar("SELECT COUNT(*) FROM financeiro_movimentacoes "
+                      "WHERE id IN (%s,%s) AND status <> 'pendente'",
+                      (mm_c1, mm_c2)) == 0, loc)
+
 st, _, loc = req("POST", "/caixa/sangria", {
     "caixa_movimento_id": str(sl), "valor": "22.00", "recebedor_nome": "Fictício",
     "motivo": "T008S legado"})
@@ -980,6 +1006,107 @@ st, _, loc = req("POST", f"/caixa/vendas/{v_doada}/cancelar",
                  {"motivo": "T008S não-admin", "confirmar": "1"}, o=o_op)
 verificar("operador não-admin não cancela vendas", st == 303 and "erro=sem_permissao" in loc,
           f"HTTP {st} {loc}")
+
+# ═════════════════════════════════════════════════════════════════════════════
+print("\n══ CASO 15 — TASK_010/REV-02: saldo inicial e contado NÃO NEGATIVOS, zero legítimo ══")
+
+from servico_sessao import (  # noqa: E402
+    moeda as _moeda_evento, moeda_nao_negativa, SessaoInvalida as _SI,
+)
+
+
+def _recusa_parser(entrada):
+    try:
+        moeda_nao_negativa(entrada, "x")
+        return None
+    except _SI as e:
+        return e.chave
+
+
+verificar("parser não negativo: 0 e '0,00' aceitos como zero exato",
+          moeda_nao_negativa(0, "s") == D("0.00")
+          and moeda_nao_negativa("0,00", "s") == D("0.00"))
+verificar("parser não negativo: '0,001' → 0.00 ACEITO (política documentada, centavos)",
+          moeda_nao_negativa("0,001", "s") == D("0.00"))
+verificar("parser não negativo: '0.005' → 0.01 (ROUND_HALF_UP da TASK_008 preservada)",
+          moeda_nao_negativa("0.005", "s") == D("0.01"))
+verificar("parser não negativo: NEGATIVO recusado ANTES do arredondamento "
+          "(-0,001 não se salva virando zero)",
+          _recusa_parser("-0.001") == "valor_invalido"
+          and _recusa_parser("-5") == "valor_invalido")
+verificar("parser não negativo: NaN, infinito, texto inválido e vazio recusados",
+          all(_recusa_parser(v) == "valor_invalido"
+              for v in ("NaN", "inf", "-inf", "abc", "1e400", "")))
+verificar("parser não negativo: teto conferido APÓS arredondamento — "
+          "9999999999.99 entra; 9999999999.995 (→ 10000000000.00) recusa",
+          moeda_nao_negativa("9999999999.99", "s") == D("9999999999.99")
+          and _recusa_parser("9999999999.995") == "valor_invalido")
+
+
+def _recusa_moeda_evento(entrada):
+    try:
+        _moeda_evento(entrada, "x")
+        return None
+    except _SI as e:
+        return e.chave
+
+
+verificar("eventos continuam ESTRITAMENTE POSITIVOS: moeda() recusa 0 e negativo",
+          _recusa_moeda_evento("0") == "valor_invalido"
+          and _recusa_moeda_evento("-1") == "valor_invalido"
+          and _moeda_evento("0.01", "x") == D("0.01"))
+
+cx_z = escalar("INSERT INTO caixas (nome, descricao, usa_produtos, ativo) "
+               "VALUES (%s, 'fixture TASK_010 saldo zero', TRUE, 1) RETURNING id",
+               (f"{PREFIXO} Cantina Z",))
+
+st, _, loc = req("POST", "/caixa/abrir", {"caixa_id": str(cx_z), "saldo_inicial": "0"})
+passo("POST real de abertura com R$ 0,00 (valor padrão da tela) — REV-02 corrigido", st, loc)
+sz = sessao_aberta(cx_z)
+verificar("sessão zero criada na versão 'eventos' com saldo_inicial 0.00",
+          dec(escalar("SELECT saldo_inicial FROM caixa_movimentos WHERE id=%s", (sz,)))
+          == D("0.00")
+          and escalar("SELECT versao FROM caixa_movimentos WHERE id=%s", (sz,)) == "eventos")
+
+st, _, loc = req("POST", "/caixa/abrir", {"caixa_id": str(cx_z), "saldo_inicial": "-0,01"})
+verificar("abertura com saldo NEGATIVO recusa sem criar sessão nem evento",
+          st == 303 and erro_em(loc, "valor_invalido")
+          and escalar("SELECT count(*) FROM caixa_movimentos WHERE caixa_id=%s", (cx_z,)) == 1)
+
+st, _, loc = req("POST", "/caixa/fechar",
+                 {"caixa_movimento_id": str(sz), "dinheiro_contado": "0"})
+passo("fechamento de sessão VAZIA com contado R$ 0,00", st, loc)
+verificar("fechamento zero: esperado 0, divergência 0, nenhum evento e nenhum "
+          "lançamento financeiro fictício",
+          escalar("SELECT status FROM caixa_movimentos WHERE id=%s", (sz,)) == "fechado"
+          and dec(escalar("SELECT divergencia_contagem FROM caixa_movimentos WHERE id=%s",
+                          (sz,))) == D("0.00")
+          and escalar("SELECT count(*) FROM caixa_sessao_eventos WHERE sessao_id=%s", (sz,)) == 0
+          and escalar("SELECT count(*) FROM financeiro_movimentacoes WHERE descricao LIKE %s",
+                      (f"%fechamento #{sz}%",)) == 0)
+
+# precisão adicional em POST direto (a tela só aceita centavos)
+st, _, loc = req("POST", "/caixa/abrir", {"caixa_id": str(cx_z), "saldo_inicial": "0,005"})
+passo("reabertura com '0,005' enviado direto (fora do step da tela)", st, loc)
+sz2 = sessao_aberta(cx_z)
+verificar("POST direto '0,005' arredonda para 0.01 e grava 0.01 (HALF_UP)",
+          dec(escalar("SELECT saldo_inicial FROM caixa_movimentos WHERE id=%s", (sz2,)))
+          == D("0.01"))
+st, _, loc = req("POST", "/caixa/fechar",
+                 {"caixa_movimento_id": str(sz2), "dinheiro_contado": "0"})
+verificar("contado 0 contra esperado 0.01: divergência exige observação (recusada sem ela)",
+          st == 303 and erro_em(loc, "observacao_obrigatoria")
+          and escalar("SELECT status FROM caixa_movimentos WHERE id=%s", (sz2,)) == "aberto")
+st, _, loc = req("POST", "/caixa/fechar",
+                 {"caixa_movimento_id": str(sz2), "dinheiro_contado": "0",
+                  "observacao": "TASK_010: fração de centavo do teste"})
+passo("fechamento da divergência de arredondamento COM observação", st, loc)
+verificar("fechado com divergência -0.01 registrada, esperado intocado (0.01)",
+          escalar("SELECT status FROM caixa_movimentos WHERE id=%s", (sz2,)) == "fechado"
+          and dec(escalar("SELECT divergencia_contagem FROM caixa_movimentos WHERE id=%s",
+                          (sz2,))) == D("-0.01")
+          and dec(escalar("SELECT saldo_final FROM caixa_movimentos WHERE id=%s", (sz2,)))
+          == D("0.01"))
 
 # ── Resultado ────────────────────────────────────────────────────────────────
 print(f"\n[resultado] aprovadas={len(aprovadas)} falhas={len(falhas)}")

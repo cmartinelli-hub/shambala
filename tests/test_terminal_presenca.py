@@ -41,12 +41,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from trava_isolamento import exigir_ambiente_de_teste  # noqa: E402
 
 from test_tres_passes import (  # noqa: E402
-    Ctx, assert_eq, preparar_banco, limpar_banco, _garantir_admin, BASE,
+    Ctx, assert_eq, preparar_banco, limpar_banco, _garantir_admin, BASE, TOKEN,
 )
 from test_codigo_trabalhador import (  # noqa: E402
     _banco_dedicado, _limpa_negocio, _criar_usuario, _trab, _psql_admin, _Sessao,
     _sessao_nova,
 )
+from preparo_descartavel import remover_se_nosso  # noqa: E402
 
 from banco import conectar, criar_tabelas  # noqa: E402
 from servico_codigo_trabalhador import trocar_codigo, resolver_codigo  # noqa: E402
@@ -898,7 +899,7 @@ def main():
 
     print(f"\n{ok}/{total} testes passaram (TASK_003 terminal — sessão e backend)")
     with contextlib.suppress(Exception):
-        _psql_admin(f'DROP DATABASE IF EXISTS "{MIG_DB}"')
+        remover_se_nosso(MIG_DB, TOKEN)
     limpar_banco()
     return 0 if not falhas else 1
 

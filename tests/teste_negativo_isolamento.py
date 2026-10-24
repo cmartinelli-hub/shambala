@@ -16,10 +16,13 @@ Uso:
 """
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from trava_isolamento import (  # noqa: E402
     exigir_ambiente_de_teste, AmbienteInseguro, BANCOS_PROIBIDOS,
+    exigir_configuracao_consoante, provar_destino_do_servidor,
+    VARIAVEL_TOKEN_EXECUCAO,
 )
 
 RESULTADOS = []
@@ -124,6 +127,102 @@ def main():
     except Exception as e:  # pragma: no cover
         print(f"        não foi possível abrir conexão de prova: {e}")
         RESULTADOS.append(("conexão efetiva no DEV é rejeitada", False, None, False, str(e)))
+
+    # ── [4] Contrato de identidade da execução (TASK_010/REV-01, REV-03) ────
+    # Puramente sobre arquivos/env sintéticos: nenhum banco é tocado aqui.
+    print("\n[4] Contrato de configuração e prova de execução corrente:")
+    temporarios = []
+
+    def _arquivo_env(db):
+        fd, caminho = tempfile.mkstemp(suffix=".env", prefix="shambala_neg_")
+        with os.fdopen(fd, "w") as fh:
+            fh.write(f"SHAMBALA_DB_HOST=/var/run/postgresql\n"
+                     f"SHAMBALA_DB_PORT=5432\n"
+                     f"SHAMBALA_DB_NAME={db}\n"
+                     f"SHAMBALA_DB_USER=shambala\nSHAMBALA_DB_PASS=sintetica\n")
+        temporarios.append(caminho)
+        return caminho
+
+    def _recusa(nome, fn):
+        try:
+            fn()
+            RESULTADOS.append((nome, False, True, False, "ACEITOU (indevidamente)"))
+            print(f"  FALHA {nome} — aceitou o que devia recusar")
+            return False
+        except AmbienteInseguro as e:
+            RESULTADOS.append((nome, True, False, False, str(e)[:90]))
+            print(f"  OK    {nome} — recusado: {str(e)[:90]}")
+            return True
+
+    def _aceite(nome, fn):
+        try:
+            r = fn()
+            RESULTADOS.append((nome, True, True, True, str(r)[:90]))
+            print(f"  OK    {nome} — aceito: {str(r)[:90]}")
+            return r
+        except AmbienteInseguro as e:
+            RESULTADOS.append((nome, False, False, True, str(e)[:90]))
+            print(f"  FALHA {nome} — recusou o que devia aceitar: {e}")
+            return None
+
+    _recusa("arquivo de configuração ausente",
+            lambda: exigir_configuracao_consoante("/nao/existe/.env"))
+    _recusa("arquivo sem SHAMBALA_DB_NAME",
+            lambda: exigir_configuracao_consoante(_arquivo_env("")))
+    _recusa("arquivo apontando banco de DEV ('shambala')",
+            lambda: exigir_configuracao_consoante(_arquivo_env("shambala")))
+    _recusa("destino solicitado A diverge do arquivo B (sentinelas A/B)",
+            lambda: exigir_configuracao_consoante(_arquivo_env("shambala_b_test"),
+                                                  "shambala_a_test"))
+    _aceite("destino solicitado bate com o arquivo",
+            lambda: exigir_configuracao_consoante(_arquivo_env("shambala_a_test"),
+                                                  "shambala_a_test", aplicar=False))
+
+    def _log_sintetico(linha):
+        fd, caminho = tempfile.mkstemp(prefix="shambala_neg_log_")
+        with os.fdopen(fd, "w") as fh:
+            if linha:
+                fh.write(linha + "\n")
+        temporarios.append(caminho)
+        return caminho
+
+    _recusa("log sem confirmação alguma (destino não provado)",
+            lambda: provar_destino_do_servidor(
+                "shambala_a_test", log=_log_sintetico(""),
+                esperado_token="tok-desta-execucao"))
+    _recusa("log de OUTRA execução (token antigo)",
+            lambda: provar_destino_do_servidor(
+                "shambala_a_test",
+                log=_log_sintetico(
+                    "[TESTE] Ambiente descartável confirmado: {'banco': "
+                    "'shambala_a_test', 'usuario': 'shambala', 'servidor': 'x', "
+                    "'banco_efetivo': 'shambala_a_test', 'usuario_efetivo': "
+                    "'shambala', 'token': 'tok-ANTIGA'}"),
+                esperado_token="tok-desta-execucao"))
+    _recusa("token corrente mas banco efetivo divergente do esperado",
+            lambda: provar_destino_do_servidor(
+                "shambala_a_test",
+                log=_log_sintetico(
+                    "[TESTE] Ambiente descartável confirmado: {'banco': "
+                    "'shambala_outra_test', 'usuario': 'shambala', 'servidor': 'x', "
+                    "'banco_efetivo': 'shambala_outra_test', 'usuario_efetivo': "
+                    "'shambala', 'token': 'tok-desta-execucao'}"),
+                esperado_token="tok-desta-execucao"))
+    _aceite("execução corrente provada (token + banco efetivo)",
+            lambda: provar_destino_do_servidor(
+                "shambala_a_test",
+                log=_log_sintetico(
+                    "[TESTE] Ambiente descartável confirmado: {'banco': "
+                    "'shambala_a_test', 'usuario': 'shambala', 'servidor': 'x', "
+                    "'banco_efetivo': 'shambala_a_test', 'usuario_efetivo': "
+                    "'shambala', 'token': 'tok-desta-execucao'}"),
+                esperado_token="tok-desta-execucao"))
+
+    for _tmp in temporarios:
+        try:
+            os.unlink(_tmp)
+        except OSError:
+            pass
 
     print("\n" + "=" * 78)
     ok = sum(1 for r in RESULTADOS if r[1])

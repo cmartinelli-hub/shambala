@@ -46,7 +46,6 @@ import uuid
 from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from trava_isolamento import exigir_arquivo_de_configuracao  # noqa: E402
 
 import test_tres_passes as tp  # noqa: E402
 from test_tres_passes import (  # noqa: E402
@@ -72,31 +71,18 @@ class PularTeste(Exception):
 
 
 def _conferir_banco_do_servidor():
-    """Prova que o SERVIDOR HTTP (não só este script) está no banco descartável.
+    """Prova que o SERVIDOR HTTP (não só este script) está no banco descartável
+    desta EXECUÇÃO — token corrente + current_database() efetivo do app.
 
-    O app em modo de teste imprime no startup
-    `[TESTE] Ambiente descartável confirmado: {'banco': …}` depois de validar a
-    CONEXÃO EFETIVA dele. Sem essa confirmação — ou com banco diferente do que a
-    suíte vai usar — abortamos ANTES de qualquer escrita.
+    (TASK_010/REV-01: log de execução anterior não vale; banco divergente aborta
+    ANTES de qualquer escrita.)
     """
-    esperado = os.environ.get("SHAMBALA_TEST_DB", "shambala_test_passes")
-    log = os.environ.get("SHAMBALA_APP_LOG", "/tmp/shambala_test_app.log")
-    if not os.path.exists(log):
-        raise SystemExit(f"[ABORTADO] log do app de teste ausente ({log}): não é "
-                         "possível provar o banco do servidor HTTP; suba a suíte "
-                         "por tests/rodar_testes.sh")
-    with open(log, encoding="utf-8", errors="replace") as fh:
-        confirmacoes = re.findall(
-            r"Ambiente descartável confirmado: \{.*?'banco': '([^']*)'", fh.read())
-    if not confirmacoes:
-        raise SystemExit(f"[ABORTADO] o app de teste não confirmou ambiente "
-                         f"descartável no log ({log}) — nada foi escrito")
-    banco_servidor = confirmacoes[-1]
-    if banco_servidor != esperado:
-        raise SystemExit(f"[ABORTADO] o servidor HTTP usa o banco "
-                         f"'{banco_servidor}', a suíte espera '{esperado}' — "
-                         "destinos divergem, nada foi escrito")
-    return banco_servidor
+    from trava_isolamento import provar_destino_do_servidor, AmbienteInseguro
+    esperado = os.environ.get("SHAMBALA_TEST_DB") or tp.BANCO
+    try:
+        provar_destino_do_servidor(esperado)
+    except AmbienteInseguro as e:
+        raise SystemExit(f"[ABORTADO] {e}")
 
 
 def teste(nome):
