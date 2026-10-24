@@ -1021,9 +1021,13 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `servico_codigo_trabalhador.py` | Regra única do código de 4 dígitos: emitir, trocar, preparar, resolver, QR |
 | `servico_pdv.py` | Precificação do PDV no servidor (TASK_006/FIN-01): validar quantidades, consultar preço vigente com trava, somar em Decimal ROUND_HALF_UP e detectar divergência de preço sem escrever nada |
 | `servico_cancelamento.py` | Cancelamento de venda (TASK_007/FIN-02): avaliar elegibilidade pelos vínculos persistidos e reverter só efeitos comprováveis (estoque, sessão, doação) numa transação única com prova em `vendas_pdv_cancelamento` |
-| `servico_sessao.py` | Regra única da sessão de caixa (TASK_008/FIN-04): eventos com identidade, destino validado no banco, resumo/fechamento/conferência física pela mesma fórmula, travas e idempotência; recebimento em sessão `legado` é recusado antes de qualquer escrita |
-| `tests/trava_isolamento.py` | Trava que exige banco comprovadamente descartável (`*_test*` + `SHAMBALA_MODO_TESTE=1`); usada pelo lifespan do app ANTES do `criar_tabelas` e por toda suíte antes de destruir |
-| `tests/subir_app_descartavel.sh` | Única forma segura de subir app temporário de teste: recusa iniciar ANTES do startup quando o env não é descartável (incidente TASK_008); `uvicorn` direto fica reservado ao serviço real da 9000 |
+| `servico_sessao.py` | Regra única da sessão de caixa (TASK_008/FIN-04): eventos com identidade, destino validado no banco, resumo/fechamento/conferência física pela mesma fórmula, travas e idempotência; recebimento em sessão `legado` é recusado antes de qualquer escrita. TASK_010/REV-02: `moeda_nao_negativa` (0 aceito, negativo rejeitado antes do arredondamento, HALF_UP a centavo, teto após) para saldo inicial e dinheiro contado; `moeda()` segue estritamente positiva para eventos |
+| `tests/trava_isolamento.py` | Trava que exige banco comprovadamente descartável (`*_test*` + `SHAMBALA_MODO_TESTE=1`); usada pelo lifespan do app ANTES do `criar_tabelas` e por toda suíte antes de destruir. TASK_010: `exigir_configuracao_consoante` confronta o destino pedido no shell com o arquivo `SHAMBALA_ENV_FILE` (autoridade) e aborta sem efeitos quando divergem; validação nunca mais existe sem conexão efetiva |
+| `tests/subir_app_descartavel.sh` | Única forma segura de subir app temporário de teste: recusa iniciar ANTES do startup quando o env não é descartável (incidente TASK_008); `uvicorn` direto fica reservado ao serviço real da 9000. TASK_010/REV-03: importa `banco` só depois do env aplicado e valida `current_database()`/`current_user()` da CONEXÃO EFETIVA antes do exec |
+| `tests/rodar_testes.sh` | Runner oficial. TASK_010/REV-01: env temporário 0600 por execução como destino efetivo, sufixo `_test` exigido antes de qualquer DROP/CREATE, mata apenas o PID que ele registrou, e vincula cada suíte ao token da execução corrente (identidade provada, nunca PASS/PULADO) |
+| `tests/preparo_descartavel.py` | Selo de posse `preparo_descartavel(token)`: recriar banco exige selo de execução nossa; resíduo selado é reclamado e recriado limpo; jamais DROP de banco sem selo |
+| `tests/test_sentinelas_isolamento.sh` | Prova negativa A/B de ponta a ponta (runner e launcher reais): conflito de destino aborta antes de DDL/seed/startup com as sentinelas intactas |
+| `tests/test_mutacoes_rev01_02_03.sh` | Provas antes/depois em CÓPIA ISOLADA: reintroduzir cada achado (REV-01/02/03) faz a prova pertinente falhar; o produto nunca é mutado |
 | `preparar_codigos_trabalhadores.py` | Operação local: emite os códigos que faltam (simulação / `--aplicar`) |
 | `requirements.txt` | Dependências Python do projeto |
 | `instalar.sh` | Script de instalação automatizada |
@@ -1049,7 +1053,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `rotas/doacoes.py` | Cestas básicas, rastreamento |
 | `rotas/mala_direta.py` | Envio em massa WhatsApp/email |
 | `rotas/permissoes.py` | Controle RBAC (grupos + permissões Unix ler/escrever/apagar) |
-| `rotas/caixa.py` | PDV, produtos, caixas, QR Code PIX, histórico de vendas, comprovante — finalização usa `servico_pdv` como única fonte de valores; cancelamento (GET/POST) e fechamento delegam ao `servico_cancelamento` / travam a sessão |
+| `rotas/caixa.py` | PDV, produtos, caixas, QR Code PIX, histórico de vendas, comprovante — finalização usa `servico_pdv` como única fonte de valores; cancelamento (GET/POST) e fechamento delegam ao `servico_cancelamento` / travam a sessão. TASK_010: abertura/fechamento usam `moeda_nao_negativa`; PDV sem sessão aberta opera só PIX (banner + espécie/fiado bloqueados) quando há conta PIX válida |
 
 ---
 
@@ -1257,6 +1261,7 @@ shambala/
 - ✅ PDV com preços e totais calculados no servidor; divergência de preço revisada sem escrita (TASK_006 / FIN-01)
 - ✅ Cancelamento de venda com reversão rastreável dos efeitos comprováveis, idempotência pelo banco e prova durável; casos ambíguos bloqueados sem efeito (TASK_007 / FIN-02)
 - ✅ Caixa por eventos: vendas, recebimentos e dinheiro físico separados; PIX/fiado não recebido/crédito consumido fora da gaveta; destino explícito e fechamento com conferência física (TASK_008 / FIN-04)
+- ✅ Revisão técnica do financeiro da TASK_008 (TASK_009) e correções revalidadas (TASK_010): contrato de ambiente com arquivo de configuração autoritativo + token de execução provando o banco efetivo antes de qualquer DDL/seed/startup; `moeda_nao_negativa` permite abrir/fechar caixa com R$ 0,00 sem lançamento fictício; PDV sem sessão opera PIX (espécie segue condicionada à sessão aberta). TASK_008 tecnicamente aprovada; homologação manual do dono pendente (roteiro em `docs/investigacoes/TASK_010_REVALIDACAO_FINANCEIRO_TASK_008.md`)
 - ✅ Mala direta via WhatsApp e email
 - ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas

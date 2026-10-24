@@ -1,0 +1,20 @@
+pessoas                678
+checkins               2918
+trab_total             70
+trab_ativos            70
+codigos                70 (ativo:70)
+presencas              20
+correcoes              0
+vendas                 1859|25886.75
+vendas_canceladas      35
+financeiro             862|69446.04
+caixas                 5
+sessoes                58|1
+sessao_aberta_ids      42
+eventos                0
+sangrias               49
+atendentes             22
+grupos_permissoes      23
+contas                 4
+produtos               39
+mensalidades           520

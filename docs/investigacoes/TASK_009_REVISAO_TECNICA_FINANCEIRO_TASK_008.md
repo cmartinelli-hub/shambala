@@ -104,3 +104,33 @@ A menor tarefa é corrigir primeiro **REV-01**, pois sem ambiente determinístic
 não é possível confiar em qualquer regressão financeira. Em seguida corrigir
 REV-02 e somente então reexecutar a revisão de fluxo/concorrrência. Não foram
 implementadas correções nesta TASK_009.
+
+---
+
+## Adendo de revalidação (TASK_010) — sem reescrever o parecer acima
+
+Em 2026-10-24 a TASK_010 executou exatamente a rota sugerida. O parecer
+histórico ("requer correções") permanece íntegro acima. Estado atual, com
+evidências em `docs/tasks/evidencias/TASK_010/` e detalhe em
+`docs/investigacoes/TASK_010_REVALIDACAO_FINANCEIRO_TASK_008.md`:
+
+- REV-01, REV-02 e REV-03: **corrigidos e provados** — inclusive prova negativa
+  por sentinelas A/B de ponta a ponta (runner e launcher reais) e prova
+  antes/depois por mutação em cópia isolada (reintroduzir a escolha fixa de
+  `.env.test` volta a fazer a prova falhar, como este documento exigia).
+- Os cinco critérios de aceitação listados acima foram cumpridos: (1) destinos
+  distintos confrontados; (2) abertura R$ 0; (3) `test_sessao_eventos_caixa.py`
+  (139/0) e navegador TASK_008 (41/0) reexecutados num único banco efetivo
+  comprovado por token da execução corrente; (4) concorrências e rollback da
+  última escrita reexecutados; (5) RC=0 e contagens reais por suíte registrados
+  no log canônico, sem perseguir a soma histórica.
+- Divergência PIX sem sessão (backend × PDV) resolvida no interface; espécie
+  permanece condicionada à sessão.
+- Riscos não bloqueadores documentados: ausência de constraint do par de
+  sangria; inexistência de idempotência HTTP no POST do PDV (comportamento, não
+  proteção). `test_financeiro_integracao.py` classificado como harness
+  incompatível (depende de `auditoria_eventos`, fora do schema atual).
+
+Conclusão: nenhum novo bloqueador financeiro apareceu na revalidação; a
+TASK_008 está tecnicamente aprovada, restando a homologação manual do dono
+(roteiro com dados fictícios no documento da TASK_010).
