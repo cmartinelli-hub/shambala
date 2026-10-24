@@ -8,7 +8,8 @@ Cobre a matriz de validação da tarefa:
 3.  nome adulterado → snapshot do cadastro;
 4.  payload sem campos de preço → valores do servidor;
 5.  preço mudou depois da cesta → revisão reprificada, sem escrita;
-6.  concorrência (6 vendas simultâneas) → saldo determinístico;
+6.  concorrência: vendas simultâneas com saldo determinístico e
+    mudança concorrente de preço travada no FOR UPDATE (revisão sem escrita);
 7.  produto inexistente / inativo → recusado;
 8.  produto com preço 0 ou negativo → recusado;
 9.  quantidades inválidas e teto de quantidade;
@@ -53,6 +54,7 @@ from test_tres_passes import (  # noqa: E402
     _login, BASE,
 )
 
+import psycopg2  # noqa: E402
 from banco import conectar  # noqa: E402
 import servico_pdv  # noqa: E402
 from servico_pdv import (  # noqa: E402
@@ -63,6 +65,38 @@ from servico_pdv import (  # noqa: E402
 PREFIXO = f"T6PDV-{uuid.uuid4().hex[:8]}"
 ADMIN_ID = None
 RESULTADOS = []
+
+
+class PularTeste(Exception):
+    """Pré-requisito de ambiente ausente — pulo é registrado, nunca aprovado."""
+
+
+def _conferir_banco_do_servidor():
+    """Prova que o SERVIDOR HTTP (não só este script) está no banco descartável.
+
+    O app em modo de teste imprime no startup
+    `[TESTE] Ambiente descartável confirmado: {'banco': …}` depois de validar a
+    CONEXÃO EFETIVA dele. Sem essa confirmação — ou com banco diferente do que a
+    suíte vai usar — abortamos ANTES de qualquer escrita.
+    """
+    esperado = os.environ.get("SHAMBALA_TEST_DB", "shambala_test_passes")
+    log = os.environ.get("SHAMBALA_APP_LOG", "/tmp/shambala_test_app.log")
+    if not os.path.exists(log):
+        raise SystemExit(f"[ABORTADO] log do app de teste ausente ({log}): não é "
+                         "possível provar o banco do servidor HTTP; suba a suíte "
+                         "por tests/rodar_testes.sh")
+    with open(log, encoding="utf-8", errors="replace") as fh:
+        confirmacoes = re.findall(
+            r"Ambiente descartável confirmado: \{.*?'banco': '([^']*)'", fh.read())
+    if not confirmacoes:
+        raise SystemExit(f"[ABORTADO] o app de teste não confirmou ambiente "
+                         f"descartável no log ({log}) — nada foi escrito")
+    banco_servidor = confirmacoes[-1]
+    if banco_servidor != esperado:
+        raise SystemExit(f"[ABORTADO] o servidor HTTP usa o banco "
+                         f"'{banco_servidor}', a suíte espera '{esperado}' — "
+                         "destinos divergem, nada foi escrito")
+    return banco_servidor
 
 
 def teste(nome):
@@ -908,6 +942,56 @@ def r14():
     assert_eq(str(_dec(venda["troco"])), "78.16", "R14 troco pelo total do servidor")
 
 
+@teste("R15 mudança concorrente de preço: travado no FOR UPDATE, revisão sem escrita")
+def r15():
+    """Preço alterado DURANTE a finalização, sem sorte nem sleep.
+
+    Uma transação externa deixa o produto com preço novo mas AINDA não
+    commitou; a linha está escrita-lockada. A finalização em `SELECT … FOR
+    UPDATE` é obrigada a esperar esse commit — qualquer execução ordena isso.
+    Depois do commit liberado, o preço vigente é o novo: a cesta antiga (que
+    mostrou 10,00) diverge e cai em revisão, sem venda.
+    """
+    p = pdv()
+    prod = p.novo_produto("10.00", 50, nome="Concorrente")
+    antes = p.n_vendas()
+
+    conn_lock = psycopg2.connect(host=os.environ["SHAMBALA_DB_HOST"],
+                                 port=os.environ.get("SHAMBALA_DB_PORT", "5432"),
+                                 dbname=os.environ["SHAMBALA_DB_NAME"],
+                                 user=os.environ["SHAMBALA_DB_USER"],
+                                 password=os.environ.get("SHAMBALA_DB_PASS") or None)
+    try:
+        with conn_lock:
+            conn_lock.cursor().execute(
+                "UPDATE produtos SET preco_venda = 12.00 WHERE id = %s", (prod,))
+            # UPDATE já executado e NÃO commitado: a linha está travada.
+            caixa = {"resposta": None}
+
+            def _vender():
+                caixa["resposta"] = _finalizar(
+                    caixa_id=p.catalogo, itens=[_linha(prod, 2, "10.00")])
+
+            vendedora = threading.Thread(target=_vender)
+            vendedora.start()
+            conn_lock.commit()      # libera o lock com o preço NOVO vigendo
+            vendedora.join(timeout=30)
+    finally:
+        conn_lock.close()
+
+    assert caixa["resposta"] is not None, "R15 a finalização terminou"
+    r = caixa["resposta"]
+    assert_eq(r.status, 200, "R15 preço concorrente vai para revisão")
+    assert_eq(p.n_vendas(), antes, "R15 nada gravado durante a corrida")
+    assert_eq(p.estoque(prod), 50, "R15 estoque intacto")
+    seed = re.search(r'id="pdv-cesta-seed" type="application/json">(.*?)</script>',
+                     r.corpo, re.S)
+    assert seed, "R15 cesta reprificada embutida"
+    linha = json.loads(seed.group(1))[0]
+    assert_eq(linha["preco_unitario"], 12.00, "R15 viu o preço pós-commit")
+    assert_eq(linha["subtotal"], 24.00, "R15 subtotal reprificado")
+
+
 # ── 3. Autorização (a venda continua barrada para quem não é operador) ────────
 
 @teste("A1 anônimo não finaliza venda")
@@ -1018,8 +1102,9 @@ def _sessao_browser():
 def b1():
     faltam = _ferramentas_ausentes()
     if faltam:
-        print(f"        [pulado: {', '.join(faltam)}]")
-        return
+        # PULAR ≠ APROVAR: sem navegador real a verificação visual não aconteceu,
+        # e a suíte sai com código 2 para o runner não contabilizar como passa.
+        raise PularTeste(f"ferramentas ausentes ({', '.join(faltam)})")
     p = pdv()
     antes_vendas, estoque_antes = p.n_vendas(), p.estoque(p.suco)
 
@@ -1085,6 +1170,7 @@ def _limpar():
 
 def main():
     global ADMIN_ID, PDV_FIXTURE
+    _conferir_banco_do_servidor()   # aborta ANTES de criar schema ou escrever
     preparar_banco()
     _garantir_admin()
     with conectar() as conn:
@@ -1093,21 +1179,29 @@ def main():
         ).fetchone()["id"]
     _login()
     PDV_FIXTURE = PDV()
-    total, ok = 0, 0
+    total, ok, pulados = 0, 0, 0
     for nome, fn in RESULTADOS:
         total += 1
         try:
             fn()
             ok += 1
             print(f"  PASS  {nome}")
+        except PularTeste as e:
+            pulados += 1
+            print(f"  PULADO {nome} — {e}")
         except Exception as e:
             print(f"  FALHOU {nome}\n        {type(e).__name__}: {e}")
             traceback.print_exc()
-    print(f"\n{ok}/{total} testes passaram (TASK_006 — PDV no servidor)")
+    print(f"\n{ok}/{total} testes passaram "
+          f"({pulados} pulados: pré-requisito ausente, não contam como aprovados)"
+          if pulados else
+          f"\n{ok}/{total} testes passaram (TASK_006 — PDV no servidor)")
     try:
         _limpar()
     except Exception as e:
         print(f"  [limpeza] {e}")
+    if pulados:
+        return 2
     return 0 if ok == total else 1
 
 
