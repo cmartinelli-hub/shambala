@@ -3,10 +3,11 @@
 Ordem executada: `docs/tasks/TASK_012_REESTRUTURACAO_FINANCEIRA_EXECUCAO_NOTURNA.md`.
 Data: noite de 2026-10-24 → 2026-10-25 (fuso do centro; o DEV atende em `America/Sao_Paulo`).
 HEAD no início da execução: `b9268ec` (docs da correção visual da TASK_011).
-Status geral: **concluída no escopo implementado, com ressalvas** — §1 a §6
-entregues (§6 com FIN-08 parcial, por decisão da própria ordem); §9 aplicado no
-DEV com backup e baseline conferidos; homologação autenticada, legado e
-publicação seguem pendentes (§12).
+Status geral: **PARCIALMENTE CONCLUÍDA.** §2 a §6 têm implementação e prova e
+estão aplicadas no DEV (§9); ficam abertos, nomeados no §12: FIN-09 sob revisão
+(a janela entre commit e arquivo não é eliminável sem arquitetura nova), FIN-06
+contido por bloqueio com reembolso pendente, homologação autenticada do dono, os
+43 recebimentos de fiado do legado e a publicação.
 
 **Retomada de 2026-10-25 (manhã).** A sessão anterior foi interrompida por limite
 de uso no meio da edição da limpeza de `tests/test_financeiro_consultas_task012.py`.
@@ -14,6 +15,15 @@ A retomada começou pelo que estava incompleto — a limpeza da suíte §5 (§5.
 que apagava dados de outras execuções —, validou-a com dados alheios plantados
 no mesmo banco e seguiu para a §6 (FIN-09). O que é herdado e o que é desta
 retomada está separado em §11.
+
+**Devolução do dono (2026-10-25, segunda parte).** A primeira entrega dizia
+"concluída" e foi recusada com sete pontos concretos — regressão do leitor,
+FIN-09 declarado resolvido sem prova da morte entre commit e arquivo, contradição
+sobre a chave, concorrência de mensalidade não demonstrada, erro de dinheiro no
+roteiro, redação imprecisa do DEV e matriz otimista. Todos eram procedentes e
+estão respondidos: §3.3 (trava real), §5.6 (limpeza), §6.5/§6.6 (ciclo do
+FIN-09), §8 (navegador da TASK_012), §9.5 (previsto × preservado, alcance do
+hash, contagem 516), §10 (roteiro corrigido) e §12 (estado real).
 
 Árvore testada: as evidências abaixo foram produzidas sobre `b9268ec` + as
 alterações desta tarefa ainda não commitadas no momento das corridas — e, para
@@ -52,10 +62,10 @@ posteriores — assumi-los abertos teria desfazer trabalho alheio:
 | FIN-03 crédito antecipado sem dinheiro registrado | **resolvido** pela TASK_008 (`credito_anticipado` entra no financeiro com destino explícito) |
 | FIN-04 fechamento misto (espécie/PIX/fiado) | **resolvido** pela TASK_008 (sessões `eventos` com `caixa_sessao_eventos` e efeito físico por forma) |
 | FIN-05 duplicidade de mensalidade por competência | **aberto** → §3 |
-| FIN-06 estorno de fiado pago | **resolvido** pela TASK_007 (recusa); reembolso continua fora de escopo (§7) |
+| FIN-06 estorno de fiado pago | **contido por bloqueio**, não resolvido: a TASK_007 recusa o estorno (e a §4 ampliou a recusa para recebimento alocado). O **reembolso continua pendente** — não existe caminho para devolver dinheiro de fiado já pago, e a ordem o deixa fora de escopo (§7) |
 | FIN-07 consultas/datas divergentes | **resolvido no módulo financeiro** pela §5 (fórmula única no serviço, três datas rotuladas, filtros validados); conciliação bancária segue fora de escopo |
 | FIN-08 constraints/autorias/FKs | **parcial** — §2/§3/§4 acrescentaram as travas do escopo; backfill de autoria histórica, `auditoria_eventos` e duplicidade histórica de mensalidade seguem abertos por decisão explícita (§6.4) |
-| FIN-09 foto da compra escrita antes do commit | **resolvido** pela §6 (arquivo fora da transação, temporário + promoção atômica, sem órfão) |
+| FIN-09 foto da compra escrita antes do commit | **em revisão** — a §6 corrigiu o ciclo (temporário + promoção atômica + recuperação no startup) e provou os desfechos, mas a separação entre commit e promoção não tem atomicidade possível: o que existe é detecção e compensação (§6.5). Fica registrado como **corrigido e sob revisão**, não como fechado |
 | Idempotência de reenvio | **inexistente como mecanismo** — só havia garantias pontuais derivadas de estado → §2 |
 
 Garantias existentes que **não** foram reescritas nesta tarefa (e continuam
@@ -331,7 +341,24 @@ diverge do mês já escrito na descrição, **0** grupos duplicados de
 (trabalhador, mês), 4 sem trabalhador. Ou seja: rotular não reescreve fato
 nenhum e o índice pode ser criado sem conflito histórico.
 
-### 3.3 Repetição e concorrência não duplicam
+### 3.3 Repetição e concorrência não duplicam — e o que faltava aqui
+
+**Correção de uma afirmação errada desta seção.** A versão anterior dizia que
+"checagem + transação" protege a geração. Não protege: `_existe_mes` é uma
+LEITURA. Com o índice único presente, quem impede o segundo lançamento é o banco;
+**sem** o índice — o estado que o startup deixa quando encontra duplicidade
+histórica e se recusa a criá-lo — não havia proteção nenhuma. Medido com o
+índice derrubado e duas conexões atrás de uma barreira: as duas inseriram, 2
+linhas na mesma competência do mesmo trabalhador.
+
+A proteção agora é `_travar_geracao`: `pg_advisory_xact_lock(hashtext(
+'mensalidade_geracao'), trabalhador_id)` antes de olhar o que existe. Serializa
+só a geração daquele trabalhador (dois trabalhadores não esperam um pelo outro),
+é liberada no commit/rollback e não depende de índice, tabela de controle nem
+coluna nova. Provado em `prova_concorrencia_sem_indice`, que roda o caminho real
+do serviço com o índice ausente e exige 1 linha e o par "criei"/"já existia" — e
+restabelece a guarda do banco ao fim.
+
 
 Serviço reescrito (`rotas/financeiro_mensalidades.py`): `inserir_mensalidade`
 usa `ON CONFLICT (trabalhador_id, competencia) WHERE <predicado> DO NOTHING
@@ -947,7 +974,7 @@ ordem pede: a prova tem de ser capaz de reprovar.
    cada execução), mas o contrato está escrito no docstring para a próxima
    alteração.
 
-## 6. Integridade técnica complementar (FIN-08/09) — FIN-09 entregue, FIN-08 parcial
+## 6. Integridade técnica complementar (FIN-08/09) — FIN-09 corrigido e sob revisão, FIN-08 parcial
 
 ### 6.1 FIN-09 — a nota da compra saía do ciclo do arquivo e da transação
 
@@ -1033,7 +1060,66 @@ A suíte inteira: **145/145**, rc=0, `DEV inalterado: ok`. Os arquivos de nota
 que a suíte cria são removidos no fim pelo caminho validado, recortando apenas o
 que apareceu na janela da corrida.
 
-### 6.4 FIN-08 — o que fica aberto, e por quê
+### 6.5 O que a primeira versão NÃO provava (revisão do dono, e o que mudou)
+
+A versão anterior deste relatório dizia "resolvido". O dono recusou, com quatro
+razões concretas. Todas foram procedentes; o que segue é o que cada uma exigiu:
+
+**1. "Commit e promoção são operações separadas; nada demonstra recuperação se o
+processo morrer entre elas."** Verdade — e não existe transação que una banco e
+sistema de arquivos. O que dá para fazer honestamente é (a) reproduzir a morte,
+(b) provar o estado que ela deixa, e (c) fechar esse estado na subida seguinte.
+Hoje existe `rotas.compras.recuperar_compras_sem_nota`, chamada no `lifespan`: a
+compra `pago` cuja nota não está em disco é **cancelada**, a tentativa é
+**anulada** e o temporário órfão é removido. A prova injeta a morte, confirma que
+o estado fica inconsistente (`pago` com arquivo inexistente e `.tmp-` no disco),
+roda a recuperação e exige o estado corrigido; e roda de novo para provar que é
+idempotente. **Limite que continua existindo:** entre a morte e o próximo startup
+o estado fica inconsistente por alguns segundos — não há como evitar sem um
+journal em disco, que seria arquitetura nova (§6 da ordem manda parar antes
+disso).
+
+**2. "O relatório se contradiz sobre a chave: liberada para reenvio e depois
+consumida apontando para documento cancelado."** Verdade, e o código fazia a pior
+das duas: o **reenvio respondia `303 ?ok=1` para uma compra cancelada** (medido
+contra app real, não deduzido). Agora a tentativa ganhou o estado próprio
+`anulada` (terceiro valor da `CHECK`, recriada de forma idempotente): a linha é
+preservada com a chave original, sem documento, e o reenvio recebe a recusa
+legível `tentativa_anulada`. A chave **não** é reciclada para outra operação —
+continua sendo a identidade daquela tentativa — e uma operação nova (tela nova)
+passa normalmente. Não há mais as duas frases em conflito: existe uma frase só, e
+ela é provada em dois sentidos (reenvio recusado, operação nova aceita).
+
+**3. "Falta provar a falha da compensação que cancela a compra."** Verdade, e a
+primeira tentativa de prova estava errada de duas maneiras: a falha era injetada
+fora do `try` (o cancelamento era desfeito junto, e a compra voltava a `pago`) e
+depois dentro de uma transação única (mesmo efeito). A compensação agora é **duas
+transações, de propósito**: o cancelamento do documento confirma sozinho, porque
+é o efeito que precisa valer; a anulação da tentativa é a segunda e pode falhar.
+Provado: promoção falha + compensação falha → documento **cancelado** e tentativa
+**consumida apontando para ele** (rastro preservado, estado coerente), e a
+varredura de startup recupera o temporário.
+
+**4. "Definir o efeito sobre estoque e financeiro."** A compra é despesa no
+livro-caixa (`saida/compra`): **não** movimenta estoque nem gaveta. Isso agora é
+verificado, não afirmado — a prova confere `estoque_movimentos` e
+`caixa_sessao_eventos` antes/depois de todos os desfechos de falha, e confere que
+as compras que falharam ficam `cancelado` (não entram como despesa paga)
+enquanto só a operação boa fica `pago`.
+
+### 6.6 FIN-09 — estado honesto: corrigido, **sob revisão**
+
+O defeito original (arquivo escrito dentro da transação, nome sorteado duas
+vezes) está corrigido e provado. A **atomicidade entre o commit e o arquivo não
+existe e não pode existir** neste desenho: o que há é ordem segura (disco testado
+antes do commit, promoção atômica depois), compensação quando a promoção falha e
+varredura de recuperação no startup quando o processo morre. Isso é robusto, mas
+não é "sem janela" — e por isso o item **não** é declarado fechado. Um journal de
+arquivos ou um outbox no banco resolveriam a janela e são arquitetura nova:
+registrados como decisão futura, conforme o §6 da ordem ("se exigir arquitetura
+nova, entregar diagnóstico e manter fora da implementação").
+
+### 6.7 FIN-08 — o que fica aberto, e por quê
 
 A §2/§3/§4 acrescentaram as travas que o escopo pedia: `chave UNIQUE` em
 `operacao_idempotencia`, índice único parcial `(trabalhador_id, competencia)`
@@ -1050,6 +1136,25 @@ unique. O que **não** entra nesta ordem:
    diagnóstico encontrar zero conflitos**; em caso de conflito o startup avisa e
    não cria o índice (ver §3.7). Isso é deliberado: escolher a linha "vencedora"
    seria reparação automática de fato antigo.
+
+## 8. Provas no navegador (ordem §8.5)
+
+`tests/test_financeiro_navegador_task012.py` — **27 verificações**, Chromium real,
+banco descartável, dados fictícios com prefixo `T012N`, no runner padrão:
+
+| Cenário | O que o navegador confirma |
+|---|---|
+| C1 mensalidades | as três datas nomeadas no seletor, valor em `R$ 60,00` (sem `60.00`), sem rolagem horizontal |
+| C2 fiado parcial | Recebido e Saldo separados, situação "Recebida em parte", extrato com saldo devedor e crédito em cartões distintos — e a premissa provada pelo **efeito no banco** (alocação gravada), não por código HTTP |
+| C3 excedente | dívida fechada com 25 alocados, **5 de crédito**, saldo devedor zerado, e o detalhe com "Para onde foi este dinheiro" apontando a dívida |
+| C4 desktop | `R$ 1.234.567,89` inteiro, CSS versionado (`base.css?v=`), Σ do acumulado explicado, detalhe devolvendo ao **mesmo recorte** |
+| C5 smartphone | 412×915: Visão Geral, Fiados e Relatório de mensalidades sem rolagem lateral; nenhum valor estourando o cartão |
+| C6 larguras | 768 e 1024 sem rolagem horizontal |
+
+Capturas em `docs/tasks/evidencias/TASK_012/t012-*.png`. O encerramento remove
+apenas a marca `T012N` — não apaga histórico de uso real. **Limite:** o
+navegador roda contra o banco descartável; a homologação com os dados reais do
+DEV é do dono (§10).
 
 ## 9. Migração e DEV — aplicado e conferido
 
@@ -1068,7 +1173,7 @@ competência a partir do vencimento já gravado.
 | Verificação (leitura) | Resultado |
 |---|---|
 | identidade | banco `shambala`, usuário `shambala`, local — o DEV existente |
-| mensalidades | 520 (517 com trabalhador, 4 sem trabalhador, 0 com data ilegível) |
+| mensalidades | **520** no total: **516 com trabalhador**, **4 sem trabalhador**, 0 com data ilegível |
 | duplicidade por trabalhador/competência | **0 grupos, 0 linhas em excesso** → índice único pode ser criado |
 | recebimentos de fiado | 43, todos sem `trabalhador_id` (legado — segue sem backfill) |
 | fiado em aberto | 50 vendas; nenhum `fiado_credito` negativo |
@@ -1077,8 +1182,14 @@ competência a partir do vencimento já gravado.
 
 ### 9.3 Backup, hash e restauração validada
 
-1. `pg_dump -Fc` do DEV antes de qualquer escrita:
-   `shambala_dev_antes_t012_20261025081651.dump` (361.887 bytes);
+1. backup do DEV antes de qualquer escrita, **no destino permanente do projeto**
+   (`docs/tasks/backups/`, o mesmo das TASK_010/011), no formato usado por elas
+   (`.sql.gz` + `.sha256`):
+   `shambala_pre_task012_dev_20261025101223.sql.gz` (224.161 bytes, 47 tabelas);
+   conferido com `sha256sum -c` → SUCESSO; o `.gz` abre e é dump PostgreSQL.
+   O dump `-Fc` da primeira coleta (`shambala_dev_antes_t012_20261025081651.dump`,
+   361.887 bytes, SHA-256 `658e873f…707493`) foi uma cópia de trabalho em
+   `/tmp` e **não é mais a referência**: `/tmp` não sobrevive a reboot;
 2. **SHA-256** calculado e reconferido: `658e873f7549241b72407387f888eeb59d2f6968b610affda60e435477707493`
    (registrado em `docs/tasks/evidencias/TASK_012/*.sha256`);
 3. restauração em banco descartável `shambala_t012_restore` (criado de
@@ -1110,16 +1221,44 @@ Comparação de fatos entre DEV e o restaurado (contagens): `pessoas` 678=678,
   `uq_mensalidade_por_competencia` criado (o nome do índice é
   `uq_mensalidade_por_competencia`), `fiado_credito_mov.venda_id` criada,
   `CHECK` de crédito presente.
-- Competência rotulada: 517 linhas, **0 divergências** com o vencimento gravado
-  (a rotulagem não inventou valor nem mudou data).
+- Competência rotulada: **517 linhas** — 516 das mensalidades com trabalhador e 1
+  das 4 sem trabalhador (que também tem vencimento legível). As 3 restantes
+  ficaram sem competência por não terem vencimento legível, e continuam assim de
+  propósito: a consulta as alcança pela segunda perna da regra e as marca como
+  "histórica: sem competência registrada". **0 divergências** entre a competência
+  rotulada e o mês do vencimento já gravado — a rotulagem não inventou valor nem
+  mudou data.
 
-### 9.5 Efeito sobre os fatos: nenhum
+### 9.5 A alteração prevista, e o que foi preservado
 
-Baselines antes × depois (`baseline_dev.py` e `baseline_financeiro_dev.py`):
-**idênticos linha a linha** — inclusive `fm_max_id_hash`, que é a impressão
-digital de todas as linhas do livro-caixa (id, tipo, status, categoria, valor,
-data). Nenhum lançamento criado, alterado ou apagado; nenhuma obrigação paga;
-nenhuma sessão mexida.
+São duas afirmações diferentes e ficam separadas, porque misturá-las foi erro da
+versão anterior deste relatório:
+
+**(a) O que a aplicação MUDOU (previsto e conferido):**
+- DDL: tabela `operacao_idempotencia`, tabela `fiado_alocacao` (5 índices),
+  coluna `financeiro_movimentacoes.competencia`, índice único
+  `uq_mensalidade_por_competencia`, colunas `fiado_credito_mov.venda_id` e
+  `.financeiro_id`, `CHECK fiado_credito >= 0`;
+- **preenchimento de competência em 517 linhas** de mensalidade (ver §9.4). Isto
+  é escrita de dado, não só schema: 517 linhas ganharam valor numa coluna que
+  antes não existia. Nenhum valor, data, status ou vínculo dessas linhas foi
+  alterado — a competência foi copiada do mês do vencimento já gravado.
+
+**(b) O que foi PRESERVADO (medido antes × depois):**
+`baseline_dev.py` e `baseline_financeiro_dev.py` **idênticos linha a linha**.
+Nenhum lançamento criado, alterado ou apagado; nenhuma obrigação paga; nenhuma
+sessão mexida.
+
+**Alcance do hash, sem exagero.** `fm_max_id_hash` é o `md5` de
+`id:tipo:status:categoria:valor:data_movimentacao` de **todas as linhas** do
+livro-caixa, ordenadas por id. Ele **não** cobre as colunas todas: ficam de fora
+`descricao`, `trabalhador_id`, `pessoa_id`, `conta_id`, `competencia`,
+`data_pagamento`, `forma_pagamento`, `pix_copiadecola`, `nota_fiscal_foto` e
+`created_at`. É prova forte de que o livro-caixa não mudou em conteúdo, tipo,
+situação, categoria, valor e vencimento — e é só isso que ela prova. A
+competência, justamente por mudar nesta aplicação, está **fora** do hash; por
+isso ela é conferida pela contagem e pela comparação com o vencimento (§9.4), não
+pelo hash.
 
 Endpoints depois do restart: `/login` 200, `/financeiro/compras` 303 (login),
 `/financeiro/mensalidades` 303 (login), `/static/css/base.css` 200. Nada de
@@ -1138,8 +1277,11 @@ demonstração financeira foi executado no DEV.
    mesma rotina que a suíte de mensalidades exercita.
 4. **A sessão de caixa aberta (1) não foi tocada** e continua pelo fluxo
    legado; novos recebimentos nela continuam bloqueados (TASK_008).
-5. **Produção não foi acessada nem por leitura**, e não houve push. O dump do
-   backup ficou em `/tmp/t012r/devbkp/` (fora do repositório).
+5. **Produção não foi acessada nem por leitura**, e não houve push. O backup
+   recuperável está em `docs/tasks/backups/shambala_pre_task012_dev_20261025101223.sql.gz`
+   com o `.sha256` ao lado (destino permanente, versionado). A restauração desse
+   arquivo **não foi reexecutada** depois da troca de formato — a validação de
+   restauração (§9.3) foi feita sobre o dump `-Fc`; registrado como limite.
 
 ## 10. Roteiro de conferência do dono (máximo 10 passos)
 
@@ -1156,9 +1298,9 @@ o encerramento. Nada aqui pede dívida real nem exclusão de histórico.
 | 5 | Abrir a ficha de um trabalhador com fiado | Financeiro → Fiados → trabalhador | **Comprado a fiado · Já recebido · Saldo devedor** (o crédito do trabalhador aparece em cartão separado) e cada venda com Recebido/Saldo |
 | 6 | *(fictício)* Cadastrar um trabalhador de teste, ex. "Teste TASK_012" | Trabalhadores | Ele passa a aparecer nas listas — **anote o nome**, é o que identifica o registro |
 | 7 | *(fictício)* Lançar uma compra a fiado de R$ 40,00 para esse trabalhador e receber R$ 15,00 escolhendo a dívida | Caixa → PDV / Caixa → Fiados | Antes de confirmar, a tela mostra a distribuição; depois, a dívida fica **R$ 25,00 de saldo com R$ 15,00 recebido** (nem quitada, nem devendo 40) |
-| 8 | *(fictício)* Receber mais R$ 50,00 contra a mesma dívida | Caixa → Fiados | A dívida zera e os R$ 10,00 de excedente viram **crédito** do trabalhador; "Recebimentos" sobe só R$ 50,00 (crédito não é receita nova) |
+| 8 | *(fictício)* Receber mais R$ 50,00 contra a mesma dívida | Caixa → Fiados | A dívida de **R$ 25,00** que restou é quitada e os **R$ 25,00** de excedente (50 − 25) viram **crédito** do trabalhador; "Recebimentos" sobe os R$ 50,00 entregues — o crédito não é receita nova |
 | 9 | *(fictício)* Abrir o detalhe do lançamento do recebimento | Financeiro → visão de lançamentos | A seção **"Para onde foi este dinheiro"** mostra a dívida abatida e o valor, ligados ao recebimento |
-| 10 | Encerrar os registros de teste (o trabalhador "Teste TASK_012" e seus lançamentos) | conforme a rotina do módulo | O rótulo `Teste TASK_012` é o que garante que só o fictício sai; **não** use isto em dívida real |
+| 10 | Encerrar o cadastro de teste **inativando** o trabalhador "Teste TASK_012" (Trabalhadores → editar → ativo = não) e **preservando os fatos** | Trabalhadores | O cadastro sai das listas de uso sem apagar nada. **Não exclua** os lançamentos, a venda a fiado, o crédito nem o recebimento: o nome de teste identifica o registro fictício, não autoriza apagar histórico financeiro — e apagar quebraria os vínculos de alocação que esta tarefa criou |
 
 ## 11. O que é herdado e o que veio na retomada
 
@@ -1175,6 +1317,10 @@ o encerramento. Nada aqui pede dívida real nem exclusão de histórico.
 | Abaixamento do M7 (`test_cancelamento_vendas`) e "—" na linha cancelada | **desta retomada** |
 | Registro de chaves em `CHAVES_USADAS` nas duas suítes da TASK_012 | **desta retomada** |
 | §5, §6, §9, §10 e §11 do relatório | **desta retomada** |
+| Correção da regressão TASK_011 N1 + suítes de navegador destravadas + `--user-data-dir` do K16 | **desta retomada (2ª parte)** |
+| FIN-09: estado `anulada`, `desfazer`, compensação em duas transações, `recuperar_compras_sem_nota` no startup | **desta retomada (2ª parte)** |
+| Trava `pg_advisory_xact_lock` na geração de mensalidade | **desta retomada (2ª parte)** |
+| Suíte de navegador `test_financeiro_navegador_task012.py` | **desta retomada (2ª parte)** |
 
 Não reverti, reorganizei nem reescrevi nenhuma das entregas herdadas: os
 commits `00617c1`, `a4c5346` e `a6f0328` estão intactos no histórico e as suas
@@ -1189,6 +1335,10 @@ suítes rodam verdes.
 | `59dd73b` | fix §5/§6 — venda cancelada sem saldo na ficha; limpeza limitada ao próprio rastro |
 | `9d3be28` | docs §5, §6 e §9 + evidências + SHAMBALA_CONTEXTO |
 | `740492a` | fix — limpeza sem pista falsa (`documento` com ids reciclados) e helper morto removido |
+| `f4e0d81` | fix — regressão do leitor na Visão Geral (TASK_011 N1) e suítes de navegador destravadas |
+| `ac7120c` | fix §6 — FIN-09 fecha o ciclo: morte entre commit e promoção, compensação, chave `anulada` |
+| `42a551e` | fix §3 — geração de mensalidade com trava real quando falta o índice |
+| `e97b0a5` | test — percursos de navegador da TASK_012 (desktop e smartphone) |
 
 Corrida final (`runner_completo_etapa5_6_r2_final.txt`, árvore `740492a`):
 as quatro suítes da TASK_012 verdes — **145/145**, **64/64**, **91/91**,
@@ -1197,16 +1347,30 @@ As quatro suítes vermelhas são as de ambiente listadas em §12.
 
 ## 12. Estado final e limitações remanescentes
 
-**Concluída no escopo implementado, com ressalvas registradas** — as etapas 2 a
-6 da ordem foram entregues com prova; a §6 tem FIN-08 parcial por decisão da
-própria ordem (§6.4).
+**PARCIALMENTE CONCLUÍDA.** As etapas §2 a §6 têm implementação e prova, mas
+três itens impedem declarar a tarefa concluída, e ficam nomeados:
+
+1. **FIN-09 segue em revisão** (§6.6): a janela entre o commit e a materialização
+   do arquivo não é eliminável neste desenho — há detecção e compensação, não
+   atomicidade. Um journal/outbox resolveria; é arquitetura nova, fora do escopo
+   autorizado.
+2. **FIN-06 está contido por bloqueio**, não resolvido: o estorno é recusado e o
+   **reembolso de fiado já pago continua pendente** (§1.1).
+3. **A homologação autenticada no DEV é do dono.** A prova automatizada de
+   navegador exigida pela ordem **existe e passa** (27 verificações, desktop e
+   smartphone, §8 abaixo), mas ela roda em banco descartável com dados fictícios
+   — não substitui o dono abrindo as telas no DEV com os dados dele.
+
+E a §6 tem FIN-08 parcial por decisão da própria ordem (§6.7).
 
 | Pendência | Natureza |
 |---|---|
-| Homologação autenticada no DEV | do dono (passos 6–9 do roteiro) |
+| **FIN-09 sob revisão** | janela entre commit e arquivo: detecção + compensação + recuperação no startup, sem atomicidade; journal/outbox seria arquitetura nova (§6.6) |
+| **FIN-06 contido, não resolvido** | reembolso de fiado já pago continua pendente (§1.1) |
+| Homologação autenticada no DEV | do dono (passos 6–9 do roteiro); a prova automatizada existe (§8), mas roda em descartável |
 | 43 recebimentos de fiado sem trabalhador | legado; tela de destino histórico seria trabalho novo (questão registrada na §4.10) |
 | Vendas/sangrias legadas permitidas | decisão do dono continua pendente (§7 da ordem) |
 | Reembolso de fiado pago, estorno após sessão fechada, reabertura de caixa | excluídos pela ordem (§7) |
 | Conciliação bancária / importação de extratos | fora do escopo |
-| Suítes não financeiras com falha de ambiente | `test_codigo_trabalhador`, `test_terminal_leitor`, `test_gestao_correcoes_navegador`, `test_financeiro_visaogeral_navegador_task011` — todas falham por escrita em `/home/claudio/Documentos/...` (`Read-only file system`) e/ou Chromium sem diretório de perfil (`Failed to create a unique user data directory for headless`). Causa de ambiente, provada nas mensagens do runner final; nenhuma delas toca o financeiro e nenhuma delas falhou por regressão deste trabalho. `test_cancelamento_vendas` (M7) voltou a verde depois da correção do formato/saldo cancelado |
+| Suítes de navegador | **destravadas**: as quatro que falhavam rodaram e passaram — `test_gestao_correcoes_navegador` 11/11, `test_terminal_leitor` 24/24, `test_codigo_trabalhador` 18/18, `test_financeiro_visaogeral_navegador_task011` 42/42. Duas causas distintas: (a) o K16 chamava `chromium` pela linha de comando **sem `--user-data-dir`** e abortava sem perfil gravável — corrigido no teste; (b) as demais falhavam por escrita em `/home/claudio/Documentos` no MEU sandbox de execução, não no ambiente — os caminhos existem e são graváveis, e rodando fora da restrição passam. A suíte TASK_011 tinha, além disso, **1 falha real introduzida pela §5** (contagem de `.fin-def` com "não é saldo"), corrigida com marca própria `fin-def-resultado` |
 | Publicação | fora do escopo (sem push) |
