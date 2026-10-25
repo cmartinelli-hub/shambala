@@ -1040,7 +1040,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 |---|---|
 | `main.py` | App FastAPI, lifespan, monta todas as rotas, filtro `data_br` |
 | `banco.py` | `conectar()`, `criar_tabelas()`, `_migrar()`, pool psycopg2, `gerar_agendamentos_plano()` |
-| `templates_config.py` | Instância única de `Jinja2Templates` |
+| `templates_config.py` | Instância única de `Jinja2Templates`; filtros `data_br`, `data_hora_br`, `moeda` e o global `asset_url('css/base.css')` → `/static/css/base.css?v=<mtime>` |
 | `backup.py` | Backup via `pg_dump` + envio SCP opcional |
 | `backup_pendrive.py` | Backup em pendrive/HD externo (montar, desmontar, pg_dump, histórico) |
 | `maiusculas.py` | Capitalização inteligente de nomes |
@@ -1098,6 +1098,11 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
   (instantes de auditoria: `data_hora_br` → `DD/MM/AAAA HH:MM:SS`, sem microssegundos)
 - **Telefones:** formato `(XX) XXXXX-XXXX`
 - **Ordem de rotas:** rotas com parâmetro dinâmico (`/{id}`) sempre **por último** no módulo — evita conflito com `/buscar`, `/novo` etc. (vale para `rotas/pessoas.py`, `rotas/caixa.py`, etc.)
+- **Folha de estilo:** todo `<link rel="stylesheet">` usa `{{ asset_url('css/<arquivo>.css') }}`
+  (global Jinja em `templates_config.py`), nunca `/static/css/…` direto. O `StaticFiles` não
+  envia `Cache-Control`; sem `?v=<mtime>` o navegador serve o CSS por cache heurístico e a
+  tela fica visualmente defasada em relação ao código (causa da divergência vista na
+  homologação da TASK_011).
 
 ---
 

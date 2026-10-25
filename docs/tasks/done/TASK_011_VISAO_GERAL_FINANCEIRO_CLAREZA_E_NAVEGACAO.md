@@ -1,6 +1,6 @@
 # TASK_011 — Reformular a Visão Geral do Financeiro
 
-Status: **executada e aplicada no DEV; pendente apenas a homologação visual do dono** (login do dono na 9000 seguindo o roteiro ao fim do relatório). Testes: contrato 51/51, navegador 34/34, runner completo 17/17 rc=0. Fatos do DEV preservados (diff zero antes/depois do restart, incluindo digital de conteúdo). Sem push; produção intocada.
+Status: **executada e aplicada no DEV; homologação visual do dono reaberta após a correção de CSS (§7)** (login do dono na 9000 seguindo o roteiro ao fim do relatório). Testes: contrato 51/51, navegador 42/42, runner completo 17/17 rc=0. Fatos do DEV preservados (diff zero antes/depois de cada restart, incluindo digital de conteúdo). Sem push; produção intocada.
 Referências: diagnóstico TASK_005, regras TASK_006–008, revisão TASK_009 e revalidação TASK_010 (encerrada com ressalvas).
 
 ## Objetivo e autorização
@@ -228,3 +228,89 @@ URL exata: **http://<host-dev>:9000/financeiro** (login próprio do dono).
 5. Abra a aba **A receber / A pagar**: obrigações pendentes com vencimento no
    período e, à parte, o fiado em aberto (fora do indicador). Nenhuma baixa
    acontece aqui — as ações levam às telas de Mensalidades e Fiados.
+
+---
+
+## 7. Adendo — Correção da homologação visual (CSS servido)
+
+A homologação encontrou divergência entre a tela na 9000 e as prévias aprovadas
+(abas, cores, espaçamento). Investigação com evidência, nesta ordem:
+
+1. **O CSS em disco e o CSS servido pela 9000 são idênticos byte a byte**
+   (`md5sum static/css/base.css` = `curl http://127.0.0.1:9000/static/css/base.css | md5sum`).
+2. **A árvore servida é a nova** — `GET /financeiro/lancamento/1` responde
+   303 (rota que só existe desde esta TASK_011), então não era código antigo no servidor.
+3. **`templates/base.html` referenciava `/static/css/base.css` sem versão** e o
+   `StaticFiles` envia apenas `ETag`/`Last-Modified`, nunca `Cache-Control`.
+   Sem instrução de revalidação, o navegador aplica *cache heurístico* e
+   continuou usando o `base.css` **anterior à TASK_011** — que não tem as
+   classes `fin-*`. As prévias foram tiradas em contextos Playwright novos, por
+   isso mostravam o CSS correto. **Causa raiz: cache do lado do cliente, não o
+   servidor nem os seletores.**
+4. Conferida também a ordem de carregamento: o bloco da TASK_011 é o último do
+   arquivo e não há conflito de especificidade com `.stat-label`/`.grade-cards`
+   (o que havia era compatível e já aparecia nas prévias aprovadas).
+
+### O que mudou
+
+- **Assets versionados** — global Jinja `asset_url(caminho)` em
+  `templates_config.py` gera `/static/<caminho>?v=<mtime>` (com `v=0` se o
+  arquivo não for legível). Aplicado nos 5 links de stylesheet do projeto
+  (`base.html`, `login.html`, `terminal/leitura.html`,
+  `trabalhadores/carteirinha.html`, `trabalhadores/carteirinhas_lote.html`).
+  Editar o CSS muda o `?v=` e o navegador busca o novo sem esperar a expiração
+  heurística — a divergência deixa de poder se repetir.
+- **Valores monetários grandes** — `.fin-cards .stat-valor` media 1,6 rem com
+  `white-space: nowrap` dentro de colunas de no mínimo 140 px: um
+  `R$ 1.234.567,89` estourava o cartão e gerava rolagem horizontal no celular.
+  Os cartões viram contêineres de consulta (`container-type: inline-size`) e a
+  fonte se ajusta à largura do cartão (`min(1.6rem, 8.6cqi)`; faixa
+  `clamp(1.1rem, 4.5vw, 1.6rem)` como reserva onde `cqi` não existir), com
+  grade `minmax(220px,1fr)`, duas colunas ≤768 px e coluna única ≤480 px. O
+  número nunca quebra linha nem é cortado.
+- **Extrato em larguras estreitas** — as tabelas do desktop ganharam o invólucro
+  `.fin-rolo` (`overflow-x: auto`): abaixo de ~860 px o extrato rola dentro de
+  si, e a página como um todo não ganha barra horizontal.
+- **Faixa "Movimento por conta"** (`.fin-contas`) e **atalhos de mês** (links em
+  coluna, sem o separador órfão) ajustados pelo mesmo critério.
+
+### Provas
+
+- Fixture nova de `R$ 1.234.567,89` na suíte de navegador (janela 2026-06): os
+  cartões passam a `+ R$ 1.234.745,89` / `− R$ 30,00` / `R$ 1.234.715,89` sobre
+  **38** linhas, com paginação `1–25 de 38` e `26–38 de 38`.
+- Asserções novas: o HTML servido referencia `css/base.css?v=` (anti-cache), o
+  valor grande aparece com ponto de milhar no celular, nenhum `.stat-valor`
+  estoura o próprio cartão (`scrollWidth > clientWidth`) e **N8** repete a
+  conferência em 1366/1024/820/768/412 px. Suíte: **42 asserções, 0 falhas**;
+  contrato continua **51/51**.
+- Runner completo depois da correção: **17/17 suítes rc=0**
+  (`docs/tasks/evidencias/TASK_011/runner_correcao_css.log`), DEV inalterado
+  durante a regressão (pessoas=678, checkins=2918 antes e depois). Evidências
+  `depois-*.png` re-capturadas com o valor grande nas fixtures.
+
+### Aplicação no DEV (9000)
+
+- Backup antes da mudança: `docs/tasks/backups/shambala_pre_task011_css_20261024_232935.sql.gz`,
+  SHA-256 `5221e00bf259674ebbfabdf07b5225bdc148a76a552a2e00dca9ae31805a7056`.
+  Restauração **validada** em `shambala_t011_restauracao_test` (banco selado,
+  descartado em seguida): os 11 agregados financeiros — incluindo a digital de
+  conteúdo `max_id|md5(linhas)` — e o `baseline_dev.py` saíram idênticos ao DEV
+  (`restauracao_validada.log`).
+- Baseline de fatos antes (`baseline_dev_antes2.txt` /
+  `baseline_financeiro_antes2.txt`) e depois (`*_depois2.txt`) do restart:
+  **diff zero**. Restart apenas do serviço da 9000 (mesmo comando uvicorn, PID
+  1729434 → 1869627) com ambiente limpo de variáveis de teste; log
+  `dev-startup-task011-css.log`.
+- Smoke sem credenciais: `GET /financeiro` → 303 `/login`;
+  `GET /financeiro/lancamento/1` → 303 `/login`; `md5` do CSS servido = `md5`
+  do arquivo em disco (`42d46ebb…`); o HTML de `/login` já traz
+  `href="/static/css/base.css?v=1792894836"` e a URL versionada responde 200.
+
+### Limitação que resta (declarada)
+
+O `?v=` só vale a partir **desta** subida: quem já estava com o CSS antigo em
+cache o usa até a primeira requisição à página já versionada — na prática, um
+recarregar simples (`Ctrl+Shift+R`) resolve e depois disso o versionamento
+cuida sozinho. Nenhum dado financeiro foi alterado em nenhuma etapa; nenhuma
+credencial foi criada, lida ou alterada.
