@@ -1264,6 +1264,17 @@ Endpoints depois do restart: `/login` 200, `/financeiro/compras` 303 (login),
 `/financeiro/mensalidades` 303 (login), `/static/css/base.css` 200. Nada de
 demonstração financeira foi executado no DEV.
 
+**Segundo restart, já com o código da devolução** (`dev-startup-task012-r3-final.log`):
+o serviço da 9000 foi reiniciado de novo porque as correções pedidas mudaram o
+comportamento do startup (recuperação de compra sem nota) e o vocabulário da
+tabela de tentativas. O log não trouxe nem "competência rotulada" (já estavam
+todas) nem "compra sem nota" (não havia nenhuma) — exatamente o esperado num
+banco em dia. A `CHECK` de `operacao_idempotencia` passou a aceitar
+`em_andamento | concluida | anulada`, e os dois baselines (geral e financeiro)
+seguem **idênticos** aos do restart anterior: o restart não tocou fato algum.
+Endpoints: `/login` 200, `/financeiro` 303, `/financeiro/compras` 303,
+`/terminal` 303. Código em memória = `35f1358`.
+
 ### 9.6 Limitações do DEV
 
 1. **A homologação autenticada é do dono** — nenhuma senha foi pedida ou
