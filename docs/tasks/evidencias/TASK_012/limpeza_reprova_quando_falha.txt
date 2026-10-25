@@ -1,0 +1,14 @@
+# Prova de que a limpeza da suíte de navegador TASK_012 REPROVA quando falha
+#
+# Dois defeitos injetados, cada um numa execução isolada:
+
+## 1) limpeza fora da ordem (apaga o lançamento antes dos dependentes RESTRICT)
+1) limpeza fora da ordem (RESTRICT): FALHA (reprovou como devia)
+   RuntimeError: resíduo próprio após a limpeza: {'trabalhadores': 1, 'vendas': 1, 'sessões': 1}
+
+## 2) limpeza que apaga registro de OUTRA execução (sentinela alheia)
+2) limpeza que apaga registro alheio: FALHA (reprovou como devia)
+   RuntimeError: a limpeza apagou registro de OUTRA execução (sentinela alheia ausente)
+
+# Nos dois casos a suíte terminaria com rc != 0 — antes terminava com
+# falhas=0/rc=0 e deixava resíduo (foi o que o dono encontrou no log).

@@ -185,6 +185,25 @@ def _sem_rolagem_horizontal(pagina) -> bool:
 FIX = {}
 
 
+ALHEIO = {}
+
+
+def _semear_alheio():
+    """Um lançamento que NÃO é desta suíte (sem a marca T012N).
+
+    Serve de sentinela: a limpeza tem de preservá-lo. Contar "antes e depois"
+    fora da execução não serve — o runner RECRIA o banco descartável a cada
+    execução, então a comparação só vale dentro dela.
+    """
+    with conectar() as conn:
+        ALHEIO["fin"] = conn.execute(
+            """INSERT INTO financeiro_movimentacoes
+               (tipo, categoria, valor, data_movimentacao, descricao, status)
+               VALUES ('entrada', 'doacao', 9.99, '2026-09-10',
+                       'Registro de outra execucao (preservar)', 'pago')
+               RETURNING id""").fetchone()["id"]
+
+
 def _semear():
     """Trabalhador, dívida e lançamentos fictícios com prefixo T012N.
 
@@ -265,36 +284,141 @@ def _jar_com_sessao():
 
 
 def _limpar():
-    """Encerra SÓ o rastro desta suíte (a marca T012N).
+    """Encerra SÓ o rastro desta suíte (a marca T012N), na ordem das FKs.
 
     Dívida não se apaga para "limpar tela": o que esta suíte criou é fictício e
     identificado, e o encerramento remove apenas linhas com a marca — nunca
     histórico de uso real.
+
+    A ORDEM importa e já falhou aqui: `financeiro_movimentacoes` tem duas FKs
+    `ON DELETE RESTRICT` apontando para ele — `fiado_alocacao.financeiro_id` e
+    `fiado_credito_mov.financeiro_id`. A primeira versão desta limpeza apagava
+    `fiado_credito_mov` DEPOIS do lançamento, o banco recusava, e a suíte
+    terminava com `falhas=0`/`rc=0` enquanto deixava resíduo. Por isso agora:
+    (a) dependentes primeiro, sempre; (b) erro de limpeza NÃO passa silencioso
+    — sobe e derruba o rc de `main`.
     """
     marca = f"%{PREFIXO}%"
+    tid = FIX.get("tid")
+    venda = FIX.get("venda")
+    sessao = FIX.get("sessao")
     with conectar() as conn:
         fins = [r["id"] for r in conn.execute(
             """SELECT id FROM financeiro_movimentacoes
                WHERE descricao LIKE %s""", (marca,)).fetchall()]
-        if FIX.get("venda"):
-            conn.execute("DELETE FROM fiado_alocacao WHERE venda_id = %s",
-                         (FIX["venda"],))
-            conn.execute("DELETE FROM caixa_sessao_eventos WHERE venda_id = %s",
-                         (FIX["venda"],))
-            conn.execute("DELETE FROM vendas_pdv WHERE id = %s", (FIX["venda"],))
+
+        # 1) NÍVEL 1: tudo que aponta para o lançamento ou para a venda desta
+        #    suíte, identificado pelo VÍNCULO — não por data nem por "não é meu".
+        cond_aloc, params_aloc = [], []
+        if tid:
+            cond_aloc.append("trabalhador_id = %s")
+            params_aloc.append(tid)
         if fins:
-            conn.execute("DELETE FROM fiado_alocacao WHERE financeiro_id = ANY(%s)",
-                         (fins,))
-            conn.execute("DELETE FROM caixa_sessao_eventos WHERE financeiro_id = ANY(%s)",
-                         (fins,))
+            cond_aloc.append("financeiro_id = ANY(%s)")
+            params_aloc.append(fins)
+        if venda:
+            cond_aloc.append("venda_id = %s")
+            params_aloc.append(venda)
+        if cond_aloc:
+            conn.execute(
+                f"DELETE FROM fiado_alocacao WHERE {' OR '.join(cond_aloc)}",
+                params_aloc)
+
+        cond_cred, params_cred = [], []
+        if tid:
+            cond_cred.append("trabalhador_id = %s")
+            params_cred.append(tid)
+        if fins:
+            cond_cred.append("financeiro_id = ANY(%s)")
+            params_cred.append(fins)
+        if venda:
+            cond_cred.append("venda_id = %s")
+            params_cred.append(venda)
+        if cond_cred:
+            conn.execute(
+                f"DELETE FROM fiado_credito_mov WHERE {' OR '.join(cond_cred)}",
+                params_cred)
+
+        cond_ev, params_ev = [], []
+        if venda:
+            cond_ev.append("venda_id = %s")
+            params_ev.append(venda)
+        if fins:
+            cond_ev.append("financeiro_id = ANY(%s)")
+            params_ev.append(fins)
+        if sessao:
+            cond_ev.append("sessao_id = %s")
+            params_ev.append(sessao)
+        if cond_ev:
+            conn.execute(
+                f"DELETE FROM caixa_sessao_eventos WHERE {' OR '.join(cond_ev)}",
+                params_ev)
+
+        # 2) NÍVEL 2: o lançamento e a venda em si.
+        if fins:
             conn.execute("DELETE FROM financeiro_movimentacoes WHERE id = ANY(%s)",
                          (fins,))
-        if FIX.get("sessao"):
-            conn.execute("DELETE FROM caixa_movimentos WHERE id = %s", (FIX["sessao"],))
-        if FIX.get("tid"):
-            conn.execute("DELETE FROM fiado_credito_mov WHERE trabalhador_id = %s",
-                         (FIX["tid"],))
-            conn.execute("DELETE FROM trabalhadores WHERE id = %s", (FIX["tid"],))
+        if venda:
+            conn.execute("DELETE FROM vendas_pdv_itens WHERE venda_id = %s", (venda,))
+            conn.execute("DELETE FROM vendas_pdv WHERE id = %s", (venda,))
+
+        # 3) NÍVEL 3: trabalhador e sessão (já sem quem os referencie).
+        if tid:
+            conn.execute("DELETE FROM trabalhadores WHERE id = %s", (tid,))
+        if sessao:
+            conn.execute("DELETE FROM caixa_movimentos WHERE id = %s", (sessao,))
+
+        # 4) CONFERÊNCIA: sobrou algo com a marca? Então a limpeza não terminou,
+        #    e isso é FALHA (o chamador transforma em rc != 0).
+        restos = {
+            "lançamentos": conn.execute(
+                "SELECT count(*) AS c FROM financeiro_movimentacoes "
+                "WHERE descricao LIKE %s", (marca,)).fetchone()["c"],
+            "alocações": conn.execute(
+                "SELECT count(*) AS c FROM fiado_alocacao a "
+                "WHERE a.trabalhador_id = %s", (tid or -1,)).fetchone()["c"],
+            "crédito": conn.execute(
+                "SELECT count(*) AS c FROM fiado_credito_mov "
+                "WHERE trabalhador_id = %s", (tid or -1,)).fetchone()["c"],
+            "trabalhadores": conn.execute(
+                "SELECT count(*) AS c FROM trabalhadores "
+                "WHERE nome_completo LIKE %s", (marca,)).fetchone()["c"],
+        }
+        sobrou = {k: v for k, v in restos.items() if v}
+    if sobrou:
+        raise RuntimeError(f"limpeza deixou resíduo próprio: {sobrou}")
+
+
+def _conferir_rastro():
+    """Prova de encerramento: resíduo próprio zero E registro alheio intacto.
+
+    Levanta (→ rc != 0) se sobrou algo nosso ou se o alheio desapareceu.
+    """
+    with conectar() as conn:
+        proprio = {
+            "lançamentos": conn.execute(
+                "SELECT count(*) AS c FROM financeiro_movimentacoes "
+                "WHERE descricao LIKE %s", (f"%{PREFIXO}%",)).fetchone()["c"],
+            "trabalhadores": conn.execute(
+                "SELECT count(*) AS c FROM trabalhadores "
+                "WHERE nome_completo LIKE %s", (f"%{PREFIXO}%",)).fetchone()["c"],
+            "vendas": conn.execute(
+                "SELECT count(*) AS c FROM vendas_pdv WHERE id = %s",
+                (FIX.get("venda") or -1,)).fetchone()["c"],
+            "sessões": conn.execute(
+                "SELECT count(*) AS c FROM caixa_movimentos WHERE id = %s",
+                (FIX.get("sessao") or -1,)).fetchone()["c"],
+        }
+        alheio = conn.execute(
+            "SELECT count(*) AS c FROM financeiro_movimentacoes WHERE id = %s "
+            "AND descricao = 'Registro de outra execucao (preservar)'",
+            (ALHEIO.get("fin") or -1,)).fetchone()["c"]
+    sobrou = {k: v for k, v in proprio.items() if v}
+    if sobrou:
+        raise RuntimeError(f"resíduo próprio após a limpeza: {sobrou}")
+    if alheio != 1:
+        raise RuntimeError("a limpeza apagou registro de OUTRA execução "
+                           "(sentinela alheia ausente)")
 
 
 # ── 6. Cenários ────────────────────────────────────────────────────────────
@@ -480,6 +604,7 @@ def main():
     # O admin com senha conhecida é fixture de teste (as suítes definem isso
     # antes de logar); sem ele o login devolve 401 e nenhum cenário roda.
     _garantir_admin()
+    _semear_alheio()
     _semear()
     print(f"[seed] fixtures {PREFIXO} prontas (janela {DE} a {ATE})")
     try:
@@ -493,8 +618,13 @@ def main():
     finally:
         try:
             _limpar()
+            _conferir_rastro()
         except Exception as e:
-            print(f"[limpeza] {e}")
+            # Falha de limpeza (ou resíduo que sobrou) é FALHA DA SUÍTE: sem
+            # isso a execução terminava com falhas=0/rc=0 deixando resíduo no
+            # banco — foi o que o dono encontrou no log.
+            falhas.append(f"limpeza — {type(e).__name__}: {e}")
+            print(f"[limpeza] ERRO: {e}")
     print(f"\n[resultado] aprovadas={len(aprovadas)} falhas={len(falhas)}")
     for f in falhas:
         print(f"  ✘ {f}")
