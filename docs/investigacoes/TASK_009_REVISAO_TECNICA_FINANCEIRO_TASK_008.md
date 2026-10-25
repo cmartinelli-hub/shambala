@@ -136,5 +136,10 @@ evidências em `docs/tasks/evidencias/TASK_010/` e detalhe em
   incompatível (depende de `auditoria_eventos`, fora do schema atual).
 
 Conclusão: nenhum novo bloqueador financeiro apareceu na revalidação; a
-TASK_008 está tecnicamente aprovada, restando a homologação manual do dono
-(roteiro com dados fictícios no documento da TASK_010).
+TASK_010 é **encerrável com ressalvas** (decisão do revisor) e a TASK_008 está
+tecnicamente aprovada, restando a homologação manual do dono (roteiro com dados
+fictícios no documento da TASK_010). Ressalvas registradas: produção segue sem
+autorização de publicação; a duplicação por reenvio cego no PDV continua como
+risco conhecido (a prova de reenvio cobriu apenas o recebimento testado e o
+cancelamento); a manutenção de vendas/sangrias no legado é decisão registrada
+do dono (TASK_008, l.306), não desta revisão.

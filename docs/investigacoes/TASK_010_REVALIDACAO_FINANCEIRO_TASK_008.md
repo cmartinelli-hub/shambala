@@ -151,10 +151,13 @@ PDV **não carrega chave de idempotência**; dois POSTs idênticos a
 evento por venda). Isso foi **observado e provado** no CASO 16 (reenvio duplo
 idêntico → exatamente +2 vendas), e é comportamento projetado, não proteção:
 introduzir idempotência HTTP agora mudaria a semântica de "venda" sem demanda.
-A proteção dos recebimentos contra a perda da resposta é **documental** (item
-i): ainda que o cliente perca a resposta e reenvie, a identidade do documento
-limita o efeito a uma única baixa. Para vendas, um reenvio cego duplica — risco
-explícito e não bloqueador, documentado aqui.
+**A duplicação por reenvio cego no PDV continua como risco conhecido** — a
+prova de reenvio cobriu exatamente o que foi testado: o recebimento de
+mensalidade (CASO 6 e CASO 16: convergência por identidade documental
+`mensalidade:{mov_id}`, 1 evento/1 baixa) e o cancelamento (CASO 16/M11: 1
+compensação por `venda:{id}:cancelamento`). Não se estende a proteção documental
+a outros fluxos sem teste correspondente, e não existe proteção de reenvio para
+vendas no PDV.
 
 ## Sangria — par vinculado confirmado; risco remanescente documentado
 
@@ -164,31 +167,34 @@ recusada, inclusive no legado). A **ausência de constraint** no banco garantind
 o par permanece como risco documentado — sem DDL novo, conforme o limite
 "não remodelar o financeiro" da ordem.
 
-## Sessões legadas — conclusão explícita (vendas e sangrias continuam permitidas)
+## Sessões legadas — estado observado e decisão registrada pelo dono
 
-Nas sessões `legado` (criadas antes da migração TASK_008), **vendas em espécie
-e sangrias continuam operando pela regra antiga** — acumuladores `total_vendas`/
-`total_sangrias`, fechamento pela fórmula anterior. Isso **não é descumprimento**:
-é decisão registrada do dono na revisão da TASK_008 (adendo,
-`docs/tasks/done/TASK_008_CAIXA_VENDAS_RECEBIMENTOS_DINHEIRO_FISICO.md`, l.306:
+Nas sessões `legado` (criadas antes da migração TASK_008), **o comportamento
+observado e provado é**: vendas em espécie e sangrias operam pela regra antiga
+(acumuladores `total_vendas`/`total_sangrias`, fechamento pela fórmula
+anterior); **novos recebimentos** contra legado são recusados
+(`sessao_legada_recebimento`, provado por POST direto e em lote — CASO
+12/C7/LOTE, todos recusados antes de qualquer escrita) e o **fechamento pela
+regra nova** contra legado é recusado (`sessao_legada`, com explicação).
+
+Manter vendas/sangrias nesse fluxo **não é decisão desta revalidação**: está
+registrado como decisão do dono no adendo da revisão da TASK_008
+(`docs/tasks/done/TASK_008_CAIXA_VENDAS_RECEBIMENTOS_DINHEIRO_FISICO.md`, l.306:
 "Vendas e sangrias em legado continuam permitidas — operar e fechar a gaveta
 antiga exige a regra antiga; o dono barrou novos *recebimentos*, não o fluxo
-legado em si"). O que a TASK_008 barrou, e continua barrado, são **novos
-recebimentos** contra legado (`sessao_legada_recebimento`, provado por POST
-direto e em lote — CASO 12/C7/LOTE, todos recusados antes de qualquer escrita)
-e o **fechamento pela regra nova** contra legado (`sessao_legada`, com
-explicação).
-
-Reconferimos a redação contra "Transição e histórico" da TASK_008 ("novos
-eventos não podem contaminar acumuladores legados por fallback"): o requisito
-está cumprido porque os acumuladores legado **só recebem o fluxo legado** — as
-suítes provam que uma sessão `eventos` nunca usa `total_vendas` (permanece 0
-mesmo com vendas/cancelamentos gravados via eventos) e que o legado não aceita
-evento do modelo novo. O CASO 8b (corrida em sessão `eventos` própria) confirma
-que nada do fluxo novo cai nos acumuladores antigos. Demonstração executada na
-suíte: legado aceita venda/sangria pela regra antiga, recusa recebimento sem
-efeito, fecha pela fórmula `10 + 20 − 22 = 8`, e a reabertura do mesmo caixa
-nasce na versão `eventos`.
+legado em si"). Esta TASK_010 apenas conferiu o código contra esse registro e
+contra "Transição e histórico" da TASK_008 ("novos eventos não podem contaminar
+acumuladores legados por fallback"): sob essa leitura o requisito está atendido,
+porque os acumuladores legado **só recebem o fluxo legado** — as suítes provam
+que uma sessão `eventos` nunca usa `total_vendas` (permanece 0 mesmo com
+vendas/cancelamentos gravados via eventos) e que o legado não aceita evento do
+modelo novo. O CASO 8b (corrida em sessão `eventos` própria) confirma que nada
+do fluxo novo cai nos acumuladores antigos. Qualquer mudança nessa regra —
+endurecer ou afrouxar o fluxo legado — exige decisão explícita do dono, não
+competência técnica desta revisão. Demonstração executada na suíte: legado
+aceita venda/sangria pela regra antiga, recusa recebimento sem efeito, fecha
+pela fórmula `10 + 20 − 22 = 8`, e a reabertura do mesmo caixa nasce na versão
+`eventos`.
 
 ## `test_financeiro_integracao.py` — classificação honesta
 
@@ -263,21 +269,26 @@ registro com justificativa preservando o esperado), CASO 10 (PIX sem gaveta,
 rota e tela), CASO 11 (abertura concorrente), CASO 12/C7/LOTE (recusas de
 legado por POST direto, PIX e lote), CASO 13 (par sangria), CASO 14 (regras de
 cancelamento por perfil), CASO 15 (REV-02: zero legítimo e política de
-arredondamento), **CASO 16** (reenvio da mesma tentativa: proteção documental
-dos recebimentos × ausência de chave HTTP no PDV), M1/M2 (migração repetida),
+arredondamento), **CASO 16** (reenvio da mesma tentativa — no escopo testado:
+recebimento de mensalidade e cancelamento; PDV fica provado como **não**
+protegido, risco conhecido), M1/M2 (migração repetida),
 M10/M11/M12/M14 e R11 (cancelamento, clique duplo, rollback integral),
 sentinelas A/B e mutações antes/depois.
 
 **Não encontramos novos bloqueadores financeiros** na revalidação.
 
-Parecer técnico: **a TASK_008 está tecnicamente aprovada para
-considerarmos as correções da revisão concluídas**, com três pontos explícitos
-e não bloqueadores registrados acima: ausência de constraint do par de
-sangria; ausência de chave de idempotência HTTP no POST do PDV (reenvio cego
-duplica vendas — proteção dos recebimentos é documental); e a manutenção do
-fluxo legado de vendas/sangrias por decisão registrada do dono. Aprovação
-técnica **não** autoriza produção nem substitui a homologação manual
-do dono — o roteiro abaixo é o instrumento para isso.
+Parecer técnico: **TASK_010 encerrável com ressalvas; a TASK_008 está
+tecnicamente aprovada para considerarmos as correções da revisão concluídas**,
+com homologação manual do dono **pendente** e três ressalvas explícitas
+registradas acima: ausência de constraint do par de sangria; duplicação por
+reenvio cego no PDV, que **continua como risco conhecido** (a prova de reenvio
+cobriu exatamente o recebimento de mensalidade testado e o cancelamento — não
+se estende a outros fluxos); e a manutenção do fluxo legado de vendas/sangrias,
+que **não é decisão desta revalidação** — está registrada como decisão do dono
+no adendo da TASK_008 (l.306), e alterá-la exige autorização explícita do dono.
+Nada aqui autoriza produção ou publicação; a aprovação técnica **não**
+substitui a homologação manual do dono — o roteiro abaixo é o instrumento para
+isso.
 
 ## Roteiro de homologação do dono (dados exclusivamente fictícios)
 

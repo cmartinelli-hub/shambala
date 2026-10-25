@@ -1,6 +1,6 @@
 # TASK_010 — Corrigir isolamento dos testes, saldo zero e revalidar a TASK_008
 
-Status: executada em 2026-10-24 — ver "Adendo de execução" ao final.
+Status: executada em 2026-10-24 e **encerrável com ressalvas** (decisão do revisor) — homologação manual do dono pendente; produção segue sem autorização de publicação. Ver "Adendo de execução" ao final.
 Referências: TASK_009, parecer requer correções (commit informado aae4799); TASK_008 e revisões R1–R3; contratos TASK_006/007. Confirmar estado real e commits antes de editar.
 
 ## Objetivo
@@ -130,13 +130,15 @@ Matriz TASK_009 integral em banco único comprovado: misto 100+113−30 → 183 
 
 A revisão integral apontou que o parecer não era sustentado pelo conteúdo; este complemento fecha os seis pontos **dentro da TASK_010, sem nova implementação de produto**:
 - **Concorrência** — CASO 8b nomeado na suíte de eventos (fechamento concorrendo com venda, recebimento E cancelamento), com invariantes de coerência em vez de ordem esperada; verde no runner final.
-- **Idempotência** — CASO 16 (reenvio byte a byte após perda de resposta: recebimento 1 evento/1 baixa com recusa `erro=sem_itens` observada na 2ª tentativa; venda PDV 2 vendas legítimas; cancelamento 1 compensação) e o texto do §"Identidade por comando repetido" reescrito distinguindo identidade documental × tentativa HTTP.
-- **Legado** — conclusão explícita: vendas/sangrias em legado continuam permitidas por decisão registrada do dono (TASK_008, l.306 do adendo), com recusas provadas apenas para novos recebimentos (`sessao_legada_recebimento`, direto e em lote) e para fechamento pela regra nova (`sessao_legada`); reconferido contra "Transição e histórico" — acumuladores legados só recebem fluxo legado (sessão `eventos` mantém `total_vendas = 0`).
+- **Idempotência** — CASO 16 (reenvio byte a byte após perda de resposta, **no escopo testado**: recebimento de mensalidade 1 evento/1 baixa com recusa `erro=sem_itens` observada na 2ª tentativa; cancelamento 1 compensação; venda PDV 2 vendas legítimas) e o texto do §"Identidade por comando repetido" reescrito distinguindo identidade documental × tentativa HTTP. A duplicação por reenvio cego no PDV **continua como risco conhecido**; a proteção documental não é estendida a fluxos sem teste correspondente.
+- **Legado** — registrado o estado observado com a **decisão atribuída exclusivamente ao dono**: vendas/sangrias em legado continuam permitidas pelo registro do adendo da TASK_008 (l.306), não por decisão desta revisão — alterá-la exige autorização explícita do dono. Recusas provadas apenas para novos recebimentos (`sessao_legada_recebimento`, direto e em lote) e para fechamento pela regra nova (`sessao_legada`); reconferido contra "Transição e histórico" — acumuladores legados só recebem fluxo legado (sessão `eventos` mantém `total_vendas = 0`).
 - **Evidências** — `runner_completo_final.txt` canônica e commitável com hash da árvore, token, rc e contagens por suíte; v1/v2 preservados e explicados.
 - **Roteiro** — corrigido: PIX sem sessão vem antes da abertura (o texto anterior abria e pressupunha ausência de sessão na mesma sequência); a divergência de contagem **com justificativa** fecha registrando-a e preservando o esperado (a regra aprovada não é "recusar sempre"); o fechamento de sessão vazia acontece num **segundo** caixa fictício.
 - **`auditoria_eventos`** — alegação histórica de migração na TASK_008 removida; afirmado apenas o observável.
 
 Produto intocado neste complemento (nenhum diff em `rotas/`, `servico_*`, `templates/` além do que a fase 1 já commitara); DEV permanece o mesmo serviço da 9000 com baseline idêntica.
+
+**Encerramento**: o revisor declarou a TASK_010 **encerrável com ressalvas** — homologação manual do dono pendente; produção segue sem autorização de publicação; não se repetem os testes por ajustes de redação.
 
 ## DEV (§5)
 
