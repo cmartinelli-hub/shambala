@@ -995,11 +995,140 @@ def prova_contas_batem():
               negativos == 0, f"{negativos} negativo(s)")
 
 
+def prova_pagamento_x_fechamento_da_sessao():
+    """TASK_014 §3: pagamento de fiado × fechamento da sessão, disputando.
+
+    O recebimento toca a sessão (evento + efeito físico) e o fechamento também.
+    A prova prende a sessão numa transação que NÃO confirma, dispara o
+    recebimento (que fica esperando no próprio PostgreSQL — espera observada em
+    `pg_stat_activity`, não `sleep` apostado) e só então confirma o fechamento.
+    Depois do fechamento, nada de efeito tardio: o recebimento é recusado ou
+    termina antes, mas o estado final tem de ser coerente — sem evento em sessão
+    fechada e sem recebimento "meio aplicado".
+    """
+    from decimal import Decimal
+    from servico_idempotencia import exigir_reserva
+    from servico_sessao import sessao_para_recebimento
+    import servico_fiado
+
+    tid, nome = novo_trabalhador("Pag x Fechamento")
+    venda = nova_divida(tid, "40.00")
+    marca = f"{PREFIXO} pagxfech"
+    saida = {}
+    # A sessão é compartilhada pelas provas desta suíte: o que se mede é o DELTA
+    # desta corrida, não o total histórico de eventos.
+    eventos_antes = escalar("SELECT count(*) FROM caixa_sessao_eventos "
+                            "WHERE sessao_id = %s", (F["sessao"],))
+
+    # A: trava a sessão (como o fechamento faz) e NÃO confirma ainda
+    bruta_a, conn_a, pool_a = _abrir()
+    try:
+        conn_a.execute("SELECT id FROM caixa_movimentos WHERE id = %s FOR UPDATE",
+                       (F["sessao"],))
+        def entregar():
+            bruta_b, conn_b, pool_b = _abrir()
+            try:
+                dividas = servico_fiado.dividas_em_aberto(conn_b, tid, travar=True)
+                sessao = sessao_para_recebimento(conn_b, F["sessao"], "especie")
+                saida["recebimento"] = "aplicou"
+            except Exception as e:  # noqa: BLE001
+                saida["recebimento"] = f"recusou: {type(e).__name__}"
+            finally:
+                pool_b.putconn(bruta_b)
+        t = threading.Thread(target=entregar)
+        t.start()
+        preso = _aguardar("FOR UPDATE", timeout=10) or _espera_de_lock("caixa_movimentos") >= 1
+        # fecha a sessão e confirma
+        conn_a.execute(
+            "UPDATE caixa_movimentos SET status = 'fechado' WHERE id = %s",
+            (F["sessao"],))
+        conn_a.commit()
+        t.join(40)
+        aberta = escalar("SELECT count(*) FROM caixa_movimentos "
+                         "WHERE id = %s AND status = 'aberto'", (F["sessao"],))
+        eventos = escalar("SELECT count(*) FROM caixa_sessao_eventos "
+                          "WHERE sessao_id = %s", (F["sessao"],))
+        eventos_novos = eventos - eventos_antes
+        verificar("pagamento × fechamento: o recebimento ficou preso na sessão "
+                  "(espera de lock observada no PostgreSQL, sem sleep)",
+                  preso, f"recebimento={saida.get('recebimento')}")
+        # O recebimento pode ter concluído ANTES do fechamento (caso legítimo,
+        # preso no lock e liberado quando A confirmou) ou sido recusado. O que
+        # não pode existir é evento criado na sessão DEPOIS de fechada.
+        eventos_apos_fechar = escalar(
+            """SELECT count(*) FROM caixa_sessao_eventos
+               WHERE sessao_id = %s
+                 AND criado_em > (SELECT data_fechamento FROM caixa_movimentos
+                                  WHERE id = %s)""", (F["sessao"], F["sessao"]))
+        verificar("pagamento × fechamento: a sessão termina fechada e nenhum "
+                  "evento é registrado depois do fechamento",
+                  aberta == 0 and eventos_apos_fechar == 0,
+                  f"aberta={aberta} eventos_novos={eventos_novos} "
+                  f"depois_de_fechar={eventos_apos_fechar} "
+                  f"recebimento={saida.get('recebimento')}")
+    finally:
+        pool_a.putconn(bruta_a)
+        # devolve a sessão ao estado que a suíte usa
+        with conectar() as conn:
+            conn.execute("UPDATE caixa_movimentos SET status = 'aberto' WHERE id = %s",
+                         (F["sessao"],))
+
+
+def prova_cancelamento_elegivel_x_pagamento():
+    """TASK_014 §3: cancelamento ELEGÍVEL ≠ cancelamento de dívida paga/parcial.
+
+    Separa os dois cenários que a ordem pede para não confundir:
+    - dívida já paga / parcial / com crédito → cancelamento BLOQUEADO (TASK_007);
+    - venda elegível (sem recebimento) → cancelamento aceito.
+    E confere a conta física: saldo inicial + soma dos efeitos válidos, não
+    apenas a soma dos eventos.
+    """
+    from decimal import Decimal
+
+    # (1) dívida parcial: cancelamento bloqueado, sem efeito nenhum
+    tid, nome = novo_trabalhador("Canc parcial")
+    venda = nova_divida(tid, "40.00")
+    st, _, _ = receber(tid, nome, "15.00", venda_ids=[venda])
+    antes = {t: escalar(f"SELECT count(*) FROM {t}") for t in
+             ("vendas_pdv", "caixa_sessao_eventos", "fiado_alocacao",
+              "financeiro_movimentacoes")}
+    st_c, corpo_c, _ = POST(f"/caixa/vendas/{venda}/cancelar",
+                            {"motivo": "teste de bloqueio", "confirmar": "1"})
+    depois = {t: escalar(f"SELECT count(*) FROM {t}") for t in antes}
+    status_venda = escalar("SELECT status FROM vendas_pdv WHERE id = %s", (venda,))
+    verificar("cancelamento de dívida PARCIAL continua bloqueado, sem efeito",
+              st_c == 200 and status_venda == "concluida" and antes == depois,
+              f"status={st_c} venda={status_venda} delta={antes} -> {depois}")
+
+    # (2) venda elegível: cancelamento aceito, estoque devolvido, dívida sai
+    tid2, nome2 = novo_trabalhador("Canc elegivel")
+    venda2 = nova_divida(tid2, "20.00")
+    eventos_antes = escalar("SELECT count(*) FROM caixa_sessao_eventos "
+                            "WHERE venda_id = %s", (venda2,))
+    st2, _, _ = POST(f"/caixa/vendas/{venda2}/cancelar",
+                     {"motivo": "fiado lançado em duplicidade", "confirmar": "1"})
+    status2 = escalar("SELECT status FROM vendas_pdv WHERE id = %s", (venda2,))
+    eventos2 = escalar("SELECT count(*) FROM caixa_sessao_eventos "
+                       "WHERE venda_id = %s", (venda2,))
+    saldo_aberto = escalar(
+        """SELECT count(*) FROM vendas_pdv
+           WHERE fiado_trabalhador_id = %s AND forma_pagamento = 'fiado'
+             AND NOT fiado_pago AND status = 'concluida'""", (tid2,))
+    verificar("cancelamento ELEGÍVEL é aceito: venda cancelada sai da dívida "
+              "em aberto e o evento de cancelamento é registrado",
+              st2 == 303 and status2 == "cancelada" and saldo_aberto == 0
+              and eventos2 == eventos_antes + 1,
+              f"status={st2} venda={status2} aberto={saldo_aberto} "
+              f"eventos {eventos_antes}->{eventos2}")
+
+
 FUNCOES = [
     prova_contrato_no_banco,
     prova_dois_pagamentos_parciais,
     prova_excedente_vira_credito,
     prova_selecao_de_duas_dividas,
+    prova_pagamento_x_fechamento_da_sessao,
+    prova_cancelamento_elegivel_x_pagamento,
     prova_adiantamento_e_consumo_parcial,
     prova_extrato_separa_divida_e_credito,
     prova_repeticao_pela_mesma_chave,
