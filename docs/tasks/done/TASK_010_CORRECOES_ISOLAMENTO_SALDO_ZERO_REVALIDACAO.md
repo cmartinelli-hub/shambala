@@ -119,11 +119,24 @@ Critérios mínimos: REV-01 e REV-03 demonstradamente resolvidos, REV-02 corrigi
 ## Identidade do banco nas evidências
 
 - `sentinelas_AB.log`: 4 negativos (runner e launcher reais) abortam com sentinelas SENT-A/SENT-B intactas; positivo amarra token+banco.
-- `runner_completo_v2.log` (canônico): token `t010-20261024203621-1103384`, script e servidor HTTP confirmam `shambala_test_passes`; 15 suítes rc=0; sessao_eventos 139/0; navegador TASK_008 41/0; zero pulados. `runner_completo.log` (v1, RC=1) preservado como registro histórico da divergência, não reescrito.
+- `runner_completo_final.txt` (**canônica, commitável**): token `t010-20261024212542-1294779`, árvore `d12dbfcc5fb64eff17beef9b0b30ade93234d132-dirty` (sufixo apenas por rascunhos de docs não commitados), script e servidor HTTP confirmam `shambala_test_passes`; 15 suítes rc=0; sessao_eventos 161/0; navegador TASK_008 41/0; DEV inalterado. SHA-256 `0754b19026c1cac8a2f45db7d6f8a91e96a0d0f7fc749d63bd589af1932ee680`. O runner passou a imprimir o hash da árvore no cabeçalho — a identidade "base 1e57f79" usada antes era imprecisa e foi substituída.
+- `runner_completo_v2.log` (RC=0, token `t010-20261024203621-1103384`) e `runner_completo.log` (v1, RC=1) — preservados como histórico das execuções prévias ao complemento do revisor.
 
 ## Resultados reais da revalidação
 
-Matriz TASK_009 integral em banco único comprovado: misto 100+113−30 → 183 via HTTP real; recusa de legado por POST direto e em lote; PIX sem sessão no PDV (rota + navegador, espécie recusada); concorrências (duas aberturas, fechamento duplo, 8 vendas simultâneas) e rollback integral da última escrita; migração repetida sem duplicação; sangria com par vinculado e efeito global zero. Riscos registrados sem DDL: constraint do par de sangria ausente; POST do PDV não é idempotente (dois POSTs legítimos = duas vendas — comportamento, documentado). `test_financeiro_integracao.py` classificado como harness incompatível (exige `auditoria_eventos`, inexistente no schema atual); nenhuma tabela foi criada para satisfazer fixture.
+Matriz TASK_009 integral em banco único comprovado: misto 100+113−30 → 183 via HTTP real; recusa de legado por POST direto e em lote; PIX sem sessão no PDV (rota + navegador, espécie recusada); concorrências (duas aberturas, fechamento duplo, 8 vendas simultâneas, **CASO 8b: fechar × venda × recebimento × cancelamento no mesmo `FOR UPDATE`**) e rollback integral da última escrita; migração repetida sem duplicação; sangria com par vinculado e efeito global zero; **CASO 16: reenvio da mesma tentativa** (recebimento converge por identidade documental `mensalidade:{mov_id}`; POST do PDV não tem chave HTTP — dois envios idênticos criam duas vendas, comportamento projetado e documentado). Riscos registrados sem DDL: constraint do par de sangria ausente; reenvio cego de venda duplica. `test_financeiro_integracao.py` classificado como harness incompatível (exige `auditoria_eventos`, tabela inexistente no schema atual e já apontada como ausente antes da TASK_008 — não se afirma migração alguma); nenhuma tabela foi criada para satisfazer fixture.
+
+## Devolução do revisor (complemento do mesmo dia)
+
+A revisão integral apontou que o parecer não era sustentado pelo conteúdo; este complemento fecha os seis pontos **dentro da TASK_010, sem nova implementação de produto**:
+- **Concorrência** — CASO 8b nomeado na suíte de eventos (fechamento concorrendo com venda, recebimento E cancelamento), com invariantes de coerência em vez de ordem esperada; verde no runner final.
+- **Idempotência** — CASO 16 (reenvio byte a byte após perda de resposta: recebimento 1 evento/1 baixa com recusa `erro=sem_itens` observada na 2ª tentativa; venda PDV 2 vendas legítimas; cancelamento 1 compensação) e o texto do §"Identidade por comando repetido" reescrito distinguindo identidade documental × tentativa HTTP.
+- **Legado** — conclusão explícita: vendas/sangrias em legado continuam permitidas por decisão registrada do dono (TASK_008, l.306 do adendo), com recusas provadas apenas para novos recebimentos (`sessao_legada_recebimento`, direto e em lote) e para fechamento pela regra nova (`sessao_legada`); reconferido contra "Transição e histórico" — acumuladores legados só recebem fluxo legado (sessão `eventos` mantém `total_vendas = 0`).
+- **Evidências** — `runner_completo_final.txt` canônica e commitável com hash da árvore, token, rc e contagens por suíte; v1/v2 preservados e explicados.
+- **Roteiro** — corrigido: PIX sem sessão vem antes da abertura (o texto anterior abria e pressupunha ausência de sessão na mesma sequência); a divergência de contagem **com justificativa** fecha registrando-a e preservando o esperado (a regra aprovada não é "recusar sempre"); o fechamento de sessão vazia acontece num **segundo** caixa fictício.
+- **`auditoria_eventos`** — alegação histórica de migração na TASK_008 removida; afirmado apenas o observável.
+
+Produto intocado neste complemento (nenhum diff em `rotas/`, `servico_*`, `templates/` além do que a fase 1 já commitara); DEV permanece o mesmo serviço da 9000 com baseline idêntica.
 
 ## DEV (§5)
 

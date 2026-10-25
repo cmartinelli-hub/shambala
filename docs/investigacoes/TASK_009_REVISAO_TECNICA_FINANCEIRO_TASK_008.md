@@ -120,10 +120,14 @@ evidências em `docs/tasks/evidencias/TASK_010/` e detalhe em
   `.env.test` volta a fazer a prova falhar, como este documento exigia).
 - Os cinco critérios de aceitação listados acima foram cumpridos: (1) destinos
   distintos confrontados; (2) abertura R$ 0; (3) `test_sessao_eventos_caixa.py`
-  (139/0) e navegador TASK_008 (41/0) reexecutados num único banco efetivo
-  comprovado por token da execução corrente; (4) concorrências e rollback da
-  última escrita reexecutados; (5) RC=0 e contagens reais por suíte registrados
-  no log canônico, sem perseguir a soma histórica.
+  (161/0 no runner final) e navegador TASK_008 (41/0) reexecutados num único
+  banco efetivo comprovado por token da execução corrente; (4) concorrências —
+  incluindo a prova nomeada de **fechamento × venda × recebimento ×
+  cancelamento** no mesmo `FOR UPDATE` (CASO 8b) e o reenvio da mesma tentativa
+  (CASO 16) — e rollback da última escrita reexecutados; (5) RC=0 e contagens
+  reais por suíte registrados na evidência canônica commitável
+  `docs/tasks/evidencias/TASK_010/runner_completo_final.txt` (árvore `d12dbfc`,
+  token `t010-20261024212542-1294779`), sem perseguir a soma histórica.
 - Divergência PIX sem sessão (backend × PDV) resolvida no interface; espécie
   permanece condicionada à sessão.
 - Riscos não bloqueadores documentados: ausência de constraint do par de
