@@ -1180,6 +1180,21 @@ Não reverti, reorganizei nem reescrevi nenhuma das entregas herdadas: os
 commits `00617c1`, `a4c5346` e `a6f0328` estão intactos no histórico e as suas
 suítes rodam verdes.
 
+### 11.1 Commits desta retomada
+
+| Commit | Conteúdo |
+|---|---|
+| `e8d8d8e` | feat §5 — consultas do financeiro na conta da §4 (código herdado + suíte com limpeza concluída) |
+| `c17b5cd` | fix §6 — a foto da nota deixa de viver dentro da transação (FIN-09) |
+| `59dd73b` | fix §5/§6 — venda cancelada sem saldo na ficha; limpeza limitada ao próprio rastro |
+| `9d3be28` | docs §5, §6 e §9 + evidências + SHAMBALA_CONTEXTO |
+| `740492a` | fix — limpeza sem pista falsa (`documento` com ids reciclados) e helper morto removido |
+
+Corrida final (`runner_completo_etapa5_6_r2_final.txt`, árvore `740492a`):
+as quatro suítes da TASK_012 verdes — **145/145**, **64/64**, **91/91**,
+**74/74** — `test_cancelamento_vendas` de volta a verde, `DEV inalterado: ok`.
+As quatro suítes vermelhas são as de ambiente listadas em §12.
+
 ## 12. Estado final e limitações remanescentes
 
 **Concluída no escopo implementado, com ressalvas registradas** — as etapas 2 a
@@ -1193,5 +1208,5 @@ própria ordem (§6.4).
 | Vendas/sangrias legadas permitidas | decisão do dono continua pendente (§7 da ordem) |
 | Reembolso de fiado pago, estorno após sessão fechada, reabertura de caixa | excluídos pela ordem (§7) |
 | Conciliação bancária / importação de extratos | fora do escopo |
-| Suítes não financeiras com falha de ambiente | `test_codigo_trabalhador`, `test_terminal_leitor`, `test_gestao_correcoes_navegador`, `test_financeiro_visaogeral_navegador_task011` — todas falham por escrita em `/home/claudio/Documentos/...` (`Read-only file system`) e/ou Chromium sem diretório de perfil; nenhuma toca o financeiro |
+| Suítes não financeiras com falha de ambiente | `test_codigo_trabalhador`, `test_terminal_leitor`, `test_gestao_correcoes_navegador`, `test_financeiro_visaogeral_navegador_task011` — todas falham por escrita em `/home/claudio/Documentos/...` (`Read-only file system`) e/ou Chromium sem diretório de perfil (`Failed to create a unique user data directory for headless`). Causa de ambiente, provada nas mensagens do runner final; nenhuma delas toca o financeiro e nenhuma delas falhou por regressão deste trabalho. `test_cancelamento_vendas` (M7) voltou a verde depois da correção do formato/saldo cancelado |
 | Publicação | fora do escopo (sem push) |
