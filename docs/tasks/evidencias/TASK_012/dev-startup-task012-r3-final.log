@@ -6,3 +6,7 @@ INFO:     127.0.0.1:60988 - "GET /login HTTP/1.1" 200 OK
 INFO:     127.0.0.1:32770 - "GET /financeiro HTTP/1.1" 303 See Other
 INFO:     127.0.0.1:32786 - "GET /financeiro/compras HTTP/1.1" 303 See Other
 INFO:     127.0.0.1:32790 - "GET /terminal HTTP/1.1" 303 See Other
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [230371]
