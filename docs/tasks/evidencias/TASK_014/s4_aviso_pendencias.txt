@@ -1,0 +1,24 @@
+# TASK_014 §4 — aviso somente leitura das compras sem nota em disco
+#
+# Rota: GET /financeiro/compras/pendencias (guardado por permissoes do módulo
+# financeiro.compras). Página SOMENTE LEITURA: não cancela, apaga ou refaz nada.
+#
+# Quatro estados plantados no banco descartável, todos com o mesmo sintoma
+# (linha com nota registrada e arquivo ausente):
+
+status: 200
+  OK    interrompida reconhecida        (temporário + tentativa recente → seria recuperada no startup)
+  OK    fora do prazo reconhecida       (temporário + tentativa > 24 h → recuperação automática não age)
+  OK    sem prova reconhecida           (sem temporário → pode ser volume não montado / perda)
+  OK    compra com arquivo NÃO listada  (só entram as que realmente não têm o arquivo)
+  OK    não manda refazer               (texto orienta NÃO duplicar a despesa)
+  OK    procedimento presente           (onde localizar, o que preservar, quando encaminhar)
+
+# O que a página diz em cada caso (resumo):
+#   interrompida  -> "aguarde o próximo início; não refaça agora"
+#   fora do prazo -> "confira com o responsável; não decida sozinho"
+#   sem_acesso    -> "problema de armazenamento, não prova de falha; não refaça"
+#   sem_prova     -> "arquivo ausente sem prova; não trate como compra a refazer"
+#
+# Log técnico (startup) continua existindo; esta página é o que o OPERADOR
+# consegue ler.

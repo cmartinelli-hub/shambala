@@ -158,6 +158,7 @@ def _remover_arquivo(caminho: str) -> None:
 # A requisição corrente da compensação (a função é chamada fora do escopo do
 # handler, depois do `with`): guardada para que a injeção de falha — e o log —
 # saibam de qual requisição se trata. ContextVar porque o servidor é assíncrono.
+import contextlib
 import contextvars
 from contextlib import contextmanager
 from psycopg2.extras import RealDictCursor
@@ -480,6 +481,79 @@ def recuperar_compras_sem_nota() -> dict:
             conn.execute(
                 "SELECT pg_advisory_unlock(hashtext('recuperacao_compra_sem_nota'))")
     return feito
+
+
+@router.get("/pendencias", response_class=HTMLResponse)
+async def pendencias_de_nota(request: Request):
+    """Diagnóstico SOMENTE LEITURA das compras sem a nota em disco (§4).
+
+    O log de subida é técnico demais para o operador: ele precisa saber QUAIS
+    compras estão nesse estado, com link para o documento, e o que NÃO fazer. Não
+    existe botão de reparo: a página só mostra e explica.
+
+    Distingue duas situações que o log confunde:
+    - **tentativa interrompida** (há temporário + tentativa recente): seria
+      recuperada no próximo startup;
+    - **arquivo ausente sem prova** (sem temporário): pode ser volume não
+      montado/perda de armazenamento — NÃO é interrupção comprovada;
+    - **fora do prazo** (interrupção antiga): a varredura automática não age.
+    """
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    from servico_idempotencia import DESTINO_ANULADO
+    from datetime import datetime, timedelta
+
+    with conectar() as conn:
+        linhas = [dict(r) for r in conn.execute(
+            """SELECT fm.id, fm.descricao, fm.valor, fm.data_movimentacao,
+                      fm.nota_fiscal_foto, fm.status,
+                      oi.chave, oi.concluido_em, oi.criado_em, oi.status AS st_tent
+                 FROM financeiro_movimentacoes fm
+                 LEFT JOIN operacao_idempotencia oi
+                   ON oi.documento = fm.id::text AND oi.operacao = 'compra'
+                WHERE fm.categoria = 'compra'
+                  AND fm.nota_fiscal_foto IS NOT NULL
+                ORDER BY fm.id DESC""").fetchall()]
+
+    limite = datetime.now() - timedelta(hours=24)
+    itens = []
+    for linha in linhas:
+        try:
+            alvo = _caminho_da_nota(linha["nota_fiscal_foto"])
+        except ValueError:
+            continue
+        if os.path.exists(alvo):
+            continue
+        pasta, base = os.path.split(alvo)
+        try:
+            temporarios = [t for t in os.listdir(pasta) if t.startswith(base + ".tmp-")]
+        except OSError:
+            # Não conseguir LER o diretório não é prova de nada: é problema de
+            # acesso ao armazenamento.
+            itens.append(dict(linha, situacao="sem_acesso",
+                              temporarios=[], pode_automatico=False))
+            continue
+        momento = linha["concluido_em"] or linha["criado_em"]
+        recente = False
+        with contextlib.suppress(Exception):
+            recente = datetime.fromisoformat(str(momento)[:19]) >= limite
+        if temporarios and recente and linha["st_tent"] == "concluida":
+            situacao = "interrompida"
+        elif temporarios and not recente:
+            situacao = "fora_do_prazo"
+        else:
+            situacao = "sem_prova"
+        itens.append(dict(linha, situacao=situacao, temporarios=temporarios,
+                          pode_automatico=(situacao == "interrompida")))
+
+    return templates.TemplateResponse("compras/pendencias.html", {
+        "request": request,
+        "atendente": atendente,
+        "itens": itens,
+        "fotos_dir": FOTOS_DIR,
+    })
 
 
 @router.get("", response_class=HTMLResponse)

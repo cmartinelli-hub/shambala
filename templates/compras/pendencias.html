@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block titulo %}Compras sem nota em disco — Financeiro{% endblock %}
+
+{% block conteudo %}
+<div class="fin-cabecalho">
+    <div>
+        <h2 style="margin:0">Compras sem a nota em disco</h2>
+        <p class="fin-periodo">Esta página <strong>só mostra</strong>: nada aqui
+            cancela, apaga ou refaz lançamento.</p>
+    </div>
+    <div class="fin-acoes">
+        <nav class="fin-nav">
+            <a href="/financeiro/compras">← Lançar compra</a>
+            <a href="/financeiro/relatorios">Relatórios</a>
+        </nav>
+    </div>
+</div>
+
+{% if not itens %}
+<div class="fin-aviso fin-aviso-ok">
+    Todas as compras registradas com nota têm o arquivo no lugar. Nada a conferir.
+</div>
+{% else %}
+<div class="fin-aviso">
+    {{ itens|length }} compra(s) estão registradas com o nome da nota, mas o
+    arquivo não foi encontrado na pasta de fotos. <strong>Leia a situação antes
+    de agir</strong> — a maioria não deve ser refeita.
+</div>
+{% endif %}
+
+{% for i in itens %}
+<div class="card-form" style="margin-bottom:1rem">
+    <h3 style="margin:.2rem 0 .4rem">
+        Compra #{{ i.id }} — {{ i.valor|moeda }} em {{ i.data_movimentacao|data_br }}
+    </h3>
+    <dl class="fin-detalhe">
+        <dt>Descrição registrada</dt><dd>{{ i.descricao or '—' }}</dd>
+        <dt>Situação do lançamento</dt>
+        <dd>{% if i.status == 'cancelado' %}Cancelado (não conta como despesa)
+            {% elif i.status == 'pago' %}Pago{% else %}{{ i.status }}{% endif %}</dd>
+        <dt>Arquivo esperado</dt>
+        <dd><code>{{ i.nota_fiscal_foto }}</code></dd>
+        {% if i.temporarios %}
+        <dt>Arquivo em preparo encontrado</dt>
+        <dd><code>{{ i.temporarios|join(', ') }}</code></dd>
+        {% endif %}
+    </dl>
+
+    {% if i.situacao == 'interrompida' %}
+    <p class="fin-nota"><strong>Tentativa interrompida</strong> — o envio parou
+    depois de registrar a compra e antes de gravar a nota. A próxima vez que o
+    sistema iniciar, esta compra é <em>cancelada</em> automaticamente e o reenvio
+    na mesma tela passa a receber uma recusa com orientação. <strong>Não refaça a
+    compra agora</strong>: aguarde o próximo início do sistema e confira de novo.</p>
+    {% elif i.situacao == 'fora_do_prazo' %}
+    <p class="fin-nota"><strong>Interrupção antiga (fora do prazo de 24 h)</strong>
+    — a recuperação automática não age em ocorrências com mais de um dia. O
+    arquivo em preparo continua na pasta, o que indica que o envio parou no meio.
+    Confira com o responsável financeiro antes de qualquer decisão; o lançamento
+    segue como está e não deve ser refeito por conta própria.</p>
+    {% elif i.situacao == 'sem_acesso' %}
+    <p class="fin-nota"><strong>Não foi possível ler a pasta de fotos</strong> — isto
+    é problema de acesso ao armazenamento, não prova de que a compra falhou. Verifique
+    se o disco/pasta está montado; com o acesso restabelecido, a nota deve reaparecer.
+    <strong>Não refaça a compra.</strong></p>
+    {% else %}
+    <p class="fin-nota"><strong>Arquivo ausente sem prova de interrupção</strong> — não
+    há arquivo em preparo nem tentativa recente que explique o desaparecimento. Pode
+    ser perda de armazenamento ou movimentação manual de arquivo. Não é interrupção
+    comprovada e <strong>não deve ser tratada como compra a refazer</strong>: confira
+    com o responsável financeiro e preserve o lançamento.</p>
+    {% endif %}
+
+    <p class="fin-legenda">
+        <a href="/financeiro/lancamento/{{ i.id }}">Abrir o lançamento</a>
+        {% if i.chave %} · Chave da tentativa: <code>{{ i.chave }}</code>{% endif %}
+    </p>
+</div>
+{% endfor %}
+
+<h3 class="fin-subtitulo">O que fazer (procedimento)</h3>
+<ol class="fin-legenda">
+    <li>Anote o número da compra e o nome do arquivo esperado (acima).</li>
+    <li>Confira a situação descrita — ela diz se é interrupção comprovada, acesso
+        ao armazenamento ou ausência sem prova.</li>
+    <li>Preserve as evidências: <strong>não</strong> apague arquivos em preparo
+        (<code>*.tmp-…</code>) nem o lançamento.</li>
+    <li>Se a situação for <em>interrompida</em>, aguarde o próximo início do
+        sistema e volte a esta página.</li>
+    <li>Nos demais casos, encaminhe para correção assistida com estas informações —
+        não refaça a compra por conta própria, para não duplicar a despesa.</li>
+</ol>
+{% endblock %}
