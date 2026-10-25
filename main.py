@@ -45,6 +45,18 @@ async def lifespan(app: FastAPI):
     # Implantação sem retroativo: garante mensalidades (corrente + 12 futuras)
     # para todos os ativos — idempotente, auto-reparadora a cada restart
     financeiro_mensalidades.gerar_todas_ativas()
+    # TASK_012 §6 (FIN-09): o par banco↔disco da nota fiscal não tem transação
+    # que o proteja. Se o processo morrer entre o commit da compra e a
+    # promoção do arquivo, esta varredura (idempotente) fecha o estado: a
+    # compra sem nota em disco não fica "paga" e a tentativa não responde
+    # sucesso. Nada é apagado; nada acontece quando está tudo certo.
+    from rotas.compras import recuperar_compras_sem_nota
+    _recuperado = recuperar_compras_sem_nota()
+    if _recuperado["canceladas"]:
+        print(f"[startup] {_recuperado['canceladas']} compra(s) sem a nota em "
+              f"disco foram canceladas e suas tentativas anuladas "
+              f"({_recuperado['temporarios_removidos']} temporário(s) removido(s)).",
+              flush=True)
     yield
     fechar_pool()
 

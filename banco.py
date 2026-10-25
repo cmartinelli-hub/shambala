@@ -18,6 +18,10 @@ class _ConnCompat:
 
     def execute(self, query, params=()):
         cur = self._conn.cursor()
+        # Sempre com a tupla: o psycopg2 trata `()` como "sem parâmetros" MAS
+        # mantém a interpolação de `%%` dos blocos PL/pgSQL deste arquivo (com
+        # `None` os `%%` iriam literais e o `RAISE` quebraria). Chamador que não
+        # tem parâmetro nenhum deve passar `None` explicitamente.
         cur.execute(query, params)
         return cur
 
@@ -556,6 +560,29 @@ def _migrar_fiado_credito_guarda(conn):
         f"""ALTER TABLE trabalhadores
             ADD CONSTRAINT {CHECK_FIADO_CREDITO_NAO_NEGATIVO}
             CHECK (fiado_credito >= 0)""")
+
+
+def _garantir_status_anulada(conn):
+    """Aceita `status='anulada'` em `operacao_idempotencia` (TASK_012 §6).
+
+    Idempotente e sem reescrever linha: só troca a CHECK por uma versão que
+    inclui o valor novo, e só se a constraint atual ainda não aceitar.
+    """
+    linha = conn.execute(
+        """SELECT pg_get_constraintdef(c.oid) AS def
+           FROM pg_constraint c
+           JOIN pg_class t ON t.oid = c.conrelid
+           WHERE t.relname = 'operacao_idempotencia' AND c.contype = 'c'
+             AND pg_get_constraintdef(c.oid) LIKE '%%em_andamento%%'""").fetchone()
+    if linha is None or "anulada" in (linha["def"] or ""):
+        return
+    conn.execute(
+        "ALTER TABLE operacao_idempotencia "
+        "DROP CONSTRAINT IF EXISTS operacao_idempotencia_status_check")
+    conn.execute(
+        """ALTER TABLE operacao_idempotencia
+           ADD CONSTRAINT operacao_idempotencia_status_check
+           CHECK (status IN ('em_andamento','concluida','anulada'))""")
 
 
 def _migrar(conn):
@@ -1246,7 +1273,8 @@ def criar_tabelas():
                 operacao         TEXT NOT NULL,
                 corpo_hash       TEXT NOT NULL,
                 status           TEXT NOT NULL DEFAULT 'em_andamento'
-                                 CHECK (status IN ('em_andamento','concluida')),
+                                 CHECK (status IN ('em_andamento','concluida',
+                                                   'anulada')),
                 autor_id         INTEGER REFERENCES atendentes(id),
                 documento        TEXT,
                 destino          TEXT,
@@ -1255,6 +1283,11 @@ def criar_tabelas():
                 concluido_em     TEXT
             )
         """)
+        # TASK_012 §6: uma tentativa cujo efeito foi ANULADO na compensação
+        # (compra cancelada por falta da nota) não é "em andamento" nem
+        # "concluída" — o reenvio precisa de uma resposta própria. A constraint
+        # é recriada com o terceiro valor; bancos antigos a têm só com dois.
+        _garantir_status_anulada(conn)
 
         # ── Doações de cestas ──
         conn.execute("""

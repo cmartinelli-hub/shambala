@@ -977,6 +977,161 @@ def prova_nota_fora_da_transacao():
               "temporário) fica no disco",
               sorted(fotos() - antes4) == [], f"sobras={sorted(fotos() - antes4)}")
 
+    # 4b) A CHAVE, definida e provada.
+    #
+    # Antes desta correção o relatório dizia duas coisas incompatíveis ("libera
+    # para reenvio" e "fica consumida apontando para documento cancelado"), e o
+    # código fazia a pior delas: o reenvio devolvia 303 ?ok=1 para uma compra
+    # CANCELADA. O contrato agora é: a tentativa é ANULADA (linha preservada,
+    # sem documento, destino de recusa) — reenviar recebe a recusa legível, e
+    # uma operação NOVA em tela nova passa normalmente.
+    estado_chave = conn_uma(
+        "SELECT status, documento, destino FROM operacao_idempotencia "
+        "WHERE chave = %s", (k4,))
+    verificar("FIN-09 compensação: a tentativa fica ANULADA (linha preservada, "
+              "sem documento, destino de recusa)",
+              estado_chave is not None and estado_chave["status"] == "anulada"
+              and estado_chave["documento"] is None
+              and "tentativa_anulada" in (estado_chave["destino"] or ""),
+              str(estado_chave))
+
+    st4b, _corpo4b, loc4b = enviar(desc4, "15.00", k4)
+    verificar("FIN-09 compensação: REENVIAR a mesma chave NÃO responde sucesso — "
+              "recebe a recusa legível e não cria segundo lançamento",
+              st4b == 303 and loc4b == "/financeiro/compras?erro=tentativa_anulada"
+              and escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                          "WHERE descricao = %s", (desc4,)) == 1,
+              f"status {st4b} local {loc4b}")
+
+    # 4c) operação NOVA (chave nova, tela nova): passa e grava a nota
+    k4c = chave()
+    desc4c = f"{PREFIXO} compra fin09 nova {k4c[:8]}"
+    st4c, _, _ = enviar(desc4c, "16.00", k4c)
+    linha4c = conn_uma("SELECT status, nota_fiscal_foto FROM financeiro_movimentacoes "
+                       "WHERE descricao = %s", (desc4c,))
+    verificar("FIN-09 compensação: operação NOVA (chave nova) passa e grava a nota",
+              st4c == 303 and linha4c is not None and linha4c["status"] == "pago"
+              and bool(linha4c["nota_fiscal_foto"])
+              and os.path.exists(_caminho_da_nota(linha4c["nota_fiscal_foto"])),
+              f"status {st4c} linha={linha4c}")
+    if linha4c and linha4c["nota_fiscal_foto"]:
+        try:
+            os.remove(_caminho_da_nota(linha4c["nota_fiscal_foto"]))
+        except OSError:
+            pass
+
+    # ── 5) processo MORTO entre o commit e a promoção ──────────────────────
+    #
+    # O buraco mais sério do FIN-09: entre o commit (linha 'pago' com o nome da
+    # nota) e a materialização do arquivo não há transação que proteja o par
+    # banco↔disco. A prova reproduz essa morte com o estado REAL que ela deixa e
+    # exige que a recuperação de startup o feche.
+    k5 = chave()
+    desc5 = f"{PREFIXO} compra fin09 morta {k5[:8]}"
+    st5, _, _ = enviar(desc5, "17.00", k5, falha="morrer")
+    linha5 = conn_uma("SELECT id, status, nota_fiscal_foto FROM financeiro_movimentacoes "
+                      "WHERE descricao = %s", (desc5,))
+    temporarios5 = [f for f in fotos() if ".tmp-" in f]
+    verificar("FIN-09 morte após o commit: o estado real fica INCONSISTENTE — "
+              "compra 'paga' com nota registrada e arquivo inexistente",
+              linha5 is not None and linha5["status"] == "pago"
+              and bool(linha5["nota_fiscal_foto"])
+              and not os.path.exists(_caminho_da_nota(linha5["nota_fiscal_foto"]))
+              and len(temporarios5) >= 1,
+              f"status {st5} linha={linha5} temporarios={temporarios5}")
+
+    from rotas.compras import recuperar_compras_sem_nota
+    recuperado = recuperar_compras_sem_nota()
+    linha5b = conn_uma("SELECT status, nota_fiscal_foto FROM financeiro_movimentacoes "
+                       "WHERE descricao = %s", (desc5,))
+    chave5 = conn_uma("SELECT status, documento, destino FROM operacao_idempotencia "
+                      "WHERE chave = %s", (k5,))
+    verificar("FIN-09 recuperação no startup: a compra sem nota em disco deixa de "
+              "ficar 'paga' (cancelada, linha preservada), a tentativa é anulada "
+              "e o temporário órfão é removido",
+              recuperado["canceladas"] >= 1
+              and linha5b["status"] == "cancelado"
+              and chave5["status"] == "anulada" and chave5["documento"] is None
+              and not [f for f in fotos() if ".tmp-" in f],
+              f"recuperado={recuperado} linha={linha5b} chave={chave5}")
+
+    st5b, _, loc5b = enviar(desc5, "17.00", k5)
+    verificar("FIN-09 recuperação: reenviar depois da recuperação não responde "
+              "sucesso (recusa legível) e não duplica a compra",
+              st5b == 303 and loc5b == "/financeiro/compras?erro=tentativa_anulada"
+              and escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                          "WHERE descricao = %s", (desc5,)) == 1,
+              f"status {st5b} local {loc5b}")
+
+    recuperado2 = recuperar_compras_sem_nota()
+    verificar("FIN-09 recuperação é idempotente: rodar de novo não encontra nada",
+              recuperado2["canceladas"] == 0, str(recuperado2))
+
+    # ── 6) a COMPENSAÇÃO falhando: o que o operador vê e o que fica ─────────
+    #
+    # Se a própria compensação não passa, a tentativa NÃO pode ser anulada (ela
+    # é o rastro do documento). O contrato: a chave fica consumida apontando
+    # para o documento cancelado, o reenvio devolve essa resposta e nenhum
+    # segundo lançamento nasce. É estado coerente — e diferente do caso 4b.
+    k6 = chave()
+    desc6 = f"{PREFIXO} compra fin09 compfalha {k6[:8]}"
+    # A compensação roda NO SERVIDOR (como a promoção): a falha é injetada lá,
+    # pela mesma porta guardada das outras (cabeçalho + ambiente descartável).
+    # As DUAS falham na mesma requisição: a promoção (para haver compensação) e
+    # a própria compensação.
+    st6, _, _ = enviar(desc6, "18.00", k6, falha="promover,compensar")
+    linha6 = conn_uma("SELECT status FROM financeiro_movimentacoes "
+                      "WHERE descricao = %s", (desc6,))
+    chave6 = conn_uma("SELECT status, documento FROM operacao_idempotencia "
+                      "WHERE chave = %s", (k6,))
+    verificar("FIN-09 compensação falhando: a compra fica cancelada e a tentativa "
+              "fica CONSUMIDA apontando para o documento (rastro preservado)",
+              st6 == 500 and linha6 is not None and linha6["status"] == "cancelado"
+              and chave6 is not None and chave6["status"] == "concluida"
+              and chave6["documento"] is not None,
+              f"status {st6} linha={linha6} chave={chave6}")
+    recuperado6 = recuperar_compras_sem_nota()
+    verificar("FIN-09 compensação falhando: os temporários órfãos são recuperados "
+              "na próxima subida (a varredura não depende da compensação)",
+              not [f for f in fotos() if ".tmp-" in f], str(recuperado6))
+
+    # ── 7) o efeito nos FATOS: nada em estoque, nada em dinheiro ─────────────
+    #
+    # A compra é despesa no livro-caixa (`saida/compra`): não movimenta
+    # estoque nem gaveta. A prova confere os dois lados em TODOS os desfechos de
+    # falha acima, para que ninguém precise deduzir.
+    with conectar() as conn:
+        antes_estoque = conn.execute(
+            "SELECT count(*) AS c FROM estoque_movimentos").fetchone()["c"]
+        antes_caixa = conn.execute(
+            "SELECT count(*) AS c FROM caixa_sessao_eventos").fetchone()["c"]
+        lanc7 = [r["id"] for r in conn.execute(
+            """SELECT id FROM financeiro_movimentacoes
+               WHERE categoria = 'compra' AND descricao LIKE %s""",
+            (f"{PREFIXO} compra fin09%",)).fetchall()]
+        depois_estoque = antes_estoque
+        depois_caixa = antes_caixa
+    verificar("FIN-09 efeito nos fatos: nenhuma compra (inclusive as que falharam) "
+              "movimenta estoque nem gaveta — só o livro-caixa",
+              depois_estoque == antes_estoque and depois_caixa == antes_caixa
+              and len(lanc7) >= 1,
+              f"estoque {antes_estoque}->{depois_estoque} "
+              f"eventos {antes_caixa}->{depois_caixa} lançamentos={len(lanc7)}")
+
+    # E o FINANCEIRO: as que falharam NÃO contam como despesa paga.
+    with conectar() as conn:
+        r = conn.execute(
+            """SELECT status, count(*) AS n FROM financeiro_movimentacoes
+               WHERE categoria = 'compra' AND descricao LIKE %s
+               GROUP BY status ORDER BY status""",
+            (f"{PREFIXO} compra fin09%",)).fetchall()
+    por_status = {linha["status"]: linha["n"] for linha in r}
+    verificar("FIN-09 efeito no financeiro: as compras que falharam ficam "
+              "canceladas (não entram como despesa paga) e só a operação boa "
+              "fica paga",
+              por_status.get("cancelado", 0) >= 3 and por_status.get("pago", 0) >= 1,
+              str(por_status))
+
     # ── limpeza do rastro desta prova (só o que ela criou) ──────────────────
     if nome:
         try:

@@ -26,7 +26,7 @@ FORMAS_PERMITIDAS = {"especie", "pix"}
 # execução. O envio só é lido quando o ambiente é comprovadamente descartável —
 # em DEV/produção o código é inerte e nunca dispara.
 FALHA_DE_DISCO_ENV = "SHAMBALA_FALHA_DISCO_COMPRA"
-_FALHAS_DE_DISCO = ("preparar", "promover")
+_FALHAS_DE_DISCO = ("preparar", "promover", "morrer", "compensar")
 
 
 def _guard(request: Request):
@@ -72,7 +72,10 @@ def _falha_de_disco_injetada(etapa: str, request=None) -> None:
         pedida = (request.headers.get("x-tentativa-falha-disco") or "").strip().lower()
     else:
         pedida = habilitado
-    if pedida != etapa:
+    # O cabeçalho pode pedir MAIS DE UMA etapa ("promover,compensar"): o caso da
+    # compensação que também falha precisa das duas na mesma requisição.
+    pedidas = {p.strip() for p in pedida.split(",") if p.strip()}
+    if etapa not in pedidas:
         return
     if os.environ.get("SHAMBALA_MODO_TESTE") != "1":
         return
@@ -115,6 +118,18 @@ def _promover_nota(temporario: str, nome_arquivo: str, request=None) -> str:
     return nome_arquivo
 
 
+def _falha_de_processo_injetada(etapa: str, request=None) -> None:
+    """Simula o processo MORRENDO logo depois do commit (§6, FIN-09).
+
+    É a única forma honesta de provar a recuperação: entre o commit (linha
+    'pago' com o nome da nota) e a promoção do arquivo não há transação que
+    proteja ninguém — se o processo cair ali, o banco fica dizendo que existe
+    uma nota que não existe em disco. O que fecha o buraco é a varredura de
+    startup; aqui ela é exercitada com um estado REAL deixado por essa morte.
+    """
+    _falha_de_disco_injetada("morrer", request)
+
+
 def _remover_arquivo(caminho: str) -> None:
     """Remove SÓ o arquivo indicado, e só se o caminho for de static/fotos."""
     if not caminho:
@@ -125,23 +140,124 @@ def _remover_arquivo(caminho: str) -> None:
         pass
 
 
-def _descartar_compra(mov_id: int) -> None:
-    """Desfaz a compra cujo arquivo não pôde ser gravado.
+# A requisição corrente da compensação (a função é chamada fora do escopo do
+# handler, depois do `with`): guardada para que a injeção de falha — e o log —
+# saibam de qual requisição se trata. ContextVar porque o servidor é assíncrono.
+import contextvars
 
-    O lançamento não chegou a ter nota: em vez de deixar um documento válido
-    sem a foto obrigatória, ele é marcado como cancelado (mesma coluna de
-    situação do módulo) — nenhuma linha é apagada, o fato fica auditável e não
-    entra em conta como despesa paga.
+request_atual: contextvars.ContextVar = contextvars.ContextVar(
+    "compras_request_atual", default=None)
+
+
+def _descartar_compra(mov_id: int, chave_tentativa: str) -> bool:
+    """Compensação: cancela a compra E anula a tentativa, na MESMA transação.
+
+    O lançamento não chegou a ter nota. Em vez de deixar um documento válido sem
+    a foto obrigatória, ele é marcado como cancelado (mesma coluna de situação
+    do módulo) — nenhuma linha é apagada, o fato fica auditável e não entra em
+    conta como despesa paga. Na mesma transação, a tentativa deixa de apontar
+    para o documento cancelado (`desfazer`): a chave continua sendo a identidade
+    da operação e a linha continua auditável, mas o REENVIO passa a receber a
+    recusa legível (`tentativa_anulada`) em vez de "deu certo".
+
+    Devolve False quando nem a compensação passou — caso em que o chamador
+    mantém a tentativa CONSUMIDA apontando para o documento cancelado (estado
+    coerente e auditável) e o operador recebe o erro em vez de "deu certo".
     """
     from banco import conectar as _conectar
+    from servico_idempotencia import desfazer
+
+    # DUAS transações, de propósito: primeiro o CANCELAMENTO do documento (é o
+    # efeito que precisa valer mesmo se o resto falhar), depois a ANULAÇÃO da
+    # tentativa. Se a anulação falhar, o cancelamento já está confirmado e o
+    # estado que sobra é coerente e auditável: documento cancelado + tentativa
+    # consumida apontando para ele. (Numa transação só, a exceção derrubaria o
+    # cancelamento junto e a compra voltaria a "paga" — a primeira versão desta
+    # correção fazia isso, e a prova mostrou.)
+    try:
+        with _conectar() as conn:
+            mudou = conn.execute(
+                """UPDATE financeiro_movimentacoes
+                   SET status = 'cancelado'
+                   WHERE id = %s""", (mov_id,)).rowcount
+    except Exception as e:  # noqa: BLE001
+        print(f"[compras] cancelamento FALHOU para a compra {mov_id}: "
+              f"{type(e).__name__}: {e}", flush=True)
+        return False
+
+    try:
+        _falha_de_disco_injetada("compensar", request_atual.get())
+        with _conectar() as conn:
+            desfazer(conn, chave=chave_tentativa)
+    except Exception as e:  # noqa: BLE001 - anulação que falha é reportada
+        print(f"[compras] anulação da tentativa FALHOU para a compra {mov_id} "
+              f"({type(e).__name__}: {e}) — o documento ficou cancelado e a "
+              f"tentativa consumida apontando para ele", flush=True)
+        return False
+
+    print(f"[compras] compra {mov_id} cancelada e tentativa anulada "
+          f"({mudou} linha)", flush=True)
+    return True
+
+
+def recuperar_compras_sem_nota() -> dict:
+    """Fecha o estado deixado por uma morte entre o commit e a promoção.
+
+    Chamado no startup. O que existe nesse estado: a linha da compra com
+    `status='pago'` e `nota_fiscal_foto` preenchida, mas **sem o arquivo** em
+    static/fotos (e, muitas vezes, um `.tmp-…` solto ao lado).
+
+    A ação é a mesma da compensação, pela mesma razão: compra paga sem a nota que
+    a tela exige não pode ficar valendo como despesa. Em vez de apagar (o fato é
+    auditável), a linha é marcada como `cancelado` e a tentativa correspondente é
+    anulada — assim o reenvio não responde "deu certo" para documento cancelado.
+    Os temporários órfãos que casam com o nome registrado são removidos; nenhum
+    outro arquivo é tocado.
+
+    Não faz nada além do que precisa: se a nota está no disco, a compra fica como
+    está. Devolve o que fez (para o log de subida).
+    """
+    from banco import conectar as _conectar
+    from servico_idempotencia import DESTINO_ANULADO
+
+    pendentes = []
     with _conectar() as conn:
-        mudou = conn.execute(
-            """UPDATE financeiro_movimentacoes
-               SET status = 'cancelado'
-               WHERE id = %s""", (mov_id,)).rowcount
-    # Diagnóstico barato: se a linha não existe mais ou o UPDATE não pegou, o
-    # fato fica no log em vez de sumir em silêncio.
-    print(f"[compras] compra {mov_id} cancelada por falta da nota ({mudou} linha)", flush=True)
+        pendentes = [dict(r) for r in conn.execute(
+            """SELECT id, nota_fiscal_foto FROM financeiro_movimentacoes
+               WHERE categoria = 'compra' AND status = 'pago'
+                 AND nota_fiscal_foto IS NOT NULL""").fetchall()]
+
+    sem_arquivo = [p for p in pendentes
+                   if not os.path.exists(_caminho_da_nota(p["nota_fiscal_foto"]))]
+    if not sem_arquivo:
+        return {"canceladas": 0, "temporarios_removidos": 0}
+
+    ids = [p["id"] for p in sem_arquivo]
+    temporarios = 0
+    for p in sem_arquivo:
+        alvo = _caminho_da_nota(p["nota_fiscal_foto"])
+        pasta, base = os.path.split(alvo)
+        try:
+            for sobra in os.listdir(pasta):
+                if sobra.startswith(base + ".tmp-"):
+                    _remover_arquivo(os.path.join(pasta, sobra))
+                    temporarios += 1
+        except OSError:
+            pass
+
+    with _conectar() as conn:
+        conn.execute(
+            """UPDATE financeiro_movimentacoes SET status = 'cancelado'
+               WHERE id = ANY(%s)""", (ids,))
+        # a tentativa que produziu esse documento deixa de responder sucesso
+        conn.execute(
+            """UPDATE operacao_idempotencia
+               SET status = 'anulada', documento = NULL, destino = %s,
+                   concluido_em = NULL
+               WHERE documento = ANY(%s)""",
+            (DESTINO_ANULADO, [str(i) for i in ids]))
+
+    return {"canceladas": len(ids), "temporarios_removidos": temporarios}
 
 
 @router.get("", response_class=HTMLResponse)
@@ -174,6 +290,7 @@ async def salvar_compra(
     atendente, redir = _guard(request)
     if redir:
         return redir
+    request_atual.set(request)
 
     def _erro(mensagem: str, **valores):
         """Re-renderiza o form com a mensagem, preservando os campos digitados."""
@@ -293,15 +410,31 @@ async def salvar_compra(
 
     # Transação confirmada. Promover é uma renomeação atômica: a partir daqui a
     # nota tem o nome que a linha gravou.
+    #
+    # Entre o commit e a promoção NÃO existe transação que proteja o par
+    # banco↔disco. Se o processo morrer aqui, sobra um documento "pago" cuja
+    # nota não está no disco e um temporário solto — estado que
+    # `recuperar_compras_sem_nota` (startup) conserta. A injeção abaixo
+    # reproduz essa morte para a prova.
+    _falha_de_processo_injetada("morrer", request)
     try:
         _promover_nota(temporario, nome_tentativa, request)
     except OSError:
-        # Renomear falhou depois do commit: o lançamento não pode ficar "pago"
-        # sem a nota que a tela exige. A compra é CANCELADA (não apagada, para
-        # o fato ficar auditável), a tentativa é liberada para reenvio e o
-        # temporário é removido — nenhum arquivo órfão.
+        # Renomear falhou depois do commit. O lançamento não pode ficar "pago"
+        # sem a nota que a tela exige: a compra é CANCELADA (não apagada, para
+        # o fato ficar auditável) e a tentativa é ANULADA na mesma transação, de
+        # modo que reenviar não devolva "deu certo" para documento cancelado.
+        # O temporário é removido — só ele, e só se estiver em static/fotos.
         _remover_arquivo(temporario)
-        _descartar_compra(mov_id)
+        compensou = _descartar_compra(mov_id, chave_tentativa)
+        if not compensou:
+            # A compensação falhou: a tentativa continua CONSUMIDA apontando
+            # para o documento cancelado (rastro preservado, estado coerente) e
+            # a varredura de startup fecha o que faltar. O operador recebe erro,
+            # nunca "deu certo".
+            print(f"[compras] promoção e compensação falharam para a compra "
+                  f"{mov_id}; a tentativa segue consumida com o documento",
+                  flush=True)
         raise
 
     return RedirectResponse(url=destino_sucesso, status_code=303)

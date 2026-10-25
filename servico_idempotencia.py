@@ -29,8 +29,13 @@ NOVA = "nova"
 REPETIDA = "repetida"
 CONFLITO = "conflito"
 PENDENTE = "em_andamento"
+ANULADA = "anulada"
 
 _CHAVE_OK = re.compile(r"^[0-9a-f]{16,64}$")
+
+# Destino de reenvio de uma tentativa cujo efeito foi anulado na compensação
+# (TASK_012 §6): o reenvio NÃO pode responder sucesso para documento cancelado.
+DESTINO_ANULADO = "/financeiro/compras?erro=tentativa_anulada"
 
 # Chave de recusa → mensagem legível (fonte única; as telas replicam o texto).
 MENSAGENS_TENTATIVA = {
@@ -43,6 +48,10 @@ MENSAGENS_TENTATIVA = {
     "tentativa_em_andamento":
         "Esta tentativa ainda não foi concluída. Recarregue a página e "
         "confira se a operação já está registrada antes de tentar de novo.",
+    "tentativa_anulada":
+        "Esta tentativa não foi concluída: a nota fiscal não pôde ser guardada "
+        "e o lançamento foi cancelado. Nada foi cobrado — abra uma nova tela "
+        "de compra e envie de novo.",
 }
 
 
@@ -122,6 +131,28 @@ def liberar(conn, *, chave: str):
     )
 
 
+def desfazer(conn, *, chave: str):
+    """Desfaz uma tentativa CONCLUÍDA cujo efeito foi anulado depois do commit.
+
+    Existe para um caso específico (TASK_012 §6): a operação confirmou no banco
+    e o arquivo não pôde ser materializado — a compensação cancela o documento,
+    e a tentativa não pode continuar respondendo "deu certo" para um documento
+    cancelado. A chave é preservada como identidade (não é reciclada para outra
+    operação); o que muda é o estado: sem documento e com o destino de RECUSA,
+    para o reenvio cair na recusa legível e o operador reenviar numa tela nova.
+
+    Não apaga a linha: a tentativa continua auditável, com a chave original. O
+    status fica `anulada` (não `em_andamento`: uma tentativa anulada já terminou,
+    e chamá-la de "em andamento" faria o reenvio dizer "ainda não foi concluída",
+    que é uma orientação errada para o operador).
+    """
+    conn.execute(
+        """UPDATE operacao_idempotencia
+           SET status = 'anulada', documento = NULL, destino = %s,
+               concluido_em = NULL
+           WHERE chave = %s""", (DESTINO_ANULADO, chave))
+
+
 class TentativaRecusada(Exception):
     """Recusa de tentativa já traduzível para a tela (sem jargão SQL)."""
 
@@ -164,6 +195,8 @@ def reconhecer(conn, *, idempotencia, corpo: dict) -> str:
     ).fetchone()
     if registrada is None:
         return chave
+    if registrada["status"] == ANULADA:
+        raise TentativaRecusada("tentativa_anulada")
     if registrada["status"] != "concluida":
         raise TentativaRecusada("tentativa_em_andamento")
     if registrada["corpo_hash"] != _hash_corpo(corpo):
