@@ -30,6 +30,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from psycopg2.extras import RealDictCursor
@@ -1131,6 +1132,192 @@ def prova_nota_fora_da_transacao():
               "fica paga",
               por_status.get("cancelado", 0) >= 3 and por_status.get("pago", 0) >= 1,
               str(por_status))
+
+    # ── 8) os LIMITES da recuperação (revisão do dono, FIN-09) ─────────────
+    #
+    # "compra paga sem arquivo → cancelar" só é segura se NÃO alcançar compra
+    # histórica, arquivo em volume não montado, nem compra em processamento.
+    # Cada limite é provado criando o cenário e exigindo que NADA aconteça.
+    from rotas.compras import recuperar_compras_sem_nota as recuperar
+
+    def _compra(descricao, valor, *, chave_=None, concluida=True, horas_atras=0,
+                com_temporario=False, com_arquivo=False, status="pago"):
+        """Monta o estado deixado por uma tentativa, com o controle que a prova
+        precisa. `horas_atras` envelhece a CONCLUSÃO da tentativa."""
+        k = chave_ or chave()
+        with conectar() as conn:
+            mid = conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, data_movimentacao, descricao, status)
+                   VALUES ('saida', 'compra', %s, %s, %s, %s) RETURNING id""",
+                (Decimal(valor), date.today().isoformat(), descricao, status)
+            ).fetchone()["id"]
+            nome = f"nota_{mid}_prova{k[:4]}.jpg"
+            conn.execute(
+                "UPDATE financeiro_movimentacoes SET nota_fiscal_foto = %s WHERE id = %s",
+                (nome, mid))
+            if chave_ is not None or concluida:
+                conn.execute(
+                    """INSERT INTO operacao_idempotencia
+                       (chave, operacao, corpo_hash, status, documento, destino,
+                        criado_em, concluido_em)
+                       VALUES (%s, 'compra', 'x', %s, %s, %s,
+                               ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')
+                                    - make_interval(hours => %s))::timestamp(0)::text,
+                               ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')
+                                    - make_interval(hours => %s))::timestamp(0)::text)""",
+                    (k, "concluida" if concluida else "em_andamento", str(mid),
+                     "/financeiro/compras?ok=1", horas_atras, horas_atras))
+        alvo = _caminho_da_nota(nome)
+        if com_temporario:
+            with open(alvo + ".tmp-prova", "wb") as f:
+                f.write(b"\xff\xd8\xffT12")
+        if com_arquivo:
+            with open(alvo, "wb") as f:
+                f.write(b"\xff\xd8\xffT12")
+        return {"id": mid, "chave": k, "nome": nome, "alvo": alvo}
+
+    # 8a) compra HISTÓRICA (tentativa velha), arquivo ausente e até temporário
+    #     presente: fora do intervalo, não é tocada.
+    velha = _compra(f"{PREFIXO} fin09 historica", "19.00",
+                    horas_atras=48, com_temporario=True)
+    # 8b) arquivo ausente, SEM temporário: pode ser volume não montado.
+    sem_temp = _compra(f"{PREFIXO} fin09 sem temporario", "20.00")
+    # 8c) tentativa em andamento (requisição em voo): nunca é recuperada.
+    em_voo = _compra(f"{PREFIXO} fin09 em voo", "21.00", concluida=False,
+                     com_temporario=True)
+    # 8d) compra paga recente com o arquivo no lugar: nada a fazer.
+    sadia = _compra(f"{PREFIXO} fin09 sadia", "22.00", com_arquivo=True)
+
+    resultado = recuperar()
+    velha_db = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                        (velha["id"],))
+    sem_temp_db = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                           (sem_temp["id"],))
+    em_voo_db = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                         (em_voo["id"],))
+    sadia_db = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                        (sadia["id"],))
+    verificar("FIN-09 limite histórico: compra com tentativa VELHA não é cancelada "
+              "(arquivo ausente não basta)",
+              velha_db["status"] == "pago", str(velha_db))
+    verificar("FIN-09 limite sem prova: arquivo ausente SEM temporário é preservado "
+              "(pode ser volume não montado ou falha de leitura)",
+              sem_temp_db["status"] == "pago", str(sem_temp_db))
+    verificar("FIN-09 limite em processamento: tentativa em andamento não é "
+              "recuperada por esta varredura",
+              em_voo_db["status"] == "pago", str(em_voo_db))
+    verificar("FIN-09 limite sadio: compra com arquivo presente não é tocada",
+              sadia_db["status"] == "pago", str(sadia_db))
+    verificar("FIN-09 recuperação informa o que PULOU (não age em silêncio)",
+              resultado["puladas"] >= 3, str(resultado))
+    verificar("FIN-09 recuperação não removeu temporário de tentativa em voo",
+              os.path.exists(velha["alvo"] + ".tmp-prova")
+              and os.path.exists(em_voo["alvo"] + ".tmp-prova"), "")
+
+    # 8e) recuperação CONCORRENTE: duas ao mesmo tempo, uma só trabalha
+    alvo_conc = _compra(f"{PREFIXO} fin09 concorrente", "23.00",
+                        horas_atras=1, com_temporario=True)
+    saidas = {}
+
+    def _recuperar(nome):
+        try:
+            saidas[nome] = recuperar()
+        except Exception as e:  # noqa: BLE001
+            saidas[nome] = {"erro": f"{type(e).__name__}: {e}"}
+
+    barreira_rec = threading.Barrier(2)
+
+    def _recuperar_com_barreira(nome):
+        barreira_rec.wait(timeout=20)
+        _recuperar(nome)
+
+    ts = [threading.Thread(target=_recuperar_com_barreira, args=(n,)) for n in ("A", "B")]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(40)
+    canceladas = sum(v.get("canceladas", 0) for v in saidas.values())
+    linha_conc = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                          (alvo_conc["id"],))
+    verificar("FIN-09 recuperação concorrente: duas ao mesmo tempo cancelam UMA vez "
+              "(trava de execução única)",
+              canceladas == 1 and linha_conc["status"] == "cancelado",
+              f"somatorio={canceladas} saidas={saidas} linha={linha_conc}")
+
+    # 8f) cancelamento confirmado + anulação da chave FALHANDO: o estado NÃO
+    #     muda (rollback), o reenvio continua RECUSADO, e a próxima recuperação
+    #     conclui. É o caso que o dono apontou como obrigatório.
+    alvo_falha = _compra(f"{PREFIXO} fin09 anulacao falha", "24.00",
+                         horas_atras=1, com_temporario=True)
+    # Falha REAL no segundo UPDATE: um TRIGGER no banco descartável recusa a
+    # anulação. É o cenário exato do dono — "o cancelamento confirma e a anulação
+    # da chave falha" — e o que se exige é que o estado NÃO mude pela metade.
+    with conectar() as conn:
+        conn.execute(
+            """CREATE OR REPLACE FUNCTION t12_falha_anulacao() RETURNS trigger
+               AS $$ BEGIN
+                   IF NEW.status = 'anulada' THEN
+                       RAISE EXCEPTION 'falha injetada na anulacao (FIN-09)';
+                   END IF;
+                   RETURN NEW;
+               END $$ LANGUAGE plpgsql""")
+        conn.execute(
+            """CREATE TRIGGER t12_falha_anulacao BEFORE UPDATE
+               ON operacao_idempotencia FOR EACH ROW
+               EXECUTE FUNCTION t12_falha_anulacao()""")
+    try:
+        recuperar()
+    except Exception as e:  # noqa: BLE001
+        print(f"    [injeção] recuperação falhou como esperado: {type(e).__name__}")
+    finally:
+        with conectar() as conn:
+            conn.execute("DROP TRIGGER IF EXISTS t12_falha_anulacao "
+                         "ON operacao_idempotencia")
+            conn.execute("DROP FUNCTION IF EXISTS t12_falha_anulacao()")
+    linha_falha = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                           (alvo_falha["id"],))
+    chave_falha = conn_uma("SELECT status, documento FROM operacao_idempotencia "
+                           "WHERE chave=%s", (alvo_falha["chave"],))
+    st8f, _, loc8f = enviar(f"{PREFIXO} fin09 anulacao falha", "24.00",
+                            alvo_falha["chave"])
+    verificar("FIN-09 anulação falhando: o estado NÃO muda (cancelamento e anulação "
+              "são um commit só) — nada fica 'cancelado com chave respondendo ok'",
+              linha_falha["status"] == "pago"
+              and chave_falha["status"] == "concluida"
+              and chave_falha["documento"] is not None,
+              f"linha={linha_falha} chave={chave_falha}")
+    verificar("FIN-09 anulação falhando: o REENVIO nunca responde sucesso",
+              loc8f != "/financeiro/compras?ok=1&valor=24.00&forma=especie",
+              f"status {st8f} local={loc8f}")
+
+    # 8g) a próxima recuperação conclui o estado que ficou pendente
+    recuperar()
+    linha_falha2 = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                            (alvo_falha["id"],))
+    chave_falha2 = conn_uma("SELECT status, documento FROM operacao_idempotencia "
+                            "WHERE chave=%s", (alvo_falha["chave"],))
+    verificar("FIN-09 recuperação posterior CONCLUI o estado pendente "
+              "(cancelada + chave anulada)",
+              linha_falha2["status"] == "cancelado"
+              and chave_falha2["status"] == "anulada"
+              and chave_falha2["documento"] is None,
+              f"linha={linha_falha2} chave={chave_falha2}")
+
+    # limpeza do rastro dos limites
+    for c in (velha, sem_temp, em_voo, sadia, alvo_conc, alvo_falha):
+        for caminho in (c["alvo"], c["alvo"] + ".tmp-prova"):
+            try:
+                os.remove(caminho)
+            except OSError:
+                pass
+    with conectar() as conn:
+        ids_lim = [c["id"] for c in (velha, sem_temp, em_voo, sadia,
+                                     alvo_conc, alvo_falha)]
+        conn.execute("DELETE FROM operacao_idempotencia WHERE documento = ANY(%s)",
+                     ([str(i) for i in ids_lim],))
+        conn.execute("DELETE FROM financeiro_movimentacoes WHERE id = ANY(%s)",
+                     (ids_lim,))
 
     # ── limpeza do rastro desta prova (só o que ela criou) ──────────────────
     if nome:

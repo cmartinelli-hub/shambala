@@ -200,64 +200,154 @@ def _descartar_compra(mov_id: int, chave_tentativa: str) -> bool:
     return True
 
 
+# ── Recuperação do estado deixado por uma morte entre commit e promoção ─────
+#
+# A regra "compra paga sem arquivo → cancelar" só é segura com limites muito
+# estreitos. Sem eles ela cancelaria compra HISTÓRICA por causa de um diretório
+# que não foi montado, de um disco removível ausente ou de uma falha de leitura
+# — e isso é apagar fato por acidente de ambiente. Os limites implementados:
+#
+# 1. SÓ TENTATIVAS NOVAS E INTERROMPIDAS. A linha tem de casar com uma tentativa
+#    de idempotência (`operacao='compra'`) **concluída**, cujo `documento` é ela,
+#    e cuja CONCLUSÃO é recente (`INTERVALO_RECUPERACAO`). Compra antiga, sem
+#    tentativa correspondente, nunca é tocada — nem que o arquivo tenha sumido.
+# 2. NÃO INTERFERE EM COMPRA EM PROCESSAMENTO. A tentativa em `em_andamento` é
+#    outra coisa (requisição em voo) e fica de fora; e a recuperação inteira roda
+#    sob `pg_try_advisory_lock`, de modo que dois processos iniciando ao mesmo
+#    tempo não trabalham o mesmo estado — quem não pega a trava não age.
+# 3. SÓ COM PROVA INDEPENDENTE DE QUE O ARQUIVO NUNCA EXISTIU. Não basta
+#    `os.path.exists()` devolver False: isso é o mesmo sintoma de "diretório não
+#    montado". O caso interrompido deixa o TEMPORÁRIO ao lado do destino
+#    (`<nome>.tmp-<rand>`), porque o conteúdo é escrito antes do commit e a
+#    promoção (rename) é o último passo. Sem temporário, sem recuperação.
+# 4. UM COMANDO SÓ PARA O QUE ANDA JUNTO. O cancelamento e a anulação da chave
+#    são confirmados juntos; se algo falhar, o estado NÃO muda (rollback) e a
+#    próxima subida conclui. Nunca "cancelado com tentativa respondendo sucesso".
+# 5. SÓ CANCELA — nunca apaga. A linha fica auditável.
+
+# Quantas horas para trás a recuperação olha. Além disso, é histórico.
+INTERVALO_RECUPERACAO = "interval '24 hours'"
+
+
+def _trava_de_recuperacao(conn) -> bool:
+    """Trava de execução única da recuperação (não bloqueante).
+
+    `pg_try_advisory_lock` devolve True para o primeiro processo e False para os
+    demais: dois startups simultâneos não recuperam o mesmo estado duas vezes.
+    A trava é de SESSÃO e é liberada no fim de `recuperar_compras_sem_nota`.
+    """
+    chave = conn.execute(
+        "SELECT pg_try_advisory_lock(hashtext('recuperacao_compra_sem_nota')) AS ok"
+    ).fetchone()
+    return bool(chave and chave["ok"])
+
+
+def _estado_interrompido(linha: dict) -> dict | None:
+    """A linha é de uma tentativa NOVA e INTERROMPIDA? Devolve a evidência.
+
+    Precisa das três coisas juntas: arquivo definitivo ausente, TEMPORÁRIO da
+    mesma tentativa presente, e tentativa de idempotência recente apontando para
+    esta linha. Faltando qualquer uma, não é o caso — e não se mexe.
+    """
+    nome = linha["nota_fiscal_foto"]
+    if not nome:
+        return None
+    try:
+        alvo = _caminho_da_nota(nome)
+    except ValueError:
+        return None                      # nome fora da pasta: não é nosso caso
+    if os.path.exists(alvo):
+        return None                      # arquivo está lá: nada aconteceu
+    pasta, base = os.path.split(alvo)
+    try:
+        temporarios = [t for t in os.listdir(pasta) if t.startswith(base + ".tmp-")]
+    except OSError:
+        return None                      # não conseguimos LER: não é prova de nada
+    if not temporarios:
+        return None                      # sem temporário: arquivo sumiu, não interrompeu
+    return {"alvo": alvo, "temporarios": temporarios}
+
+
 def recuperar_compras_sem_nota() -> dict:
-    """Fecha o estado deixado por uma morte entre o commit e a promoção.
+    """Fecha SÓ o estado que uma tentativa nova e interrompida deixou.
 
-    Chamado no startup. O que existe nesse estado: a linha da compra com
-    `status='pago'` e `nota_fiscal_foto` preenchida, mas **sem o arquivo** em
-    static/fotos (e, muitas vezes, um `.tmp-…` solto ao lado).
+    Chamado no startup, uma vez por processo (e protegido contra dois processos
+    ao mesmo tempo). Devolve o que fez, para o log de subida:
+    `{"canceladas", "temporarios_removidos", "puladas", "executou"}`.
 
-    A ação é a mesma da compensação, pela mesma razão: compra paga sem a nota que
-    a tela exige não pode ficar valendo como despesa. Em vez de apagar (o fato é
-    auditável), a linha é marcada como `cancelado` e a tentativa correspondente é
-    anulada — assim o reenvio não responde "deu certo" para documento cancelado.
-    Os temporários órfãos que casam com o nome registrado são removidos; nenhum
-    outro arquivo é tocado.
-
-    Não faz nada além do que precisa: se a nota está no disco, a compra fica como
-    está. Devolve o que fez (para o log de subida).
+    `puladas` são as linhas pago/sem arquivo que NÃO casaram com o caso
+    interrompido (arquivo sumiu, diretório não montado, compra histórica): elas
+    ficam como estão, e o número aparece no log para não passarem em silêncio.
     """
     from banco import conectar as _conectar
     from servico_idempotencia import DESTINO_ANULADO
 
-    pendentes = []
+    feito = {"executou": False, "canceladas": 0,
+             "temporarios_removidos": 0, "puladas": 0}
     with _conectar() as conn:
-        pendentes = [dict(r) for r in conn.execute(
-            """SELECT id, nota_fiscal_foto FROM financeiro_movimentacoes
-               WHERE categoria = 'compra' AND status = 'pago'
-                 AND nota_fiscal_foto IS NOT NULL""").fetchall()]
-
-    sem_arquivo = [p for p in pendentes
-                   if not os.path.exists(_caminho_da_nota(p["nota_fiscal_foto"]))]
-    if not sem_arquivo:
-        return {"canceladas": 0, "temporarios_removidos": 0}
-
-    ids = [p["id"] for p in sem_arquivo]
-    temporarios = 0
-    for p in sem_arquivo:
-        alvo = _caminho_da_nota(p["nota_fiscal_foto"])
-        pasta, base = os.path.split(alvo)
+        if not _trava_de_recuperacao(conn):
+            # Outro processo já está recuperando: não interfere.
+            return feito
         try:
-            for sobra in os.listdir(pasta):
-                if sobra.startswith(base + ".tmp-"):
-                    _remover_arquivo(os.path.join(pasta, sobra))
+            candidatas = [dict(r) for r in conn.execute(
+                f"""SELECT fm.id, fm.nota_fiscal_foto,
+                           fm.data_movimentacao, oi.chave
+                    FROM financeiro_movimentacoes fm
+                    JOIN operacao_idempotencia oi
+                      ON oi.documento = fm.id::text
+                     AND oi.operacao = 'compra'
+                     AND oi.status = 'concluida'
+                   WHERE fm.categoria = 'compra'
+                     AND fm.status = 'pago'
+                     AND fm.nota_fiscal_foto IS NOT NULL
+                     AND COALESCE(oi.concluido_em,
+                                 oi.criado_em)::timestamp
+                         >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')
+                            - {INTERVALO_RECUPERACAO}
+                   FOR UPDATE OF fm""").fetchall()]
+
+            recuperaveis, puladas, temporarios = [], 0, 0
+            for linha in candidatas:
+                estado = _estado_interrompido(linha)
+                if estado is None:
+                    puladas += 1
+                    continue
+                recuperaveis.append(linha)
+
+            if not recuperaveis:
+                feito["puladas"] = puladas
+                feito["executou"] = True
+                return feito
+
+            ids = [l["id"] for l in recuperaveis]
+            chaves = [l["chave"] for l in recuperaveis]
+            # Cancelamento E anulação no MESMO commit: ou os dois, ou nenhum.
+            # Um estado "cancelado com a chave respondendo sucesso" é justamente
+            # o que não pode existir.
+            conn.execute(
+                """UPDATE financeiro_movimentacoes SET status = 'cancelado'
+                   WHERE id = ANY(%s) AND status = 'pago'""", (ids,))
+            conn.execute(
+                """UPDATE operacao_idempotencia
+                   SET status = 'anulada', documento = NULL, destino = %s,
+                       concluido_em = NULL
+                   WHERE chave = ANY(%s)""", (DESTINO_ANULADO, chaves))
+
+            # Só depois do commit: os temporários desta tentativa (e só eles).
+            for linha in recuperaveis:
+                estado = _estado_interrompido(linha)
+                if estado is None:
+                    continue
+                for t in estado["temporarios"]:
+                    _remover_arquivo(os.path.join(os.path.dirname(estado["alvo"]), t))
                     temporarios += 1
-        except OSError:
-            pass
 
-    with _conectar() as conn:
-        conn.execute(
-            """UPDATE financeiro_movimentacoes SET status = 'cancelado'
-               WHERE id = ANY(%s)""", (ids,))
-        # a tentativa que produziu esse documento deixa de responder sucesso
-        conn.execute(
-            """UPDATE operacao_idempotencia
-               SET status = 'anulada', documento = NULL, destino = %s,
-                   concluido_em = NULL
-               WHERE documento = ANY(%s)""",
-            (DESTINO_ANULADO, [str(i) for i in ids]))
-
-    return {"canceladas": len(ids), "temporarios_removidos": temporarios}
+            feito.update(executou=True, canceladas=len(recuperaveis),
+                         temporarios_removidos=temporarios, puladas=puladas)
+        finally:
+            conn.execute(
+                "SELECT pg_advisory_unlock(hashtext('recuperacao_compra_sem_nota'))")
+    return feito
 
 
 @router.get("", response_class=HTMLResponse)

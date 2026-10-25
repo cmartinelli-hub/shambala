@@ -53,10 +53,16 @@ async def lifespan(app: FastAPI):
     from rotas.compras import recuperar_compras_sem_nota
     _recuperado = recuperar_compras_sem_nota()
     if _recuperado["canceladas"]:
-        print(f"[startup] {_recuperado['canceladas']} compra(s) sem a nota em "
-              f"disco foram canceladas e suas tentativas anuladas "
+        print(f"[startup] {_recuperado['canceladas']} compra(s) de tentativa "
+              f"interrompida foram canceladas e suas chaves anuladas "
               f"({_recuperado['temporarios_removidos']} temporário(s) removido(s)).",
               flush=True)
+    if _recuperado["puladas"]:
+        # Não é falha: é o limite da regra agindo (arquivo ausente sem prova de
+        # interrupção, compra histórica). Fica visível para não passar calado.
+        print(f"[startup] {_recuperado['puladas']} compra(s) paga(s) sem arquivo "
+              f"foram PRESERVADAS: não há prova de tentativa interrompida "
+              f"(arquivo pode estar em volume não montado).", flush=True)
     yield
     fechar_pool()
 
