@@ -100,7 +100,7 @@ def POST(path, dados, o=None):
     return req("POST", path, dados, o)
 
 
-def POST_multipart(path, campos, arquivo, o=None):
+def POST_multipart(path, campos, arquivo, o=None, cabecalhos=None):
     """multipart/form-data com um arquivo (rota de compra com foto da nota)."""
     borda = "----t12" + secrets.token_hex(8)
     partes = [
@@ -114,7 +114,8 @@ def POST_multipart(path, campos, arquivo, o=None):
     partes.append(f"--{borda}--\r\n".encode())
     r = urllib.request.Request(
         BASE + path, data=b"".join(partes), method="POST",
-        headers={"Content-Type": f"multipart/form-data; boundary={borda}"})
+        headers={"Content-Type": f"multipart/form-data; boundary={borda}",
+                 **(cabecalhos or {})})
     try:
         with (o or OP).open(r) as resp:
             return resp.status, resp.read().decode("utf-8", "replace"), \
@@ -139,6 +140,11 @@ def _fotos_estaticos():
     return FOTOS_DIR
 
 
+def _caminho_da_nota(nome_arquivo):
+    from rotas.compras import _caminho_da_nota as fn
+    return fn(nome_arquivo)
+
+
 def chave():
     """Chave de tentativa gerada ANTES do envio — nunca um id criado depois."""
     return secrets.token_hex(16)
@@ -146,11 +152,19 @@ def chave():
 
 def escalar(sql, params=(), padrao=0):
     with conectar() as conn:
-        r = conn.execute(sql, params).fetchone()
+        # psycopg2 não aceita params=(): sem parâmetro é None.
+        r = conn.execute(sql, params if params else None).fetchone()
         if not r:
             return padrao
         v = list(r.values())[0]
         return padrao if v is None else v
+
+
+def conn_uma(sql, params=()):
+    """A linha inteira (dict) ou None — para provar estado coluna a coluna."""
+    with conectar() as conn:
+        r = conn.execute(sql, params if params else None).fetchone()
+        return dict(r) if r else None
 
 
 def medida(mapas):
@@ -827,6 +841,143 @@ def prova_compra_com_nota():
     )
 
 
+def prova_nota_fora_da_transacao():
+    """TASK_012 §6 (FIN-09): o arquivo da nota não vive dentro da transação.
+
+    ANTES, a foto era gravada em static/fotos/ com o `mov_id` do INSERT, ainda
+    DENTRO do `with conectar()`: commit que falhasse depois disso deixava o
+    arquivo no disco sem nenhuma linha apontando para ele — órfão que ninguém
+    encontra. AGORA o conteúdo vai para um temporário ao lado do destino, a linha
+    é confirmada e só então ele é promovido por renomeação atômica.
+
+    As falhas são injetadas NO PROCESSO DO SERVIDOR (é ele que executa a rota —
+    um monkeypatch no processo da suíte não alcançaria a requisição HTTP):
+
+    - `preparar` falha → nada confirmado, nada em static/fotos/, nenhum órfão;
+    - commit recusado por um TRIGGER do banco descartável (falha real, no meio
+      da transação, depois de o temporário já existir) → rollback: o lançamento
+      não existe e o temporário é removido;
+    - `promover` falha depois do commit → a compra é cancelada (linha
+      preservada, nada "pago" sem nota) e nenhum arquivo sobra.
+
+    O (1) prova o caminho bom com os dois lados do fato: a linha e o arquivo.
+    """
+    from rotas import compras as mod
+
+    def fotos() -> set:
+        return set(os.listdir(_fotos_estaticos()))
+
+    def enviar(descricao, valor, k, falha=None):
+        campos = {"valor": valor, "descricao": descricao,
+                  "forma_pagamento": "especie", "idempotencia": k}
+        return POST_multipart("/financeiro/compras", campos,
+                              ("nota.jpg", b"\xff\xd8\xff" + b"T12-fin09"),
+                              cabecalhos=({"X-Tentativa-Falha-Disco": falha}
+                                          if falha else None))
+
+    # A injeção precisa estar habilitada NO PROCESSO DO SERVIDOR (o runner a
+    # liga). Sem ela, os casos 2 e 4 não teriam como falhar de propósito — e a
+    # prova diria "passou" sem exercitar nada.
+    if os.environ.get("SHAMBALA_FALHA_DISCO_HABILITADA") != "1":
+        verificar("FIN-09: injeção de falha de disco habilitada no app de teste "
+                  "(runner)", False,
+                  "rode por tests/rodar_testes.sh: sem a injeção os casos de "
+                  "falha não são exercitados")
+        return
+
+    # ── 1) sucesso: linha e arquivo, os dois vivos ──────────────────────────
+    antes = fotos()
+    k = chave()
+    desc = f"{PREFIXO} compra fin09 {k[:8]}"
+    st, _, _ = enviar(desc, "12.00", k)
+    nome = escalar("SELECT nota_fiscal_foto FROM financeiro_movimentacoes "
+                   "WHERE descricao = %s", (desc,), None)
+    novos = fotos() - antes
+    verificar("FIN-09 sucesso: a compra fica com a nota registrada e o arquivo existe",
+              st == 303 and bool(nome) and novos == {nome}
+              and os.path.exists(_caminho_da_nota(nome)),
+              f"status {st} nome={nome} novos={sorted(novos)}")
+
+    # ── 2) falha ANTES do commit (no preparo): nada em disco, nada no banco ─
+    antes2 = fotos()
+    k2 = chave()
+    desc2 = f"{PREFIXO} compra fin09 preparo {k2[:8]}"
+    st2, _, _ = enviar(desc2, "13.00", k2, falha="preparar")
+    gravadas2 = escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                        "WHERE descricao = %s", (desc2,))
+    verificar("FIN-09 preparo falhando: nenhum arquivo (nem temporário) em static/fotos/",
+              st2 == 500 and sorted(fotos() - antes2) == [],
+              f"status {st2} sobras={sorted(fotos() - antes2)}")
+    verificar("FIN-09 preparo falhando: o lançamento não é gravado e a chave não "
+              "fica consumida com documento",
+              gravadas2 == 0
+              and escalar("SELECT count(*) FROM operacao_idempotencia WHERE chave=%s",
+                          (k2,)) == 0, f"linhas={gravadas2}")
+
+    # ── 3) commit recusado por um TRIGGER: rollback com temporário em disco ──
+    antes3 = fotos()
+    k3 = chave()
+    desc3 = f"{PREFIXO} compra fin09 rollback {k3[:8]}"
+    with conectar() as conn:
+        conn.execute(
+            """CREATE OR REPLACE FUNCTION t12_fin09_recusa() RETURNS trigger AS $$
+               BEGIN
+                   IF NEW.descricao LIKE %s THEN
+                       RAISE EXCEPTION 'recusa injetada FIN-09 (commit recusado)';
+                   END IF;
+                   RETURN NEW;
+               END $$ LANGUAGE plpgsql""", (f"{PREFIXO} compra fin09 rollback%",))
+        conn.execute(
+            """CREATE TRIGGER t12_fin09_recusa BEFORE INSERT
+               ON financeiro_movimentacoes FOR EACH ROW
+               EXECUTE FUNCTION t12_fin09_recusa()""")
+    try:
+        st3, _, _ = enviar(desc3, "14.00", k3)
+    finally:
+        with conectar() as conn:
+            conn.execute("DROP TRIGGER IF EXISTS t12_fin09_recusa "
+                         "ON financeiro_movimentacoes")
+            conn.execute("DROP FUNCTION IF EXISTS t12_fin09_recusa()")
+    gravadas3 = escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                        "WHERE descricao = %s", (desc3,))
+    verificar("FIN-09 rollback: transação recusada (o temporário já estava em "
+              "disco) não deixa arquivo em static/fotos/ nem temporário",
+              st3 == 500 and sorted(fotos() - antes3) == [],
+              f"status {st3} sobras={sorted(fotos() - antes3)}")
+    verificar("FIN-09 rollback: nenhum lançamento e nenhuma chave consumida "
+              "com documento",
+              gravadas3 == 0
+              and escalar("SELECT count(*) FROM operacao_idempotencia WHERE chave=%s",
+                          (k3,)) == 0, f"linhas={gravadas3}")
+
+    # ── 4) promoção falha DEPOIS do commit: cancelada, sem órfão ────────────
+    antes4 = fotos()
+    k4 = chave()
+    desc4 = f"{PREFIXO} compra fin09 promocao {k4[:8]}"
+    st4, _, _ = enviar(desc4, "15.00", k4, falha="promover")
+    linha4 = conn_uma("SELECT status, nota_fiscal_foto FROM financeiro_movimentacoes "
+                      "WHERE descricao = %s", (desc4,))
+    verificar("FIN-09 promoção falhando após o commit: a compra não fica 'paga' "
+              "sem a nota — é cancelada, com a linha preservada para auditoria",
+              st4 == 500 and linha4 is not None and linha4["status"] == "cancelado",
+              f"status {st4} linha={linha4}")
+    verificar("FIN-09 promoção falhando após o commit: nenhum arquivo (nem "
+              "temporário) fica no disco",
+              sorted(fotos() - antes4) == [], f"sobras={sorted(fotos() - antes4)}")
+
+    # ── limpeza do rastro desta prova (só o que ela criou) ──────────────────
+    if nome:
+        try:
+            os.remove(_caminho_da_nota(nome))
+        except OSError:
+            pass
+    with conectar() as conn:
+        conn.execute("DELETE FROM financeiro_movimentacoes WHERE descricao LIKE %s",
+                     (f"{PREFIXO} compra fin09%",))
+        conn.execute("DELETE FROM operacao_idempotencia WHERE chave = ANY(%s)",
+                     ([k, k2, k3, k4],))
+
+
 def prova_venda_de_livro():
     """Entrada de dinheiro pela biblioteca: estoque + venda + lançamento."""
     def medir():
@@ -926,7 +1077,8 @@ def main():
     for extra in (prova_revisao_de_preco, prova_ultima_escrita_falha,
                   prova_concorrencia_na_reserva,
                   prova_mensalidades_lote, prova_fiado_parcial_e_credito,
-                  prova_autenticacao_e_pendentes):
+                  prova_autenticacao_e_pendentes,
+                  prova_nota_fora_da_transacao):
         try:
             extra()
         except Exception as e:
@@ -945,11 +1097,14 @@ def main():
             traceback.print_exc()
 
     # A compra grava a foto da nota em disco; o banco é descartável, os
-    # arquivos desta suíte também devem ser.
+    # arquivos desta suíte também devem ser. O recorte é o que esta suíte criou
+    # na janela da corrida (`fotos_antes`), e cada arquivo é removido pelo
+    # caminho validado do módulo — nunca por nome vindo do banco ou de fora.
+    from rotas.compras import _caminho_da_nota
     for novo in set(os.listdir(_fotos_estaticos())) - fotos_antes:
         try:
-            os.remove(os.path.join(_fotos_estaticos(), novo))
-        except OSError:
+            os.remove(_caminho_da_nota(novo))
+        except (OSError, ValueError):
             pass
 
     total = len(APROVADAS) + len(FALHAS)

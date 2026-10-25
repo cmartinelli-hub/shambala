@@ -156,6 +156,7 @@ echo "== Subindo o app de teste =="
 SHAMBALA_ENV_FILE="$ARQ_ENV" \
 SHAMBALA_MODO_TESTE=1 \
 SHAMBALA_EXEC_TOKEN="$TOKEN" \
+SHAMBALA_FALHA_DISCO_COMPRA=1 \
 setsid nohup "$PY" -m uvicorn main:app \
   --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null &
 APP_PID=$!
@@ -186,7 +187,7 @@ echo "== Executando as suítes =="
 set +e
 RC=0
 SUMARIO=""
-SUITE_PADRAO="test_tres_passes.py test_plano_unico.py test_permissoes.py test_agenda_medium.py test_presenca_trabalhadores.py test_codigo_trabalhador.py test_terminal_presenca.py test_terminal_leitor.py test_correcoes_presenca.py test_gestao_correcoes_navegador.py test_pdv_precos_servidor.py test_cancelamento_vendas.py test_sessao_eventos_caixa.py test_caixa_navegador_task008.py test_financeiro_visaogeral_consultas_task011.py test_financeiro_visaogeral_navegador_task011.py test_financeiro_idempotencia_task012.py test_financeiro_mensalidades_task012.py test_fiado_alocacoes_task012.py teste_negativo_isolamento.py"
+SUITE_PADRAO="test_tres_passes.py test_plano_unico.py test_permissoes.py test_agenda_medium.py test_presenca_trabalhadores.py test_codigo_trabalhador.py test_terminal_presenca.py test_terminal_leitor.py test_correcoes_presenca.py test_gestao_correcoes_navegador.py test_pdv_precos_servidor.py test_cancelamento_vendas.py test_sessao_eventos_caixa.py test_caixa_navegador_task008.py test_financeiro_visaogeral_consultas_task011.py test_financeiro_visaogeral_navegador_task011.py test_financeiro_idempotencia_task012.py test_financeiro_mensalidades_task012.py test_fiado_alocacoes_task012.py test_financeiro_consultas_task012.py teste_negativo_isolamento.py"
 # SHAMBALA_SUITES permite iterar uma suíte específica no MESMO ambiente
 # descartável validado; a lista padrão é a regressão completa.
 SUITES="${SHAMBALA_SUITES:-$SUITE_PADRAO}"
@@ -197,6 +198,7 @@ for SUITE in $SUITES; do
   SHAMBALA_EXEC_TOKEN="$TOKEN" \
   SHAMBALA_TEST_BASE="http://127.0.0.1:$PORTA" \
   SHAMBALA_TEST_DB="$BANCO_TESTE" \
+  SHAMBALA_FALHA_DISCO_HABILITADA=1 \
   SHAMBALA_APP_LOG="$LOG" \
   PYTHONPATH="$PWD" \
   "$PY" "tests/$SUITE"
