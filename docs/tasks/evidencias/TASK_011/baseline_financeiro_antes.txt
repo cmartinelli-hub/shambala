@@ -1,0 +1,12 @@
+# baseline financeiro DEV — banco: shambala (conectado como shambala)
+fm_total: 862 | 69446.04
+fm_max_id_hash: 864 | efdd7e2367e90d6a58c4f50ef8a1d47b
+fm_por_tipo_status: entrada/cancelado: 1 | 20.00 ; entrada/pago: 383 | 36498.90 ; entrada/pendente: 414 | 16225.00 ; saida/pago: 64 | 16702.14
+fm_por_categoria: alimentacao: 2 | 181.00 ; aluguel: 2 | 4800.00 ; compra: 12 | 528.64 ; doacao: 115 | 5185.10 ; mensalidade: 520 | 19795.00 ; outros: 3 | 717.85 ; recebimento_fiado: 43 | 1889.60 ; sangria: 49 | 11223.50 ; venda_pdv: 116 | 25125.35
+fm_areceber_pago: 35 | 2304.10
+fm_transf_sangria: sangria/saida: 49 | 11223.50
+fm_sem_conta: 0
+fm_mensalidades_pend: 414 | 16225.00
+contas_por_tipo: areceber: 1 ; especie: 1 ; legado: 1 ; pix: 1
+vendas_por_forma: especie/cancelada: 25 | 449.80 ; especie/concluida: 879 | 11267.70 ; fiado/cancelada: 3 | 29.00 ; fiado/concluida: 244 | 2778.60 ; pix/cancelada: 7 | 86.00 ; pix/concluida: 701 | 11275.65
+fiado_aberto: 50 | 823.00

@@ -427,12 +427,40 @@ nota_fiscal_foto (TEXT)
 
 ### Rotas
 ```
-GET       /financeiro                   ← dashboard com resumo mensal
+GET       /financeiro                   ← Visão Geral (TASK_011): abas, período, filtros, paginação
+GET       /financeiro/lancamento/{id}   ← detalhe somente-leitura (?volta= validado, só /financeiro?…)
 GET/POST  /financeiro/nova              ← registrar movimento
 GET       /financeiro/mensalidades      ← controle de mensalidades
 POST      /financeiro/{id}/pagar        ← marcar como pago
 POST      /financeiro/{id}/cancelar     ← cancelar movimento
 ```
+
+### Contrato da Visão Geral (TASK_011)
+- Universo das somas: somente `financeiro_movimentacoes`. Eventos de caixa
+  (`caixa_sessao_eventos`) aparecem no detalhe por proveniência (`financeiro_id`),
+  nunca somados por cima.
+- Parâmetros de `GET /financeiro`: `aba` (mov|pend), `de`/`ate` (ou alias `mes=YYYY-MM`),
+  `conta`, `nat`, `sentido` (entrada|saida), `sit` (pago|pendente|cancelado), `q`,
+  `pagina`, `por` (25|50|100). Recusas preservam o valor digitado (banner), nada de
+  "Todos" silencioso.
+- Recebimentos/Pagamentos/Resultado: status pago, EXCLUINDO `categoria IN
+  ('transferencia','sangria')` pelo valor armazenado e linhas da conta
+  `tipo='areceber'` (obrigação nunca é dinheiro). Rótulo fixo: registro do período,
+  não é saldo disponível.
+- Aba pendências: `status='pendente'` por vencimento dentro do período (só o período;
+  nota na tela quando há filtros extras). Fiado em aberto (`vendas_pdv`
+  `forma_pagamento='fiado' AND NOT fiado_pago AND status='concluida'`) é grupo
+  próprio, explicitamente FORA do indicador "A receber".
+- Linha de conta `areceber` com status pago: preservada no banco, rotulada
+  "Registro histórico — conferir origem", excluída dos totais de dinheiro.
+  Conta `legado` exibida como "Conta Antiga (origem histórica)".
+- Paginação no servidor (`ORDER BY data_movimentacao DESC, id DESC`), totais sobre o
+  recorte inteiro; página fora do intervalo é ajustada preservando filtros.
+- GETs nunca escrevem (o dashboard NÃO chama `sincronizar_mensalidades`).
+- Rótulos humanos via `ROTULOS_CATEGORIA`/`ROTULOS_SITUACAO`/`ROTULOS_TIPO_CONTA`
+  em `rotas/financeiro.py`; moeda formatada pelo filtro Jinja `moeda`.
+- RBAC: `guarda_modulo('financeiro')` em todas as rotas, inclusive
+  `/financeiro/mensalidades/buscar` (antes vazava JSON com CPF sem guarda).
 
 ---
 
@@ -908,7 +936,8 @@ GET       /relatorios/por-pessoa
 GET       /relatorios/por-medium
 GET       /relatorios/frequencia
 
-GET       /financeiro                   ← dashboard financeiro
+GET       /financeiro                   ← Visão Geral (abas/filtros/paginação — contrato TASK_011)
+GET       /financeiro/lancamento/{id}   ← detalhe somente-leitura
 GET/POST  /financeiro/nova              ← nova movimentação
 GET       /financeiro/mensalidades
 POST      /financeiro/{id}/pagar/cancelar
