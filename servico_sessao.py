@@ -158,44 +158,131 @@ def contas_por_tipo(conn, tipo: str) -> list:
         "ORDER BY id", (tipo,)).fetchall()
 
 
+# ── Contrato de conta × forma de pagamento (TASK_016) ───────────────────────
+#
+# FORMA DE PAGAMENTO e CONTA DE DESTINO são coisas distintas. A forma diz COMO o
+# dinheiro chegou; a conta diz ONDE ele está. "PIX" é forma, não conta: o recurso
+# de um PIX entra numa conta bancária (ou na conta técnica `pix`, que é legado e
+# segue válida).
+#
+# A matriz abaixo é a fonte única. Ela responde, para cada forma, QUAIS tipos de
+# conta podem receber, e qual exigência de sessão/efeito físico se aplica — sem
+# que cada rota decida por conta própria.
+#
+# | forma   | tipos elegíveis              | sessão exigida | efeito na gaveta |
+# |---------|------------------------------|----------------|------------------|
+# | especie | especie                      | sim            | sim (dinheiro)   |
+# | pix     | pix, banco, poupança         | não            | não (eletrônico) |
+#
+# Tipos que NÃO são destino de dinheiro em recebimento:
+# - `areceber`: conta técnica de OBRIGAÇÃO (títulos a receber). Não é caixa; um
+#   recebimento entra na conta real, e a baixa do título é outro fato.
+# - `legado`: conta antiga de origem histórica. Continua recebendo apenas o que
+#   já recebia (nada novo por aqui); não é oferecida como destino.
+# - `outro`: tipo livre sem semântica de destino; não é oferecido.
+
+# Forma → tipos de conta que podem receber.
+CONTAS_ELEGIVEIS = {
+    "especie": ("especie",),
+    "pix": ("pix", "banco", "poupanca"),
+}
+
+# Tipos que representam dinheiro disponível (aparecem como "recursos").
+# `areceber` fica de fora: é obrigação, não disponibilidade.
+TIPOS_DE_RECURSO = ("especie", "pix", "banco", "poupanca", "legado")
+
+# Rótulos para o operador (sem jargão de banco de dados).
+ROTULOS_TIPO_CONTA = {
+    "especie": "Espécie (dinheiro)",
+    "pix": "PIX",
+    "banco": "Conta bancária",
+    "poupanca": "Poupança / Reserva",
+    "legado": "Conta antiga (origem histórica)",
+    "areceber": "Valores a receber (obrigações)",
+    "outro": "Outro",
+}
+
+
+def conta_e_recurso(conta: dict | None) -> bool:
+    """A conta guarda dinheiro disponível? (`areceber` não guarda.)"""
+    return bool(conta) and conta.get("tipo") in TIPOS_DE_RECURSO
+
+
+def _conta_por_id(conn, conta_id):
+    return conn.execute(
+        """SELECT id, nome, tipo, ativo FROM contas_financeiras
+           WHERE id = %s""", (conta_id,)).fetchone()
+
+
+def contas_de_destino(conn, forma: str) -> list:
+    """Contas ATIVAS que podem receber esta forma, em ordem estável de nome.
+
+    Nunca escolhe "a primeira por id": devolve a lista e deixa o chamador decidir
+    (padrão quando há uma só, exigência de escolha quando há várias).
+    """
+    tipos = CONTAS_ELEGIVEIS.get(forma)
+    if not tipos:
+        return []
+    return conn.execute(
+        """SELECT id, nome, tipo FROM contas_financeiras
+           WHERE ativo = 1 AND tipo = ANY(%s)
+           ORDER BY nome""", (list(tipos),)).fetchall()
+
+
+def conta_de_destino(conn, forma: str, conta_id=None, *, exigir_escolha=True):
+    """Resolve a conta de destino de um recebimento, VALIDANDO no servidor.
+
+    Regras (TASK_016 §3):
+    - conta informada é conferida: precisa existir, estar ativa e ser de tipo
+      elegível para a forma. Conta inexistente/inativa/incompatível é RECUSADA —
+      nunca substituída em silêncio por outra;
+    - sem conta informada: se houver exatamente UMA elegível, ela é o padrão
+      (o chamador mostra o destino na tela); se houver mais de uma, é ambiguidade
+      e a recusa pede a escolha;
+    - `areceber`, `legado` e `outro` não são destino de dinheiro por esta porta.
+    """
+    if forma not in CONTAS_ELEGIVEIS:
+        raise SessaoInvalida("forma_invalida",
+                             "Forma de pagamento não suportada aqui.")
+    elegiveis = contas_de_destino(conn, forma)
+    if not elegiveis:
+        raise SessaoInvalida("conta_invalida",
+                             "Não há conta cadastrada que possa receber esta forma "
+                             "de pagamento.")
+
+    if conta_id in (None, 0, ""):
+        if len(elegiveis) == 1 or not exigir_escolha:
+            return elegiveis[0]["id"]
+        raise SessaoInvalida(
+            "conta_invalida",
+            "Há mais de uma conta possível para este recebimento; escolha a "
+            "conta de destino.")
+
+    linha = _conta_por_id(conn, conta_id)
+    if not linha:
+        raise SessaoInvalida("conta_invalida",
+                             "A conta informada não existe.")
+    if not linha["ativo"]:
+        raise SessaoInvalida("conta_inativa",
+                             "A conta informada está inativa; escolha outra.")
+    if linha["tipo"] not in CONTAS_ELEGIVEIS[forma]:
+        raise SessaoInvalida(
+            "conta_incompativel",
+            "Esta conta não pode receber esta forma de pagamento. "
+            "Dinheiro em espécie entra em conta de espécie; PIX entra em conta "
+            "bancária, poupança ou na conta PIX.")
+    return linha["id"]
+
+
 def validar_conta_para_forma(conn, forma: str, conta_id: int | None):
     """A conta é conferida NO BANCO pelo tipo — nunca pelo que o navegador
-    declarou. PIX exige conta de destino; espécie usa a conta espécie ativa
-    (exatamente uma, ou seleção explícita quando houver mais de uma)."""
-    if forma == "especie":
-        opcoes = contas_por_tipo(conn, "especie")
-        if not opcoes:
-            raise SessaoInvalida("conta_invalida",
-                                 "Não há conta de espécie ativa cadastrada.")
-        if conta_id in (None, 0):
-            if len(opcoes) > 1:
-                raise SessaoInvalida(
-                    "conta_invalida",
-                    "Há mais de uma conta de espécie; escolha a conta de destino.")
-            return opcoes[0]["id"]
-        row = conn.execute(
-            "SELECT id, tipo FROM contas_financeiras WHERE id = %s AND ativo = 1",
-            (conta_id,)).fetchone()
-        if not row or row["tipo"] != "especie":
-            raise SessaoInvalida("conta_invalida",
-                                 "A conta informada não é uma conta de espécie ativa.")
-        return row["id"]
-    if forma == "pix":
-        if not conta_id:
-            opcoes = contas_por_tipo(conn, "pix")
-            if len(opcoes) == 1:
-                return opcoes[0]["id"]
-            raise SessaoInvalida(
-                "conta_invalida",
-                "Escolha a conta PIX de destino do recebimento bancário.")
-        row = conn.execute(
-            "SELECT id, tipo FROM contas_financeiras WHERE id = %s AND ativo = 1",
-            (conta_id,)).fetchone()
-        if not row or row["tipo"] != "pix":
-            raise SessaoInvalida("conta_invalida",
-                                 "A conta informada não é uma conta PIX ativa.")
-        return row["id"]
-    raise SessaoInvalida("forma_invalida", "Forma de pagamento não suportada aqui.")
+    declarou.
+
+    TASK_016: passou a delegar ao contrato único `conta_de_destino`. Antes só
+    `especie` e `pix` eram aceitos e a decisão vivia nesta função; hoje a mesma
+    matriz serve a todas as rotas, e vale para banco/poupança no PIX.
+    """
+    return conta_de_destino(conn, forma, conta_id)
 
 
 def sessoes_abertas(conn) -> list:

@@ -564,25 +564,62 @@ async def pagina_contas(request: Request):
     if redir:
         return redir
 
+    from servico_sessao import ROTULOS_TIPO_CONTA, TIPOS_DE_RECURSO
+    from decimal import Decimal
+
     with conectar() as conn:
-        # Saldo por conta: pagas + pendentes (exceto "Valores a Receber",
-        # que soma só as pendentes — fiados pagos também moram nessa conta)
-        contas = conn.execute(
-            """SELECT c.*,
-                      COALESCE(SUM(CASE WHEN fm.tipo='entrada' THEN fm.valor ELSE 0 END), 0)
-                    - COALESCE(SUM(CASE WHEN fm.tipo='saida' THEN fm.valor ELSE 0 END), 0) AS saldo
+        # TASK_016 §5: DUAS medidas diferentes, com nomes diferentes.
+        #
+        # `saldo`        = recursos disponíveis: SÓ movimentações efetivadas
+        #                  (`status='pago'`), entrada − saída. É o que a conta
+        #                  tem, de fato, na data de hoje.
+        # `pendente`     = obrigação ou previsão ainda não efetivada. Aparece
+        #                  separada — nunca somada ao disponível.
+        #
+        # Antes a tela somava pago+pendente numa coluna chamada "Saldo", o que
+        # fazia a conta de obrigações (`areceber`) aparecer com R$ 16 mil ao
+        # lado de dinheiro de verdade.
+        #
+        # Movimento entre contas (`transferencia`/`sangria`) entra nas duas
+        # contas envolvidas e NÃO é receita nem despesa — ele muda o saldo de
+        # cada conta, e por isso é somado aqui normalmente; o que ele não faz é
+        # virar resultado consolidado (isso a Visão Geral já garante).
+        contas = [dict(r) for r in conn.execute(
+            """SELECT c.id, c.nome, c.tipo, c.ativo, c.created_at,
+                      COALESCE(SUM(CASE WHEN fm.status='pago' AND fm.tipo='entrada'
+                                        THEN fm.valor END), 0)
+                    - COALESCE(SUM(CASE WHEN fm.status='pago' AND fm.tipo='saida'
+                                        THEN fm.valor END), 0) AS saldo,
+                      COALESCE(SUM(CASE WHEN fm.status='pendente' AND fm.tipo='entrada'
+                                        THEN fm.valor END), 0)
+                    - COALESCE(SUM(CASE WHEN fm.status='pendente' AND fm.tipo='saida'
+                                        THEN fm.valor END), 0) AS pendente,
+                      COUNT(fm.id) AS movimentos
                FROM contas_financeiras c
                LEFT JOIN financeiro_movimentacoes fm ON fm.conta_id = c.id
-                   AND fm.status IN ('pago', 'pendente')
-                   AND (c.tipo <> 'areceber' OR fm.status = 'pendente')
                GROUP BY c.id, c.nome, c.tipo, c.ativo, c.created_at
-               ORDER BY c.id"""
-        ).fetchall()
+               ORDER BY c.id""", None).fetchall()]
+
+        # A conta `areceber` guarda OBRIGAÇÃO: os pendentes são títulos a receber
+        # e os pagos que moram nela são registros históricos (fiado antigo), não
+        # dinheiro disponível. Por isso ela não entra no total de recursos.
+        total_recursos = sum(
+            (Decimal(str(c["saldo"])) for c in contas
+             if c["tipo"] in TIPOS_DE_RECURSO), Decimal("0.00"))
+        total_obrigacoes = sum(
+            (Decimal(str(c["pendente"])) for c in contas
+             if c["tipo"] == "areceber"), Decimal("0.00"))
+
+    for c in contas:
+        c["e_recurso"] = c["tipo"] in TIPOS_DE_RECURSO
+        c["rotulo_tipo"] = ROTULOS_TIPO_CONTA.get(c["tipo"], c["tipo"])
 
     return templates.TemplateResponse("configuracoes/contas.html", {
         "request": request,
         "atendente": atendente,
-        "contas": [dict(c) for c in contas],
+        "contas": contas,
+        "total_recursos": total_recursos,
+        "total_obrigacoes": total_obrigacoes,
     })
 
 

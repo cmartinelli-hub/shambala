@@ -570,8 +570,11 @@ tentativas = [
     ("/caixa/fiados/credito/%d" % t_mensa_a, {"valor": "5.00", "forma_pagamento": "especie",
                                               "sessao_id": str(sa)},
      "valor_invalido", {"valor": "-5.00"}),
+    # TASK_016: usar conta de ESPÉCIE num PIX é recusado com o motivo próprio
+    # (`conta_incompativel`) — antes tudo caía em `conta_invalida`. A pergunta
+    # verificada continua sendo "recusa sem escrita por conta inadequada".
     ("/caixa/fiados/%d/pagar" % v_fiado_40, {"forma_pagamento": "pix"},
-     "conta_invalida", {"conta_pix_id": str(cid_especie)}),
+     "conta_incompativel", {"conta_pix_id": str(cid_especie)}),
 ]
 for path, base_data, esperado_erro, extra in tentativas:
     data = dict(base_data)

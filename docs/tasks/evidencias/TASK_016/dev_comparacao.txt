@@ -1,0 +1,13 @@
+# TASK_016 §6 — DEV: comparação antes × depois do reinício
+
+## financeiro (dev_antes.txt × dev_depois.txt)
+   IDÊNTICO — 0 linhas de diferença (12 linhas)
+
+## geral (devg_antes.txt × devg_depois.txt)
+   IDÊNTICO — 0 linhas de diferença (20 linhas)
+
+## Contas do DEV (nenhuma criada, alterada ou inativada)
+   1 Conta Antiga (legado) ativo=1
+   2 Conta Espécie (especie) ativo=1
+   3 Conta PIX (pix) ativo=1
+   4 Valores a Receber (areceber) ativo=1

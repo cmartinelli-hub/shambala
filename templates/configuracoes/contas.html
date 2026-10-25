@@ -7,8 +7,35 @@
     <h2>Contas Financeiras</h2>
 </div>
 
+{# TASK_016: recursos e obrigações são medidas diferentes e aparecem separadas. #}
+<div class="grade-cards fin-cards" style="margin-bottom:1.5rem">
+    <div class="card-stat">
+        <div class="stat-valor">{{ total_recursos|moeda }}</div>
+        <div class="stat-label">Recursos disponíveis</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Soma das contas de dinheiro (espécie, PIX, bancária, poupança) com
+            <strong>lançamentos efetivados</strong>. Não inclui obrigações pendentes
+            nem a conta de valores a receber.</p>
+        </details>
+    </div>
+    <div class="card-stat fin-card-obrigacao">
+        <div class="stat-valor fin-pendente">{{ total_obrigacoes|moeda }}</div>
+        <div class="stat-label">A receber (obrigações pendentes)</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Títulos ainda em aberto na conta de valores a receber.
+            <strong>Não é dinheiro disponível</strong> — é o que se espera receber.</p>
+        </details>
+    </div>
+</div>
+
 <div class="card-form" style="margin-bottom:1.5rem">
     <h3 style="margin-bottom:.6rem">+ Nova Conta</h3>
+    <p class="fin-nota">Dinheiro em espécie entra numa conta de <strong>Espécie</strong>;
+    PIX entra numa conta <strong>bancária</strong>, de <strong>poupança</strong> ou na
+    conta <strong>PIX</strong>. A conta de <em>Valores a Receber</em> guarda obrigações e
+    nunca recebe dinheiro. Com mais de uma conta de um mesmo tipo, a tela de
+    recebimento pergunta para qual delas o dinheiro vai — o registro não é feito sem
+    essa escolha.</p>
     <form method="post" action="/configuracoes/contas/nova">
         <div class="grade-form">
             <div class="campo">
@@ -17,12 +44,18 @@
             </div>
             <div class="campo">
                 <label>Tipo *</label>
+                {# TASK_016: os tipos agora têm semântica de destino explícita.
+                   "PIX / Banco" antigo misturava a FORMA (PIX) com a CONTA
+                   (banco) — separado aqui. `banco` e `poupanca` recebem PIX e
+                   são destino de transferência; `especie` recebe dinheiro. #}
                 <select name="tipo" required>
-                    <option value="especie">Espécie (Dinheiro físico)</option>
-                    <option value="pix">PIX / Banco</option>
-                    <option value="areceber">Valores a Receber</option>
-                    <option value="legado">Legado / Histórico</option>
-                    <option value="outro">Outro</option>
+                    <option value="especie">Espécie — dinheiro na gaveta</option>
+                    <option value="pix">PIX — conta que recebe PIX (técnica)</option>
+                    <option value="banco">Conta bancária — recebe PIX</option>
+                    <option value="poupanca">Poupança / Reserva — recebe PIX</option>
+                    <option value="areceber">Valores a Receber — obrigações, não dinheiro</option>
+                    <option value="legado">Legado / Histórico — origem antiga</option>
+                    <option value="outro">Outro (sem destino de recebimento)</option>
                 </select>
             </div>
         </div>
@@ -39,9 +72,9 @@
             <th>ID</th>
             <th>Nome</th>
             <th>Tipo</th>
-            <th>Saldo (mês)</th>
+            <th>Disponível</th>
+            <th>Pendente</th>
             <th>Ativo</th>
-            <th>Criada em</th>
         </tr>
     </thead>
     <tbody>
@@ -49,10 +82,15 @@
         <tr>
             <td>{{ c.id }}</td>
             <td><strong>{{ c.nome }}</strong></td>
-            <td>{{ c.tipo }}</td>
-            <td style="font-weight:700;color:{{ '#1da851' if c.saldo >= 0 else '#ff4444' }}">
-                R$ {{ "%.2f"|format(c.saldo)|replace('.', ',') }}
+            <td>{{ c.rotulo_tipo }}</td>
+            {# TASK_016: "disponível" é dinheiro efetivado; "pendente" é
+               obrigação/previsão. Nunca somados na mesma coluna. #}
+            <td style="font-weight:700;color:{{ '#1da851' if c.saldo >= 0 else '#ff4444' }}"
+                {% if not c.e_recurso %}title="Conta de obrigações: não é dinheiro disponível"{% endif %}>
+                {{ c.saldo|moeda }}
+                {% if not c.e_recurso %}<br><small style="color:var(--cor-texto-suave);font-weight:400">obrigação — não é caixa</small>{% endif %}
             </td>
+            <td style="color:var(--cor-texto-suave)">{{ c.pendente|moeda }}</td>
             <td>
                 <form method="post" action="/configuracoes/contas/{{ c.id }}/toggle" style="display:inline">
                     <button type="submit" class="btn btn-sm {% if c.ativo %}btn-primario{% else %}btn-secundario{% endif %}"

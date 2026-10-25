@@ -1,0 +1,41 @@
+# TASK_016 — resultados das provas (app descartável, banco shambala_test_passes)
+
+## §7.1 segunda conta de espécie
+Traceback (most recent call last):
+  File "/tmp/t016r/r1.py", line 67, in <module>
+    sess = conn.execute(
+           ~~~~~~~~~~~~^
+        """INSERT INTO caixa_movimentos (caixa_id, saldo_inicial, status, versao)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           VALUES ((SELECT id FROM caixas WHERE ativo = 1 LIMIT 1), 0, 'aberto',
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                   'eventos') RETURNING id""", None).fetchone()["id"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 25, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "uq_caixa_movimentos_aberto"
+DETAIL:  Chave (caixa_id)=(2) já existe.
+
+
+## §7.3/§7.4 PIX em banco/poupança e contas recusadas
+Traceback (most recent call last):
+  File "/tmp/t016r/r2.py", line 43, in <module>
+    banco = conn.execute(
+            ~~~~~~~~~~~~^
+        """INSERT INTO contas_financeiras (nome, tipo)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           VALUES ('T016 Banco', 'banco') RETURNING id""", None).fetchone()["id"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 25, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "contas_financeiras_nome_key"
+DETAIL:  Chave (nome)=(T016 Banco) já existe.
+

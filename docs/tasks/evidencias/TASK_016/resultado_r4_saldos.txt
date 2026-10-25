@@ -1,0 +1,15 @@
+== Linhas da tela (disponível | pendente) ==
+  Valores a Receber    disponível=R$ 470,00 obrigação — não é caixa pendente=R$ 9.905,00
+  T016F Gaveta         disponível=R$ 30,00                     pendente=R$ 20,00
+  T016F Banco          disponível=R$ 540,00                    pendente=R$ 0,00
+
+== Conferência ==
+  T016F Gaveta: esperado R$ 30,00/R$ 20,00 -> OK (('R$ 30,00', 'R$ 20,00'))
+  T016F Banco: esperado R$ 540,00/R$ 0,00 -> OK (('R$ 540,00', 'R$ 0,00'))
+
+  cancelado (999) fora da conta: OK
+
+  cartão 'Recursos disponíveis': R$ 1.237.914,99 | soma no banco: 1237914.99
+  cartão 'A receber (obrigações pendentes)': R$ 9.905,00 | soma no banco: 9905.00
+
+RESULTADO: todas as conferências passaram

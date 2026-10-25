@@ -22,6 +22,22 @@ from templates_config import templates
 router = APIRouter(prefix="/caixa")
 
 
+def _conta_pedida(forma: str, conta_id, conta_pix_id):
+    """Qual conta o formulário pediu.
+
+    `conta_id` é o campo novo (TASK_016) e vale para qualquer forma. Para PIX,
+    `conta_pix_id` continua aceito porque é o nome que os formulários e as
+    tentativas já usam desde a TASK_008 — trocar o nome quebraria o corpo das
+    tentativas em voo e os reenvios. Nenhum dos dois é confiado: quem valida é
+    `servico_sessao.conta_de_destino`.
+    """
+    if conta_id:
+        return conta_id
+    if forma == "pix" and conta_pix_id:
+        return conta_pix_id
+    return None
+
+
 def _guard(request: Request):
     from rotas.permissoes import guarda_modulo
     return guarda_modulo(request, "caixa")
@@ -142,6 +158,8 @@ async def finalizar_venda(
     imprimir: str = Form("1"),
     doacao_valor: str = Form("0"),
     idempotencia: str = Form(""),
+    conta_id: int = Form(0),
+    conta_pix_id: int = Form(0),
 ):
     """Finaliza venda com o servidor como única autoridade de valores.
 
@@ -172,6 +190,8 @@ async def finalizar_venda(
         "forma": forma_pagamento, "trabalhador_id": trabalhador_id,
         "recebido": str(valor_recebido or "0"), "doacao": str(doacao_valor or "0"),
         "itens": itens_json,
+        # TASK_016: a conta de destino faz parte da identidade da tentativa
+        "conta_id": _conta_pedida(forma_pagamento, conta_id, conta_pix_id),
     }
 
     try:
@@ -286,9 +306,14 @@ async def finalizar_venda(
         if forma_pagamento == "pix" and mov_id is None:
             # PIX sem sessão de caixa é recebimento válido, mas precisa de
             # conta financeira real — nunca destino indeterminado (TASK_008)
-            conta_pix_solta = conta_id_por_tipo(conn, "pix")
-            if conta_pix_solta is None:
-                return _url_erro("conta_invalido")
+            from servico_sessao import SessaoInvalida as _SI
+            from servico_sessao import conta_de_destino as _conta_destino
+            try:
+                conta_pix_solta = _conta_destino(
+                    conn, "pix", _conta_pedida("pix", conta_id, conta_pix_id),
+                    exigir_escolha=False)
+            except _SI:
+                return _url_erro("conta_invalida")
 
         if forma_pagamento == "especie" and mov_id is None:
             # dinheiro físico sem sessão aberta = destino indeterminável —
@@ -381,10 +406,17 @@ async def finalizar_venda(
             # detalhado; os acumuladores antigos ficam intactos em 0.
             from servico_sessao import registrar_evento
             efeito = total if forma_pagamento == "especie" else Decimal("0.00")
-            conta_venda = (conta_id_por_tipo(conn, "especie")
-                           if forma_pagamento == "especie" else
-                           conta_id_por_tipo(conn, "pix")
-                           if forma_pagamento == "pix" else None)
+            # TASK_016: o destino da venda vem do contrato de conta×forma, e a
+            # escolha da tela é respeitada. Antes, `conta_id_por_tipo` pegava a
+            # PRIMEIRA conta do tipo — com duas contas de espécie, o dinheiro da
+            # venda ia sempre para a de menor id.
+            from servico_sessao import conta_de_destino as _conta_destino
+            conta_venda = None
+            if forma_pagamento in ("especie", "pix"):
+                conta_venda = _conta_destino(
+                    conn, forma_pagamento,
+                    _conta_pedida(forma_pagamento, conta_id, conta_pix_id),
+                    exigir_escolha=False)
             registrar_evento(
                 conn, identidade=f"venda:{venda_id}:venda", sessao_id=mov_id,
                 tipo="venda", natureza="comercial", origem_tipo="vendas_pdv",
@@ -889,20 +921,27 @@ async def tabela_precos(request: Request):
 
 
 def _pagina_doacao(request, atendente, erro=None, forma_pre="especie"):
-    from servico_sessao import MENSAGENS_ERRO, sessoes_abertas, contas_por_tipo
+    from servico_sessao import (
+        MENSAGENS_ERRO, ROTULOS_TIPO_CONTA, contas_de_destino, sessoes_abertas,
+    )
     with conectar() as conn:
         todas = [dict(s) for s in sessoes_abertas(conn)]
         # recebimento novo só entra em sessão 'eventos'; legado é listado
         # apenas como aviso — escolher uma sessão antiga é recusado no POST
         sessoes = [s for s in todas if s["versao"] == "eventos"]
         sessoes_legadas = [s for s in todas if s["versao"] != "eventos"]
-        contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
+        # TASK_016: o destino é escolhido pelo contrato conta×forma. Espécie e
+        # PIX têm listas próprias; com uma só conta ela já vem como padrão.
+        contas_especie = [dict(c) for c in contas_de_destino(conn, "especie")]
+        contas_pix = [dict(c) for c in contas_de_destino(conn, "pix")]
     return templates.TemplateResponse("caixa/doacao.html", {
         "request": request,
         "atendente": atendente,
         "sessoes": sessoes,
         "sessoes_legadas": sessoes_legadas,
+        "contas_especie": contas_especie,
         "contas_pix": contas_pix,
+        "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
         "erro": MENSAGENS_ERRO.get(erro, erro) if erro else None,
         "forma_pre": forma_pre,
     })
@@ -926,6 +965,7 @@ async def registrar_doacao(
     descricao: str = Form(""),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    conta_id: int = Form(0),
     idempotencia: str = Form(""),
 ):
     """Doação avulsa sem cesta (TASK_008): o destino é declarado, não presumido.
@@ -957,7 +997,9 @@ async def registrar_doacao(
 
     desc = descricao.strip() or f"Doação avulsa via {'PIX' if forma == 'pix' else 'Dinheiro'}"
     corpo_tentativa = {"forma": forma, "valor": str(valor_dec), "descricao": desc,
-                       "sessao_id": sessao_id, "conta_pix_id": conta_pix_id or None}
+                       "sessao_id": sessao_id, "conta_pix_id": conta_pix_id or None,
+                       # TASK_016: trocar a conta na mesma chave é CONFLITO
+                       "conta_id": _conta_pedida(forma, conta_id, conta_pix_id)}
     destino_doacao = f"/caixa/doacao?ok=1&valor={valor_dec:.2f}&forma={forma}"
 
     def _erro_doacao(chave_erro: str) -> str:
@@ -974,8 +1016,7 @@ async def registrar_doacao(
 
             mov = sessao_para_recebimento(conn, sessao_id, forma)
             conta = validar_conta_para_forma(
-                conn, forma,
-                (conta_pix_id or None) if forma == "pix" else None)
+                conn, forma, _conta_pedida(forma, conta_id, conta_pix_id))
 
             try:
                 chave_tentativa = exigir_reserva(
@@ -1521,6 +1562,7 @@ async def pagar_fiado(
     forma_pagamento: str = Form("especie"),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    conta_id: int = Form(0),
     idempotencia: str = Form(""),
 ):
     """Quitação de dívida individual no fiado (TASK_008 / TASK_012 §4).
@@ -1550,7 +1592,9 @@ async def pagar_fiado(
 
     corpo_tentativa = {"venda_id": venda_id, "forma": forma_pagamento,
                        "sessao_id": sessao_id,
-                       "conta_pix_id": conta_pix_id or None}
+                       "conta_pix_id": conta_pix_id or None,
+                       "conta_id": _conta_pedida(forma_pagamento, conta_id,
+                                                 conta_pix_id)}
 
     def _erro_fiado(chave_erro: str) -> str:
         return f"/caixa/fiados?erro={chave_erro}"
@@ -1586,7 +1630,7 @@ async def pagar_fiado(
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             conta = validar_conta_para_forma(
                 conn, forma_pagamento,
-                (conta_pix_id or None) if forma_pagamento == "pix" else None)
+                _conta_pedida(forma_pagamento, conta_id, conta_pix_id))
 
             try:
                 chave_tentativa = exigir_reserva(
@@ -1633,6 +1677,7 @@ async def pagar_divida_fiado(
     forma_pagamento: str = Form("especie"),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    conta_id: int = Form(0),
     venda_ids: list[str] = Form(default=[]),
     idempotencia: str = Form(""),
 ):
@@ -1674,7 +1719,9 @@ async def pagar_divida_fiado(
                        "valor": (valor or "").strip().replace(",", "."),
                        "forma": forma_pagamento, "sessao_id": sessao_id,
                        "conta_pix_id": conta_pix_id or None,
-                       "dividas": selecao}
+                       "dividas": selecao,
+                       "conta_id": _conta_pedida(forma_pagamento, conta_id,
+                                                 conta_pix_id)}
 
     try:
         with conectar() as conn:
@@ -1722,7 +1769,7 @@ async def pagar_divida_fiado(
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             conta = validar_conta_para_forma(
                 conn, forma_pagamento,
-                (conta_pix_id or None) if forma_pagamento == "pix" else None)
+                _conta_pedida(forma_pagamento, conta_id, conta_pix_id))
 
             try:
                 chave_tentativa = exigir_reserva(
@@ -1809,6 +1856,7 @@ async def adicionar_credito_fiado(
     forma_pagamento: str = Form("especie"),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    conta_id: int = Form(0),
     idempotencia: str = Form(""),
 ):
     """Crédito antecipado (TASK_008 / FIN-03): o dinheiro entregue AGORA
@@ -1836,7 +1884,9 @@ async def adicionar_credito_fiado(
     desc = descricao.strip() or "Adição de crédito antecipado"
     corpo_tentativa = {"trabalhador_id": trabalhador_id, "valor": str(valor_dec),
                        "descricao": desc, "forma": forma_pagamento,
-                       "sessao_id": sessao_id, "conta_pix_id": conta_pix_id or None}
+                       "sessao_id": sessao_id, "conta_pix_id": conta_pix_id or None,
+                       "conta_id": _conta_pedida(forma_pagamento, conta_id,
+                                                 conta_pix_id)}
 
     def _erro_credito(chave_erro: str) -> str:
         return f"/caixa/fiados?erro={chave_erro}"
@@ -1853,7 +1903,7 @@ async def adicionar_credito_fiado(
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             conta = validar_conta_para_forma(
                 conn, forma_pagamento,
-                (conta_pix_id or None) if forma_pagamento == "pix" else None)
+                _conta_pedida(forma_pagamento, conta_id, conta_pix_id))
 
             if not conn.execute("SELECT id FROM trabalhadores WHERE id = %s",
                                 (trabalhador_id,)).fetchone():

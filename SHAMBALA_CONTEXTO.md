@@ -50,6 +50,30 @@ assistindo a uma palestra, e são chamadas pelo código exibido num monitor via 
 
 **Idioma do código:** Português em tudo — variáveis, funções, rotas, tabelas, campos.
 
+### Contas × formas de pagamento (TASK_016)
+
+Contrato único em `servico_sessao.py` — `CONTAS_ELEGIVEIS`, `TIPOS_DE_RECURSO`,
+`conta_de_destino()` e `contas_de_destino()`. Não reimplementar a escolha em rota.
+
+| Forma | Contas que recebem | Sessão | Efeito na gaveta |
+|---|---|---|---|
+| `especie` | só `especie` | exigida | sim |
+| `pix` | `pix`, `banco`, `poupanca` | opcional | não |
+
+Regras: `areceber` (obrigação), `legado` (origem histórica) e `outro` **não** são
+destino de dinheiro. Conta inexistente/inativa/incompatível é recusada
+(`conta_invalida`/`conta_inativa`/`conta_incompativel`) — nunca substituída em
+silêncio. Com mais de uma conta elegível, o recebimento **exige escolha**; com uma
+só, ela é o padrão e a tela mostra qual. `conta_id` integra o corpo da tentativa
+(trocar a conta com a mesma chave é `tentativa_conflito`).
+`conta_id_por_tipo` devolve id só quando o tipo identifica UMA conta ativa — na
+ambiguidade devolve `None` de propósito.
+
+Saldo na tela de contas: **Disponível** = entrada−saída com `status='pago'`;
+**Pendente** = a mesma conta com `pendente`. `areceber` aparece marcada como
+obrigação e **não** entra em "Recursos disponíveis". Contas de caixa seguem
+separadas das contas operacionais (`caixas`) e das sessões (`caixa_movimentos`).
+
 ### Ícones da interface (TASK_015)
 
 Emojis de interface foram substituídos por **Lucide** (`lucide-static@0.460.0`,

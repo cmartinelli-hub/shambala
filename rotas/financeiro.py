@@ -846,6 +846,7 @@ async def receber_mensalidades(
     pix_copiadecola: str = Form(""),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    conta_id: int = Form(0),
     idempotencia: str = Form(""),
 ):
     """Recebimento de mensalidades (TASK_008): destino explícito, sem
@@ -885,7 +886,11 @@ async def receber_mensalidades(
     corpo_tentativa = {"trabalhador_id": trabalhador_id,
                        "mov_ids": _ids_selecionados(mov_ids),
                        "forma": forma_pagamento, "sessao_id": sessao_id,
-                       "conta_pix_id": conta_pix_id or None}
+                       "conta_pix_id": conta_pix_id or None,
+                       # TASK_016: a conta entra na identidade da tentativa —
+                       # trocar o destino com a mesma chave é CONFLITO, nunca
+                       # reaproveitar o resultado do outro destino.
+                       "conta_id": conta_id or None}
 
     from servico_idempotencia import (
         TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
@@ -914,7 +919,8 @@ async def receber_mensalidades(
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             cid = validar_conta_para_forma(
                 conn, forma_pagamento,
-                (conta_pix_id or None) if forma_pagamento == "pix" else None)
+                (conta_id or None) or
+                ((conta_pix_id or None) if forma_pagamento == "pix" else None))
 
             # Pendentes selecionadas (só as que ainda estão pendentes e do mesmo trabalhador)
             a_pagar = []

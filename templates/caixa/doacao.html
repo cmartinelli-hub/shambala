@@ -45,6 +45,34 @@
     <form id="form-especie" method="post" action="/caixa/doacao">
         {{ campo_idempotencia() }}
         <input type="hidden" name="forma" value="especie">
+        {# TASK_016: o DESTINO do dinheiro é explícito. Com uma única conta
+           elegível ela aparece como padrão (e vai no campo oculto); com mais de
+           uma, o operador escolhe — e a tela diz onde o dinheiro vai entrar. #}
+        <div class="campo">
+            <label for="sel-conta-especie">O dinheiro entra em qual conta?</label>
+            {% if contas_especie | length == 1 %}
+            <input type="hidden" name="conta_id" value="{{ contas_especie[0].id }}">
+            <div style="padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio);background:var(--cor-fundo-suave, #f7f7f7)">
+                {{ contas_especie[0].nome }}
+                <small style="color:var(--cor-texto-suave)">— {{ rotulos_tipo_conta.get(contas_especie[0].tipo, contas_especie[0].tipo) }}</small>
+            </div>
+            {% elif contas_especie | length > 1 %}
+            <select id="sel-conta-especie" name="conta_id" required
+                    style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                <option value="">— escolha a conta de destino —</option>
+                {% for c in contas_especie %}
+                <option value="{{ c.id }}">{{ c.nome }} — {{ rotulos_tipo_conta.get(c.tipo, c.tipo) }}</option>
+                {% endfor %}
+            </select>
+            <small style="color:var(--cor-texto-suave);display:block;margin-top:.4rem">
+                Há mais de uma conta de espécie: o recebimento não é registrado sem
+                dizer para qual delas o dinheiro vai.</small>
+            {% else %}
+            <input type="hidden" name="conta_id" value="">
+            <div style="color:#c0392b">Nenhuma conta de espécie ativa: o recebimento
+                em dinheiro será recusado. Confira as contas em Configurações.</div>
+            {% endif %}
+        </div>
         <div class="campo">
             <label>Dinheiro físico entra em qual sessão aberta?</label>
             {% if sessoes | length == 1 %}
@@ -106,11 +134,13 @@
             </div>
             {% else %}
             <select id="sel-conta-pix" style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
-                <option value="">— selecione a conta —</option>
+                <option value="">— escolha a conta que recebe o PIX —</option>
                 {% for c in contas_pix %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
+                <option value="{{ c.id }}">{{ c.nome }} — {{ rotulos_tipo_conta.get(c.tipo, c.tipo) }}</option>
                 {% endfor %}
             </select>
+            <small style="color:var(--cor-texto-suave);display:block;margin-top:.4rem">
+                PIX é forma de pagamento; o dinheiro entra na conta escolhida aqui.</small>
             {% endif %}
         </div>
 

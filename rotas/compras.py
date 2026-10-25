@@ -582,6 +582,7 @@ async def salvar_compra(
     forma_pagamento: str = Form("especie"),
     foto: UploadFile = File(None),
     idempotencia: str = Form(""),
+    conta_id: int = Form(0),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -656,9 +657,16 @@ async def salvar_compra(
         if respondida:
             return respondida
 
-        conta_id = conta_id_por_tipo(conn, forma_pagamento)
-        if conta_id is None:
-            return _erro("Conta financeira não encontrada. Contate o administrador.",
+        # TASK_016: a conta da compra segue o mesmo contrato conta×forma dos
+        # recebimentos (era `conta_id_por_tipo`, que pegava a primeira do tipo).
+        from servico_sessao import SessaoInvalida as _SI
+        from servico_sessao import conta_de_destino as _conta_destino
+        try:
+            conta_id = _conta_destino(
+                conn, forma_pagamento, conta_id or None, exigir_escolha=False)
+        except _SI:
+            return _erro("Não há conta cadastrada que possa pagar esta forma. "
+                         "Confira as contas em Configurações.",
                          valor=valor, descricao=desc, forma=forma_pagamento)
 
         try:

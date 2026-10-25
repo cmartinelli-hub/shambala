@@ -1654,12 +1654,24 @@ def criar_tabelas():
 
 
 def conta_id_por_tipo(conn, tipo: str) -> int | None:
-    """Retorna o id da conta financeira pelo tipo (legado, especie, pix, areceber)."""
-    row = conn.execute(
-        "SELECT id FROM contas_financeiras WHERE tipo = %s AND ativo = 1",
-        (tipo,)
-    ).fetchone()
-    return row["id"] if row else None
+    """Id da conta ATIVA do tipo — ou None quando o tipo não identifica uma conta.
+
+    TASK_016: esta função deixou de ser "a primeira conta do tipo" por acidente.
+    Com duas contas do mesmo tipo, "a primeira por id" era uma escolha silenciosa
+    — exatamente o que a ordem proíbe. Agora:
+
+    - **uma** conta ativa do tipo  → devolve o id (é inequívoco);
+    - **nenhuma**                  → None (o chamador recusa com mensagem);
+    - **mais de uma**              → None (é AMBÍGUO: quem precisa escolher deve
+      usar `servico_sessao.conta_de_destino`, que pergunta ou recusa).
+
+    Devolver None na ambiguidade é deliberado: é melhor o fluxo recusar do que
+    gravar dinheiro na conta errada sem ninguém perceber.
+    """
+    linhas = conn.execute(
+        "SELECT id FROM contas_financeiras WHERE tipo = %s AND ativo = 1 "
+        "ORDER BY id LIMIT 2", (tipo,)).fetchall()
+    return linhas[0]["id"] if len(linhas) == 1 else None
 
 
 if __name__ == "__main__":
