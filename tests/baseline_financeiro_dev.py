@@ -9,6 +9,7 @@ Visão Geral não alterou fatos (somatórios por tipo/status/categoria, obrigaç
 pagas ambíguas, pares transferência/sangria e a impressão digital de identidade).
 Nunca imprime descrições, nomes ou credenciais.
 """
+import os
 import subprocess
 import sys
 
@@ -24,14 +25,17 @@ QUERIES = [
     ("fm_sem_conta", "SELECT COUNT(*) FROM financeiro_movimentacoes WHERE conta_id IS NULL"),
     ("fm_mensalidades_pend", "SELECT COUNT(*) || ' | ' || COALESCE(SUM(valor),0) FROM financeiro_movimentacoes WHERE categoria='mensalidade' AND status='pendente'"),
     ("contas_por_tipo", "SELECT string_agg(tipo || ': ' || n, ' ; ' ORDER BY tipo) FROM (SELECT tipo, COUNT(*) n FROM contas_financeiras GROUP BY tipo) x"),
-    ("vendas_por_forma", "SELECT string_agg(forma_pagamento || '/' || status || ': ' || n || ' | ' || COALESCE(SUM(total),0), ' ; ' ORDER BY forma_pagamento, status) FROM (SELECT forma_pagamento, status, COUNT(*) n, SUM(total) total FROM vendas_pdv GROUP BY forma_pagamento, status) x"),
+    ("vendas_por_forma", "SELECT string_agg(forma_pagamento || '/' || status || ': ' || n || ' | ' || COALESCE(v,0), ' ; ' ORDER BY forma_pagamento, status) FROM (SELECT forma_pagamento, status, COUNT(*) n, SUM(total) v FROM vendas_pdv GROUP BY forma_pagamento, status) x"),
     ("fiado_aberto", "SELECT COUNT(*) || ' | ' || COALESCE(SUM(total),0) FROM vendas_pdv WHERE forma_pagamento='fiado' AND NOT fiado_pago AND status='concluida'"),
 ]
 
 
 def q(sql):
     r = subprocess.run(
-        ["psql", "-d", BANCO, "-tAqc", sql],
+        ["psql",
+         "-h", os.environ.get("PGADMIN_HOST", os.environ.get("PGHOST", "/var/run/postgresql")),
+         "-U", os.environ.get("PGADMIN_USER", os.environ.get("PGUSER", "shambala")),
+         "-d", BANCO, "-tAqc", sql],
         capture_output=True, text=True)
     if r.returncode != 0:
         return f"ERRO: {r.stderr.strip()[:160]}"
