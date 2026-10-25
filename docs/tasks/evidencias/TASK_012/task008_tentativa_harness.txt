@@ -1,0 +1,72 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025010414-2234232 (identifica ESTA execução nas provas)
+  árvore ..: b9268ecc0539683d2b5513eef819143f39c9d1b4-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025010414-2234232
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025010414-2234232'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_caixa_navegador_task008.py
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025010414-2234232'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025010414-2234232)
+[seed] fixtures T008N prontas
+  ✔ C1 a tela orienta que só PIX está disponível sem sessão
+  ✔ C1 PIX pré-selecionado; espécie e fiado bloqueados sem sessão
+  ✔ C1 espécie sem sessão é recusada na rota (sessao_necessaria)
+  ✔ C1 nada foi gravado
+  ✔ C2 sessão nova nasce na versão 'eventos'
+  ✔ C2 venda em espécie registrada pela tela
+  ✔ C2 evento da venda põe 10,00 na gaveta
+  ✔ C3 espécie sem destino: a tela alerta e não deixa gravar
+  ✔ C3 alerta não gravou nada
+  ✔ C3 pagamento aceito com o destino escolhido na barra
+  ✔ C3 UMA entrada de 12,00 na gaveta
+  ✔ C3 evento de recebimento com efeito físico 12
+  ✔ C4 a tela encaminha ao comprovante da sangria
+  ✔ C4 sangria gravada com recebedor e motivo
+  ✔ C4 par saída+entrada com destino identificado (efeito global zero)
+  ✔ C4 evento de sangria tira 20 da gaveta
+  ✔ C5 a prévia mostra o esperado 102.00 (100 + 10 + 12 − 20)
+  ✔ C5 contagem divergente SEM observação é recusada na tela
+  ✔ C5 sessão continua aberta
+  ✔ C6 esperado NUNCA é sobrescrito (saldo_final = 102,00 dos eventos)
+  ✔ C6 contado 100,00 com divergência −2,00 e observação registradas
+  ✔ C6 PDF do caixa fechado exportado pelo navegador
+  ✔ C7 a tela legada NÃO expõe a contagem da regra nova
+  ✔ C7 POST com contagem nova é recusado (sessao_legada)
+  ✔ C7 tela explica que a sessão legada não fecha pela regra nova
+  ✔ C7 sessão legada continua aberta (nada foi gravado)
+  ✔ C7 sessão legada NÃO aparece na barra de destino de recebimento
+  ✔ C8 venda registrada no smartphone
+  ✔ C8 campos do fechamento cabem na tela do smartphone
+  ✔ C9 abertura padrão R$ 0,00 aceita pela tela
+  ✔ C9 sessão vazia fechada com contado 0 e divergência 0
+  ✔ C9 fechamento sem eventos não inventa lançamentos financeiros
+  ✔ C10 saldo inicial zero gravado no smartphone
+  ✔ C10 campo de contagem cabe na tela do smartphone
+  ✔ C10 fechado com contado 0 (texto '0' aceito)
+  ✔ C11 o PDV responde sem sessão aberta (não é mais a tela de bloqueio)
+  ✔ C11 sem sessão: PIX pré-selecionado, espécie e fiado bloqueados
+  ✔ C11 venda PIX sem sessão concluída, gaveta desvinculada (NULL)
+  ✔ C11 vender por PIX não abriu sessão de caixa
+  ✔ C11 espécie sem sessão é recusada (sessao_necessaria)
+  ✔ C11 a recusa de espécie não criou nada
+
+[resultado] aprovadas=41 falhas=0
+  evidências: /nc/projetos/shambala/docs/tasks/evidencias/TASK_008
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_caixa_navegador_task008.py: rc=0
+tests/rodar_testes.sh, linha 89: 2234274 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok
