@@ -22,16 +22,16 @@
 <div class="grade-cards" style="display:grid;gap:.8rem;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:1.2rem">
     <div class="card-form" style="margin:0">
         <div style="font-size:.8rem;color:var(--cor-texto-suave)">Saldo devedor (dívidas em aberto)</div>
-        <div style="font-size:1.4rem;font-weight:900;color:#c0392b">R$ {{ "%.2f"|format(saldo_devedor) }}</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#c0392b">{{ saldo_devedor|moeda }}</div>
     </div>
     <div class="card-form" style="margin:0">
         <div style="font-size:.8rem;color:var(--cor-texto-suave)">Crédito antecipado disponível</div>
-        <div style="font-size:1.4rem;font-weight:900;color:#1da851">R$ {{ "%.2f"|format(credito) }}</div>
+        <div style="font-size:1.4rem;font-weight:900;color:#1da851">{{ credito|moeda }}</div>
     </div>
     {% if limite > 0 %}
     <div class="card-form" style="margin:0">
         <div style="font-size:.8rem;color:var(--cor-texto-suave)">Limite de fiado</div>
-        <div style="font-size:1.4rem;font-weight:900">R$ {{ "%.2f"|format(limite) }}</div>
+        <div style="font-size:1.4rem;font-weight:900">{{ limite|moeda }}</div>
     </div>
     {% endif %}
 </div>
@@ -39,7 +39,7 @@
 <p style="font-size:.82rem;color:var(--cor-texto-suave);margin-bottom:1rem">
     Devedor e crédito são saldos diferentes e não se somam: o crédito é dinheiro já
     entregue que ainda não virou dívida, e o saldo devedor é o que as compras em fiado
-    ainda devem. Cada número abaixo aponta o lançamento ou a venda que o originou.
+    ainda devem. Cada número abaixo leva ao lançamento ou à venda que o originou.
 </p>
 
 <h3 style="margin:.8rem 0 .4rem">Dívidas em aberto</h3>
@@ -56,15 +56,15 @@
         <tr>
             <td><a href="/caixa/vendas/{{ d.venda_id }}/comprovante?via=caixa" target="_blank">#{{ d.venda_id }}</a></td>
             <td>{{ d.data_venda|data_br }}</td>
-            <td>R$ {{ "%.2f"|format(d.total) }}</td>
-            <td>{% if d.credito_usado > 0 %}R$ {{ "%.2f"|format(d.credito_usado) }}{% else %}—{% endif %}</td>
-            <td>{% if d.alocado > 0 %}<span style="color:#1da851;font-weight:600">R$ {{ "%.2f"|format(d.alocado) }}</span>{% else %}—{% endif %}</td>
-            <td style="font-weight:700;color:#c0392b">R$ {{ "%.2f"|format(d.saldo) }}</td>
+            <td>{{ d.total|moeda }}</td>
+            <td>{% if d.credito_usado > 0 %}{{ d.credito_usado|moeda }}{% else %}—{% endif %}</td>
+            <td>{% if d.alocado > 0 %}<span style="color:#1da851;font-weight:600">{{ d.alocado|moeda }}</span>{% else %}—{% endif %}</td>
+            <td style="font-weight:700;color:#c0392b">{{ d.saldo|moeda }}</td>
             <td style="font-size:.8rem">
                 {% if d.lancamentos %}
                     {% for l in d.lancamentos %}
-                    <a href="/financeiro/lancamento/{{ l.financeiro_id }}">L{{ l.financeiro_id }}</a>
-                    R$ {{ "%.2f"|format(l.valor) }}{% if not loop.last %} · {% endif %}
+                    <a href="/financeiro/lancamento/{{ l.financeiro_id }}">lançamento {{ l.financeiro_id }}</a>
+                    {{ l.valor|moeda }}{% if not loop.last %} · {% endif %}
                     {% endfor %}
                 {% elif d.alocado > 0 %}
                     recebido sem lançamento vinculado
@@ -89,17 +89,17 @@
     <tbody>
         {% for r in recebimentos %}
         <tr>
-            <td><a href="/financeiro/lancamento/{{ r.financeiro_id }}">L{{ r.financeiro_id }}</a></td>
-            <td>{{ r.data }}</td>
+            <td><a href="/financeiro/lancamento/{{ r.financeiro_id }}">lançamento {{ r.financeiro_id }}</a></td>
+            <td>{{ r.data|data_br }}</td>
             <td>{{ r.forma or '—' }}</td>
-            <td style="font-weight:700">R$ {{ "%.2f"|format(r.valor) }}</td>
+            <td style="font-weight:700">{{ r.valor|moeda }}</td>
             <td style="font-size:.82rem">
                 {% for a in r.dividas %}
-                <div>abatido R$ {{ "%.2f"|format(a.valor) }} na venda
+                <div>abatido {{ a.valor|moeda }} na venda
                     <a href="/caixa/vendas/{{ a.venda_id }}/comprovante?via=caixa" target="_blank">#{{ a.venda_id }}</a></div>
                 {% endfor %}
                 {% if r.credito > 0 %}
-                <div style="color:#1da851">excedente R$ {{ "%.2f"|format(r.credito) }} → crédito antecipado</div>
+                <div style="color:#1da851">excedente {{ r.credito|moeda }} → crédito antecipado</div>
                 {% endif %}
             </td>
         </tr>
@@ -121,18 +121,18 @@
     <tbody>
         {% for c in creditos %}
         <tr>
-            <td style="font-size:.82rem">{{ c.created_at }}</td>
-            <td>{{ 'entrada' if c.tipo == 'credito' else 'consumo' }}</td>
+            <td style="font-size:.82rem">{{ c.created_at|data_hora_br }}</td>
+            <td>{{ 'Crédito' if c.tipo == 'credito' else 'Uso do crédito' }}</td>
             <td style="font-weight:700;color:{{ '#1da851' if c.tipo == 'credito' else '#c0392b' }}">
-                R$ {{ "%.2f"|format(c.valor) }}</td>
+                {{ c.valor|moeda }}</td>
             <td style="font-size:.82rem">{{ c.descricao or '—' }}</td>
             <td style="font-size:.8rem">
                 {% if c.venda_id %}
                 venda <a href="/caixa/vendas/{{ c.venda_id }}/comprovante?via=caixa" target="_blank">#{{ c.venda_id }}</a>
                 {% elif c.financeiro_id %}
-                <a href="/financeiro/lancamento/{{ c.financeiro_id }}">L{{ c.financeiro_id }}</a>
+                <a href="/financeiro/lancamento/{{ c.financeiro_id }}">lançamento {{ c.financeiro_id }}</a>
                 {% else %}
-                <span style="color:#e67e22">sem vínculo comprovado (registro anterior a esta entrega)</span>
+                <span style="color:#e67e22">registro antigo, sem vínculo com uma entrega</span>
                 {% endif %}
             </td>
         </tr>
@@ -146,7 +146,7 @@
 {% if legado_sem_prova.n %}
 <div style="background:#fff8e1;border:1px solid #f9a825;border-radius:var(--raio);
      padding:.6rem 1rem;color:#7a5c00;margin-top:1.2rem;font-size:.85rem">
-    ⚠️ {{ legado_sem_prova.n }} lançamento(s) de fiado (R$ {{ "%.2f"|format(legado_sem_prova.valor) }})
+    ⚠️ {{ legado_sem_prova.n }} lançamento(s) de fiado ({{ legado_sem_prova.valor|moeda }})
     são anteriores ao registro de destino e não têm alocação comprovada. Eles continuam
     no financeiro e no extrato geral, mas não são distribuídos entre dívidas por nome,
     valor ou data — por isso não aparecem atribuídos a este trabalhador.

@@ -32,7 +32,7 @@
         {% if linha.descricao %}<dt>Descrição</dt><dd>{{ linha.descricao }}</dd>{% endif %}
     </dl>
 
-    <h3 class="fin-subtitulo">Vínculos comprovados no banco</h3>
+    <h3 class="fin-subtitulo">De onde vem este lançamento</h3>
     <ul class="fin-vinculos">
         {% if linha.trabalhador_id %}
         <li>Trabalhador: {{ linha.trabalhador_nome }}
@@ -47,20 +47,25 @@
         <li><a href="/financeiro/mensalidades?trabalhador_id={{ linha.trabalhador_id }}">Tela de mensalidades deste trabalhador</a></li>
         {% endif %}
         {% if linha.caixa_id %}
-        <li>Origem: sessão do módulo Caixa (caixa #{{ linha.caixa_id }}) — referência textual,
-            a gaveta é administrada no módulo Caixa.</li>
+        <li>Veio do Caixa (caixa #{{ linha.caixa_id }}) — a conferência da gaveta
+            fica no módulo Caixa.</li>
         {% endif %}
         {% if linha.sangria_id %}
         <li>Sangria registrada #{{ linha.sangria_id }} (módulo Caixa).</li>
         {% endif %}
         {% for e in eventos %}
-        <li>Evento de sessão #{{ e.id }} ({{ e.tipo }} · {{ e.natureza }}) na sessão
-            #{{ e.sessao_id }} do módulo Caixa{% if e.venda_id %}, venda #{{ e.venda_id }}{% endif %}
-            — identidade <code>{{ e.identidade }}</code>.</li>
+        <li>Registrado no Caixa na sessão #{{ e.sessao_id }}{% if e.venda_id %},
+            junto da venda #{{ e.venda_id }}{% endif %} — {{ rotulos_movimento.get(e.tipo, e.tipo) }}.
+            <details class="fin-def"><summary>Conferência técnica</summary>
+                <p>Evento #{{ e.id }} · {{ rotulos_movimento.get(e.tipo, e.tipo) }} ·
+                {{ rotulos_natureza.get(e.natureza, e.natureza) }}.
+                Chave do evento: <code>{{ e.identidade }}</code> — é ela que impede
+                que o mesmo movimento entre duas vezes na conferência da gaveta.</p>
+            </details></li>
         {% endfor %}
         {% if linha.categoria == 'transferencia' and not linha.sangria_id %}
-        <li class="fin-nota">Transferência entre contas: o banco não guarda vínculo com o
-            par de origem/destino — o outro lado não é inferido aqui.</li>
+        <li class="fin-nota">Transferência entre contas: o outro lado não é deduzido
+            aqui — para ver os dois lados, use a Visão Geral por conta.</li>
         {% endif %}
         {% if not linha.trabalhador_id and not linha.pessoa_id and not linha.caixa_id and not linha.sangria_id and not eventos %}
         <li>Nenhum vínculo registrado.</li>

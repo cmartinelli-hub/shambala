@@ -1,0 +1,109 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025104915-352671 (identifica ESTA execução nas provas)
+  árvore ..: 4edf38825da254c72bc90406d06eb96253de59e8-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025104915-352671
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025104915-352671'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_financeiro_consultas_task012.py
+  PASS  fluxo: entrega de 15 para dívida de 40 é aceita
+  PASS  Visão Geral: a linha da dívida mostra recebido e saldo parcial
+  PASS  Visão Geral: nota do recorte soma original, recebido e saldo
+  PASS  Visão Geral: dívida com alocação registrada não é chamada de histórica
+  PASS  Fiados: a mesma conta (40 − 15 = 25) na ficha do trabalhador
+  PASS  Fiados: a situação diz 'Recebida em parte' (nem paga, nem pendente)
+  PASS  Extrato: o cartão de saldo do trabalhador é o mesmo 25,00 das outras telas (comparado em Decimal) e o crédito é número separado
+  PASS  Apresentação: o extrato usa o MESMO formato de dinheiro das outras telas
+  PASS  Apresentação: o extrato não mostra data em formato técnico (AAAA-MM-DD)
+  PASS  Apresentação: o extrato nomeia a forma de pagamento em português
+  PASS  Detalhe do lançamento: destino do dinheiro rastreado até a dívida
+  PASS  Apresentação: o texto do detalhe está em português e o código interno só aparece na chave da conferência técnica
+  PASS  Apresentação: a chave técnica do evento fica em 'Conferência técnica', não no texto principal
+  PASS  Totais: 52 dívidas somam no recorte ainda que a lista corte em 50
+  PASS  Totais: a lista avisa que a tela é uma página do recorte
+  PASS  Totais: o quadro da lista tem exatamente 50 linhas
+  PASS  Legado: dívida sem alocação exibe o valor de face como saldo
+  PASS  Legado: a limitação é dita ao operador, sem jargão técnico
+  PASS  Legado: o serviço não inventa abate para dívida sem alocação
+  PASS  PDV: venda a fiado conclui
+  PASS  PDV: venda a fiado não cria lançamento de dinheiro
+  PASS  PDV: venda a fiado não move o cartão 'Recebimentos registrados'
+  PASS  PDV: a dívida entra no bloco de fiado em aberto, não como receita
+  PASS  Recebimento: a entrega do dinheiro é que vira entrada
+  PASS  Recebimento: 'Recebimentos' sobe exatamente o valor entregue
+  PASS  Relatórios: 'Recebido' soma só o pago (R$ 100,00), não 150 nem 157
+  PASS  Relatórios: obrigação pendente tem linha própria, rotulada
+  PASS  Relatórios: cancelado não soma e é informado à parte
+  PASS  Relatórios: a tela diz qual data o filtro de data usa
+  PASS  Relatórios: saídas pagas em cartão próprio
+  PASS  Relatórios: transferência é contada como movimento interno do centro
+  PASS  Relatórios: conta inválida é recusada com mensagem, sem esvaziar a tela
+  PASS  Relatórios: data fora de AAAA-MM-DD é recusada (não vira 'nada encontrado')
+  PASS  Relatórios: tipo desconhecido é recusado e o resto do recorte vale
+  PASS  Mensalidades: período inválido é recusado com mensagem simples
+  PASS  Visão Geral: cada filtro inválido tem a própria recusa
+  PASS  Mensalidades: COMPETÊNCIA traz o mês a que a cobrança se refere
+  PASS  Mensalidades: linha histórica sem competência é marcada como tal
+  PASS  Mensalidades: VENCIMENTO traz outra lista (o B, não o A)
+  PASS  Mensalidades: DATA DO PAGAMENTO traz o dinheiro que entrou naquele mês
+  PASS  Mensalidades: os três recortes são perguntas de fato diferentes
+  PASS  Mensalidades: 'Vencidas até hoje' é sempre pelo vencimento (o rótulo diz a data e a explicação separa os recortes)
+  PASS  Mensalidades: visão por trabalhador soma o MESMO recorte
+  PASS  Detalhe do lançamento: competência lida da coluna própria
+  PASS  Tela de mensalidades: valor em formato brasileiro, sem float no texto
+  PASS  Formulário: “1.234,56” é recusado sem escrever nada
+  PASS  Formulário: “abc” é recusado sem escrever nada
+  PASS  Formulário: “0” é recusado sem escrever nada
+  PASS  Formulário: “-10” é recusado sem escrever nada
+  PASS  Formulário: nenhuma das recusas criou lançamento
+  PASS  Formulário: 60,005 fecha em 60,01 (duas casas, arredondamento comercial)
+  PASS  Visão Geral: número grande exibido com ponto de milhar
+  PASS  Relatórios: o mesmo número, sem float nem vírgula invertida
+  PASS  Visão Geral: acumulado por conta vem com Σ e declara até qual data conta
+  PASS  Permissão: /financeiro é negada para quem só tem Caixa
+  PASS  Permissão: /financeiro/relatorios é negada para quem só tem Caixa
+  PASS  Permissão: /financeiro/fiados é negada para quem só tem Caixa
+  PASS  Permissão: /financeiro/mensalidades/relatorio é negada para quem só tem Caixa
+  PASS  Permissão: /financeiro/mensalidades é negada para quem só tem Caixa
+  PASS  Permissão: POST direto de outro módulo também é negado
+  PASS  Permissão: leitura entra na Visão Geral
+  PASS  Permissão: sem escrita, o botão de novo lançamento não aparece
+  PASS  Permissão: ler não permite postar — nem URL, nem escrita
+  PASS  Consulta: nenhuma tela responde 500
+  PASS  Consulta: abrir as telas não cria nem altera lançamento, alocação, evento, venda, crédito ou cobrança
+  PASS  TASK_011: CSS servido com versão (anti-cache) na Visão Geral
+  PASS  TASK_011: vocabulário de classes reutilizado, sem interface genérica nova
+  PASS  TASK_011: /financeiro/relatorios usa a apresentação da Visão Geral
+  PASS  TASK_011: /financeiro/fiados usa a apresentação da Visão Geral
+  PASS  TASK_011: /financeiro/mensalidades/relatorio usa a apresentação da Visão Geral
+  PASS  TASK_011: retorno do detalhe preserva o recorte consultado
+  PASS  TASK_011: link de volta forâneo não vira redirecionamento
+  PASS  Serviço: dívida parcial fica com 25 de saldo e 15 recebido
+  PASS  Serviço: dívida intocada continua de face e marcada sem prova
+  PASS  Serviço: saldo do recorte é a soma das dívidas e nunca é negativo
+  PASS  Serviço: o saldo por trabalhador bate com o da consulta
+  PASS  Tela: o relatório usa o número do serviço (35,00 = 25 + 10)
+  PASS  Tela: crédito antecipado aparece à parte e não abate o saldo devedor
+
+[limpeza] rastro desta suíte removido: caixa_movimentos=1, caixa_sessao_eventos=5, estoque_movimentos=1, fiado_alocacao=4, fiado_credito_mov=1, financeiro_movimentacoes=15, operacao_idempotencia=7, trabalhadores=8, vendas_pdv=58, vendas_pdv_itens=1
+[limpeza] chaves de tentativa de OUTRAS suítes: 0 → 0 (não podem diminuir por causa desta suíte)
+  PASS  Limpeza: nenhuma tabela fica com menos linhas que o piso anterior à suíte (nada de outra execução foi apagado)
+
+79/79 verificações aprovadas (TASK_012 §5 — consultas, saldos e experiência integrada)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_financeiro_consultas_task012.py: rc=0
+tests/rodar_testes.sh, linha 89: 352713 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok

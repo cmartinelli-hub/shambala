@@ -414,7 +414,10 @@ def extrato_fiado(conn, trabalhador_id):
             "valor": moeda(r["valor"]),
             "descricao": r["descricao"],
             "data": r["data_movimentacao"],
-            "forma": r["forma_pagamento"],
+            # Rótulo, não o valor interno: o operador lê "Espécie", não "especie".
+            "forma": {"especie": "Espécie", "pix": "PIX",
+                      "fiado": "Fiado", "credito": "Crédito"}.get(
+                          r["forma_pagamento"], "") or "—",
             "dividas": [{"venda_id": a["venda_id"], "valor": moeda(a["valor"])}
                         for a in conn.execute(
                             """SELECT venda_id, valor FROM fiado_alocacao

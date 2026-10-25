@@ -42,6 +42,27 @@ def _guard(request: Request):
 
 import calendar
 
+# Rótulos dos tipos de evento de sessão do Caixa (TASK_012 §5). O operador lê
+# "Recebimento de fiado", não `recebimento_fiado`.
+ROTULOS_MOVIMENTO = {
+    "venda": "Venda",
+    "venda_doacao": "Venda com doação",
+    "venda_credito": "Venda paga com crédito",
+    "cancelamento": "Cancelamento de venda",
+    "doacao": "Doação",
+    "mensalidade": "Mensalidade recebida",
+    "recebimento_fiado": "Recebimento de fiado",
+    "credito_anticipado": "Adiantamento de crédito",
+    "sangria": "Sangria de caixa",
+}
+
+# Natureza do evento de sessão, em português (TASK_012 §5).
+ROTULOS_NATUREZA = {
+    "comercial": "movimento comercial",
+    "recebimento": "recebimento",
+    "retirada": "retirada",
+}
+
 ROTULOS_CATEGORIA = {
     "venda_pdv": "Venda (PDV)",
     "doacao": "Doação",
@@ -510,6 +531,8 @@ async def detalhe_lancamento(request: Request, mov_id: int, volta: str = ""):
                                                d.get("conta_tipo") or ""),
         "eventos": [dict(e) for e in eventos],
         "alocacoes": [dict(a) | {"valor": _dec(a["valor"])} for a in alocacoes],
+        "rotulos_movimento": ROTULOS_MOVIMENTO,
+        "rotulos_natureza": ROTULOS_NATUREZA,
         "volta": volta,
     })
 

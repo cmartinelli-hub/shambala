@@ -562,14 +562,18 @@ def prova_extrato_separa_divida_e_credito():
 
     st, corpo, _ = GET(f"/caixa/fiados/extrato/{tid}")
     verificar("extrato: tela responde para o trabalhador", st == 200, f"status={st}")
+    # TASK_012 §5: o extrato usa o MESMO formato das outras telas do financeiro
+    # (vírgula decimal, filtro `moeda`) — antes saía "R$ 20.00" em formato C.
     verificar("extrato: saldo devedor e crédito aparecem separados",
               "Saldo devedor" in corpo and "Crédito antecipado disponível" in corpo
-              and "R$ 20.00" in corpo and "R$ 25.00" in corpo, "")
+              and "R$ 20,00" in corpo and "R$ 25,00" in corpo
+              and "R$ 20.00" not in corpo, "")
     verificar("extrato: a dívida mostra valor original, recebido e saldo",
-              "Valor original" in corpo and "R$ 60.00" in corpo
-              and "R$ 40.00" in corpo, "")
+              "Valor original" in corpo and "R$ 60,00" in corpo
+              and "R$ 40,00" in corpo, "")
     verificar("extrato: cada número aponta o lançamento que o origina",
-              f"/financeiro/lancamento/{fin}" in corpo and f"L{fin}" in corpo, "")
+              f"/financeiro/lancamento/{fin}" in corpo
+              and f"lançamento {fin}" in corpo, "")
     verificar("extrato: nada no extrato diverge dos números conferidos no banco",
               c["divida"] == moeda("20.00") and c["credito"] == moeda("25.00"), f"{c}")
 
@@ -908,7 +912,7 @@ def prova_legado_sem_backfill():
               st == 200 and "não têm alocação comprovada" in corpo,
               f"status={st}")
     verificar("legado: mesmo assim a dívida é mostrada com o valor de face",
-              "R$ 40.00" in corpo and
+              "R$ 40,00" in corpo and
               "nenhum recebimento registrado" in corpo, "")
 
     st2, _, _ = receber(tid, nome, "15.00")

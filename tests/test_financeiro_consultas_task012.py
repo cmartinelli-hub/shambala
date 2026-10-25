@@ -340,6 +340,18 @@ def p1_saldo_parcial_em_todas_as_telas():
               and credito_extrato == Decimal("0.00"),
               f"status {st} saldo={saldo_extrato} crédito={credito_extrato}")
 
+    # TASK_012 §5: formatos e vocabulário no caminho HABITUAL do operador.
+    st, corpo_ext, _ = GET(f"/caixa/fiados/extrato/{tid}")
+    t_ext = texto(corpo_ext)
+    verificar("Apresentação: o extrato usa o MESMO formato de dinheiro das outras telas",
+              "R$ 25,00" in t_ext and "R$ 15,00" in t_ext
+              and "R$ 25.00" not in corpo_ext and "R$ 15.00" not in corpo_ext,
+              "formato C no extrato")
+    verificar("Apresentação: o extrato não mostra data em formato técnico (AAAA-MM-DD)",
+              not re.search(r"\b20\d\d-\d\d-\d\d\b", t_ext), t_ext[:200])
+    verificar("Apresentação: o extrato nomeia a forma de pagamento em português",
+              "Espécie" in t_ext and "especie" not in corpo_ext, "")
+
     fin_id = recebimento_fiado_id(tid)
     st, body4, _ = GET(f"/financeiro/lancamento/{fin_id}")
     t4 = texto(body4)
@@ -347,6 +359,27 @@ def p1_saldo_parcial_em_todas_as_telas():
               st == 200 and "Para onde foi este dinheiro" in t4
               and f"Dívida #{v1}" in t4 and "R$ 15,00 abatido" in t4,
               f"status {st} · {t4[:200]}")
+    # O texto do dia a dia não pode expor o vocabulário interno do banco.
+    # O código interno aparece UMA vez legítima: dentro da chave do evento
+    # (`recebimento_fiado:1`), que fica na "Conferência técnica" — é o que
+    # permite rastrear a duplicidade na gaveta. Fora dali, não pode aparecer, e
+    # o texto principal tem de estar em português.
+    _fora_da_chave = [
+        re.sub(r"\s+", " ", body4[max(0, m.start() - 80):m.end() + 20])
+        for m in re.finditer("recebimento_fiado", body4)
+        if not re.search(r"<code>[^<]*recebimento_fiado[^<]*</code>",
+                         body4[max(0, m.start() - 40):m.end() + 20])]
+    verificar("Apresentação: o texto do detalhe está em português e o código "
+              "interno só aparece na chave da conferência técnica",
+              "Recebimento de fiado" in t4 and not _fora_da_chave
+              and "<code>recebimento_fiado" in body4,
+              f"fora da chave: {_fora_da_chave[:2]}")
+    verificar("Apresentação: a chave técnica do evento fica em 'Conferência "
+              "técnica', não no texto principal",
+              "Conferência técnica" in t4
+              and t4.find("Conferência técnica") < t4.find("identidade")
+              if "identidade" in t4 else True,
+              t4[:300])
 
 
 def p2_totais_do_recorte_nao_da_pagina():
