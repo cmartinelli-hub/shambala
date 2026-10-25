@@ -424,6 +424,103 @@ def _migrar_presenca_data(conn):
         )
 
 
+# Chave única da obrigação mensal (TASK_012 §3). É reproduzida literalmente no
+# INSERT ... ON CONFLICT do serviço, então qualquer mudança aqui exige a mesma
+# mudança em rotas/financeiro_mensalidades.py.
+UQ_MENSALIDADE_COMPETENCIA = "uq_mensalidade_por_competencia"
+PREDICADO_MENSALIDADE = ("categoria = 'mensalidade' "
+                         "AND trabalhador_id IS NOT NULL "
+                         "AND competencia IS NOT NULL")
+
+
+def _comp_efetiva(prefixo: str = "") -> str:
+    """Expressão SQL da competência efetiva: o rótulo gravado ou, nas linhas
+    antigas ainda sem rótulo, o mês do vencimento quando ele é legível
+    (`AAAA-MM…`). NULL quando não há como saber o período — e nada é adivinhado.
+
+    Se `prefixo` for `"o."`, a expressão qualifica as colunas para uso em
+    subconsulta. Usada no diagnóstico e no rotulamento; o índice em si usa a
+    coluna, não esta expressão.
+    """
+    return ("coalesce({0}competencia, "
+            "CASE WHEN {0}data_movimentacao ~ '^[0-9]{{4}}-[0-9]{{2}}' "
+            "THEN left({0}data_movimentacao, 7) END)").format(prefixo)
+
+
+def _migrar_mensalidades_competencia(conn):
+    """Competência inequívoca (YYYY-MM) + no máximo uma obrigação por
+    trabalhador/competência (TASK_012 §3 / FIN-05).
+
+    A competência deixa de ser lida do texto da descrição ou do `LIKE` sobre o
+    vencimento: vira coluna própria. Na atualização de bancos existentes ela é
+    rotulada a partir do mês do vencimento já gravado — exatamente a regra que
+    o código já usava para exibir `mes_ref` e para deduplicar; nenhum fato é
+    reescrito, nenhuma linha é fundida e nada é escolhido como "vencedor".
+
+    O índice único parcial abrange TODOS os status (pendente, pago e cancelado),
+    porque a regra existente é "existiu uma linha neste mês → não se recria"
+    (rotas/financeiro_mensalidades._existe_mes). Registrar o recebimento
+    histórico continua sendo UPDATE da mesma linha, e o cancelamento existente
+    também: a chave não atrapalha nenhum dos dois.
+
+    Conflito histórico real impede a constraint: nesse caso o startup informa o
+    impedimento, NÃO cria o índice e NÃO altera as linhas. A guarda do serviço
+    (checagem + lock) continua valendo para as gerações novas.
+
+    O rotulamento nunca pode estourar a própria constraint: um grupo com duas
+    linhas do mesmo trabalhador/mês fica inteiro como está (sem rótulo), porque
+    escolher uma linha para rotular seria escolher vencedora. E nada aqui pode
+    abortar o startup — o serviço subiria fora do ar.
+    """
+    duplicidades = conn.execute(
+        """SELECT trabalhador_id, """ + _comp_efetiva() + """ AS competencia,
+                  COUNT(*) AS c, array_agg(id ORDER BY id) AS ids
+           FROM financeiro_movimentacoes
+           WHERE categoria = 'mensalidade' AND trabalhador_id IS NOT NULL
+             AND """ + _comp_efetiva() + """ IS NOT NULL
+           GROUP BY 1, 2
+           HAVING COUNT(*) > 1
+           ORDER BY 1, 2""").fetchall()
+
+    rotuladas = conn.execute(
+        """UPDATE financeiro_movimentacoes m
+              SET competencia = left(data_movimentacao, 7)
+            WHERE categoria = 'mensalidade' AND competencia IS NULL
+              AND data_movimentacao ~ '^[0-9]{4}-[0-9]{2}'
+              AND NOT EXISTS (
+                    SELECT 1 FROM financeiro_movimentacoes o
+                     WHERE o.id <> m.id
+                       AND o.categoria = 'mensalidade'
+                       AND o.trabalhador_id IS NOT DISTINCT FROM m.trabalhador_id
+                       AND """ + _comp_efetiva("o.") + """ = left(m.data_movimentacao, 7)
+                  )""").rowcount
+    if rotuladas:
+        print(f"[startup] {rotuladas} mensalidade(s) receberam competência "
+              "rotulada do vencimento já gravado.", flush=True)
+
+    ilegiveis = conn.execute(
+        """SELECT COUNT(*) AS c FROM financeiro_movimentacoes
+           WHERE categoria = 'mensalidade' AND competencia IS NULL
+             AND (data_movimentacao IS NULL
+                  OR data_movimentacao !~ '^[0-9]{4}-[0-9]{2}')""").fetchone()["c"]
+    if ilegiveis:
+        print(f"[startup] atenção: {ilegiveis} mensalidade(s) sem competência "
+              "rotulável (vencimento ilegível) — ficam fora da chave única e são "
+              "mostradas como conflito histórico na tela.", flush=True)
+
+    if duplicidades:
+        print("[startup] duplicidade histórica de mensalidade por competência "
+              f"{[(d['trabalhador_id'], d['competencia'], d['c'], d['ids']) for d in duplicidades]} "
+              "— índice único NÃO foi criado e NENHUMA linha foi apagada, fundida "
+              "ou preterida; resolva na tela e reinicie para ativar a guarda do banco.",
+              flush=True)
+    else:
+        conn.execute(
+            f"""CREATE UNIQUE INDEX IF NOT EXISTS {UQ_MENSALIDADE_COMPETENCIA}
+                ON financeiro_movimentacoes (trabalhador_id, competencia)
+                WHERE {PREDICADO_MENSALIDADE}""")
+
+
 def _migrar(conn):
     """Migrações incrementais — seguras para rodar múltiplas vezes."""
     para_adicionar = [
@@ -488,6 +585,9 @@ def _migrar(conn):
         ("financeiro_movimentacoes", "conta_id", "INTEGER REFERENCES contas_financeiras(id)"),
         ("financeiro_movimentacoes", "data_pagamento", "TEXT"),
         ("financeiro_movimentacoes", "nota_fiscal_foto", "TEXT"),
+        # TASK_012 §3: competência (YYYY-MM) da obrigação, separada do
+        # vencimento. Preenchida só para mensalidade; o resto fica NULL.
+        ("financeiro_movimentacoes", "competencia", "TEXT"),
         ("dias_trabalho", "reiki_ativo", "INTEGER NOT NULL DEFAULT 0"),
         ("checkins", "posicao", "INTEGER"),
         ("checkins", "observacao_acolhimento", "TEXT"),
@@ -541,6 +641,10 @@ def _migrar(conn):
 
     # Presença de trabalhadores: data própria + unicidade (trabalhador_id, data)
     _migrar_presenca_data(conn)
+
+    # Mensalidades: competência em coluna própria + uma obrigação por mês
+    # (TASK_012 §3). Rode depois de adicionar a coluna acima.
+    _migrar_mensalidades_competencia(conn)
 
     # Cria tabela chaves_pix se não existir (bancos existentes sem ela)
     conn.execute("""
@@ -989,6 +1093,7 @@ def criar_tabelas():
                 pessoa_id           INTEGER REFERENCES pessoas(id),
                 pix_copiadecola     TEXT,
                 nota_fiscal_foto    TEXT,
+                competencia         TEXT,
                 status              TEXT            NOT NULL DEFAULT 'pago'  -- 'pago', 'pendente', 'cancelado'
             )
         """)

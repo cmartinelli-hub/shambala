@@ -8,10 +8,19 @@
 </div>
 
 {% set _erro = request.query_params.get('erro') %}
+{% set _recusas = {
+    'periodo_invalido': 'Para lançar uma mensalidade é preciso um período claro (AAAA-MM). Nada foi gravado.',
+    'mensalidade_ja_registrada': 'Este trabalhador já tem mensalidade nesse período. Nada foi gravado.',
+} %}
 {% if _erro in mensagens_tentativa %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
     ⚠️ {{ mensagens_tentativa[_erro] }}
+</div>
+{% elif _erro in _recusas %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    ⚠️ {{ _recusas[_erro] }}
 </div>
 {% endif %}
 

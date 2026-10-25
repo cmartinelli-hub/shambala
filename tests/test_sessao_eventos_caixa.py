@@ -9,6 +9,7 @@ esperado 183), os 14 casos obrigatórios e a conferência antes/depois no banco
 Destinos comprovados ANTES de qualquer escrita: conexão do script + linha que o
 servidor imprime no startup; ausente ou divergente, aborta sem gravar.
 """
+import calendar
 import os
 import secrets
 import re
@@ -63,6 +64,18 @@ print(f"[ok] servidor HTTP ({BASE}) na execução corrente, mesmo banco efetivo:
       f"{prova['banco_efetivo']} (token {prova['token']})")
 
 D = Decimal
+
+
+def _mes_anterior(iso: str) -> str:
+    """Mesmo dia no mês anterior, truncado ao último dia válido do mês destino.
+
+    TASK_012 §3: um trabalhador só pode ter uma obrigação por competência, então
+    as duas pendências do mesmo trabalhador desta suíte precisam de meses
+    diferentes (o que se mede — dinheiro, sessão, eventos — não muda).
+    """
+    y, m, d = int(iso[:4]), int(iso[5:7]), int(iso[8:10])
+    y2, m2 = (y - 1, 12) if m == 1 else (y, m - 1)
+    return f"{y2:04d}-{m2:02d}-{min(d, calendar.monthrange(y2, m2)[1]):02d}"
 
 
 def dec(v):
@@ -274,21 +287,25 @@ with conectar() as conn:
     cid_especie = conta_id_por_tipo(conn, "especie")
     cid_pix = conta_id_por_tipo(conn, "pix")
 
-    def pendencia(trab_id, valor, rotulo):
+    def pendencia(trab_id, valor, rotulo, data=None):
         return conn.execute(
             """INSERT INTO financeiro_movimentacoes
                (tipo, categoria, valor, data_movimentacao, descricao, trabalhador_id,
                 status, conta_id)
                VALUES ('entrada', 'mensalidade', %s, %s, %s, %s, 'pendente', %s)
                RETURNING id""",
-            (D(valor), hoje, f"T008S Mensalidade {rotulo}", trab_id, cid_areceber)
+            (D(valor), data or hoje, f"T008S Mensalidade {rotulo}", trab_id, cid_areceber)
         ).fetchone()["id"]
 
-    mm_a1 = pendencia(t_mensa_a, "50.00", "A1")   # espécie no mix
-    mm_a2 = pendencia(t_mensa_a, "60.00", "A2")   # PIX no mix
+    # TASK_012 §3: uma obrigação por trabalhador/competência. As duas pendências
+    # do MESMO trabalhador (mix de formas, e recusa no legado) passam a ser de
+    # meses diferentes — o que a suíte mede (dinheiro, sessão, eventos) não muda.
+    mes_anterior = _mes_anterior(hoje)
+    mm_a1 = pendencia(t_mensa_a, "50.00", "A1")            # espécie no mix
+    mm_a2 = pendencia(t_mensa_a, "60.00", "A2", mes_anterior)   # PIX no mix
     mm_b1 = pendencia(t_mensa_b, "100.00", "B1")  # reenvio rejeitado (caso 6)
     mm_c1 = pendencia(t_legado, "50.00", "C1")    # recusado no legado; pago na sessão eventos
-    mm_c2 = pendencia(t_legado, "50.00", "C2")    # recusado no legado (PIX também)
+    mm_c2 = pendencia(t_legado, "50.00", "C2", mes_anterior)  # recusado no legado (PIX também)
 
 print("[seed] fixtures prontas")
 

@@ -6,6 +6,7 @@ from datetime import date, datetime
 from urllib.parse import quote_plus
 from fastapi import APIRouter, Request, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from psycopg2.errors import UniqueViolation
 
 from banco import conectar, _normalizar, conta_id_por_tipo
 from rotas.auth import obter_atendente_logado
@@ -524,8 +525,19 @@ async def salvar_nova(
     from servico_idempotencia import (
         TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
     )
+    from rotas.financeiro_mensalidades import normalizar_competencia
 
     data_ref = data_movimentacao.strip() or date.today().isoformat()
+
+    # TASK_012 §3: mensalidade lançada à mão entra pela mesma chave do resto do
+    # módulo (trabalhador, competência). Sem período legível não há competência
+    # inequívoca — o período é recusado com mensagem simples, e nada é escrito.
+    competencia = None
+    if categoria == "mensalidade":
+        competencia = normalizar_competencia(data_ref)
+        if not competencia:
+            return RedirectResponse(url="/financeiro/nova?erro=periodo_invalido",
+                                    status_code=303)
 
     with conectar() as conn:
         try:
@@ -543,17 +555,24 @@ async def salvar_nova(
         except TentativaJaRegistrada as e:
             return RedirectResponse(url=e.destino or "/financeiro", status_code=303)
 
-        cur = conn.execute(
-            """INSERT INTO financeiro_movimentacoes
-               (tipo, categoria, valor, data_movimentacao, descricao,
-                trabalhador_id, pessoa_id, status, pix_copiadecola, conta_id)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-            (tipo, categoria, float(valor or 0), data_ref, descricao.strip(),
-             int(trabalhador_id) if trabalhador_id else None,
-             int(pessoa_id) if pessoa_id else None,
-             status, pix_copiadecola.strip(),
-             int(conta_id) if conta_id else None),
-        )
+        try:
+            cur = conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, data_movimentacao, competencia, descricao,
+                    trabalhador_id, pessoa_id, status, pix_copiadecola, conta_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (tipo, categoria, float(valor or 0), data_ref, competencia,
+                 descricao.strip(),
+                 int(trabalhador_id) if trabalhador_id else None,
+                 int(pessoa_id) if pessoa_id else None,
+                 status, pix_copiadecola.strip(),
+                 int(conta_id) if conta_id else None),
+            )
+        except UniqueViolation:
+            # Transação abortada: a reserva desta tentativa também desfaz, então
+            # a chave não fica consumida por uma escrita que não aconteceu.
+            return RedirectResponse(
+                url="/financeiro/nova?erro=mensalidade_ja_registrada", status_code=303)
         confirmar(conn, chave=chave_tentativa, documento=cur.fetchone()["id"],
                   destino="/financeiro")
 
@@ -568,8 +587,13 @@ async def mensalidades(
     trabalhador_id: int = 0,
     pago: str = "",
     total: str = "",
+    geradas: str = "",
     erro: str = "",
 ):
+    """Consulta de mensalidades. TASK_012 §3: ler não gera cobrança — a
+    criação das obrigações é ação explícita (`POST /mensalidades/gerar`,
+    cadastro/reativação do trabalhador ou startup), nunca um efeito colateral
+    de abrir a tela."""
     atendente, redir = _guard(request)
     if redir:
         return redir
@@ -580,6 +604,7 @@ async def mensalidades(
     trabalhador = None
     pendentes = []
     pagos_recentes = []
+    conflito = []
 
     with conectar() as conn:
         if trabalhador_id:
@@ -592,31 +617,42 @@ async def mensalidades(
                 erro = "trabalhador_nao_encontrado"
             else:
                 trabalhador = dict(trab)
-                # Idempotente: garante mês corrente + 12 futuros (ativo e valor > 0)
-                sincronizar_mensalidades(conn, trabalhador)
 
                 pend = conn.execute(
-                    """SELECT id, data_movimentacao, valor FROM financeiro_movimentacoes
+                    """SELECT id, data_movimentacao, competencia, valor
+                       FROM financeiro_movimentacoes
                        WHERE trabalhador_id = %s AND categoria = 'mensalidade'
                          AND status = 'pendente'
-                       ORDER BY data_movimentacao""",
+                       ORDER BY competencia NULLS LAST, data_movimentacao""",
                     (trabalhador_id,),
                 ).fetchall()
                 hoje_iso = hoje.isoformat()
                 for r in pend:
                     venc = str(r["data_movimentacao"])[:10]
+                    comp = r["competencia"] or venc[:7]
                     pendentes.append({
                         "id": r["id"],
-                        "mes_ref": venc[:7],
+                        "competencia": comp,
+                        "mes_ref": comp,
                         "data_vencimento": venc,
                         "valor": float(r["valor"]),
                         "vencido": venc < hoje_iso,
-                        "corrente": venc[:7] == mes_atual,
-                        "futuro": venc[:7] > mes_atual,
+                        "corrente": comp == mes_atual,
+                        "futuro": comp > mes_atual,
                     })
 
+                # Conflito histórico (linhas demais no mesmo mês) é mostrado, não
+                # resolvido: nada é fundido, apagado ou escolhido por aqui.
+                duplicadas = conn.execute(
+                    """SELECT competencia FROM financeiro_movimentacoes
+                       WHERE trabalhador_id = %s AND categoria = 'mensalidade'
+                         AND competencia IS NOT NULL
+                       GROUP BY competencia HAVING COUNT(*) > 1
+                       ORDER BY competencia""", (trabalhador_id,)).fetchall()
+                conflito = [d["competencia"] for d in duplicadas]
+
                 pagos = conn.execute(
-                    """SELECT id, data_movimentacao, data_pagamento, valor
+                    """SELECT id, data_movimentacao, data_pagamento, competencia, valor
                        FROM financeiro_movimentacoes
                        WHERE trabalhador_id = %s AND categoria = 'mensalidade'
                          AND status = 'pago'
@@ -625,9 +661,14 @@ async def mensalidades(
                     (trabalhador_id,),
                 ).fetchall()
                 for r in pagos:
+                    comp = r["competencia"] or str(r["data_movimentacao"])[:7]
                     pagos_recentes.append({
                         "id": r["id"],
-                        "mes_ref": str(r["data_movimentacao"])[:7],
+                        "competencia": comp,
+                        "mes_ref": comp,
+                        "data_vencimento": str(r["data_movimentacao"])[:10],
+                        "data_pagamento": (str(r["data_pagamento"])[:10]
+                                           if r["data_pagamento"] else None),
                         "valor": float(r["valor"]),
                     })
 
@@ -644,6 +685,8 @@ async def mensalidades(
         "valor_mensal": float(trabalhador["valor_mensalidade"] or 0) if trabalhador else 0,
         "dia_vencimento": (trabalhador or {}).get("dia_vencimento") or 10,
         "pendentes": pendentes,
+        "conflito": conflito,
+        "geradas": geradas,
         "mes_atual": mes_atual,
         "pagos_recentes": pagos_recentes,
         "pago": pago,
@@ -653,6 +696,38 @@ async def mensalidades(
         "sessoes_legadas": sessoes_legadas,
         "contas_pix": contas_pix,
     })
+
+
+@router.post("/mensalidades/gerar", response_class=HTMLResponse)
+async def gerar_mensalidades(request: Request, trabalhador_id: int = Form(...)):
+    """Geração manual (botão da tela): mês corrente + 12 futuros, idempotente.
+
+    Rodar duas vezes não cria segunda cobrança — a chave do banco é
+    (trabalhador, competência). Concorrência da mesma geração é absorvida pelo
+    `ON CONFLICT DO NOTHING` do serviço.
+    """
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    with conectar() as conn:
+        trab = conn.execute(
+            """SELECT id, nome_completo, valor_mensalidade, dia_vencimento, ativo
+               FROM trabalhadores WHERE id = %s""", (trabalhador_id,)).fetchone()
+        if not trab:
+            return RedirectResponse(
+                url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}"
+                    "&erro=trabalhador_nao_encontrado", status_code=303)
+        dados = dict(trab)
+        if not dados["ativo"] or float(dados["valor_mensalidade"] or 0) <= 0:
+            return RedirectResponse(
+                url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}"
+                    "&erro=sem_mensalidade_ativa", status_code=303)
+        criadas = sincronizar_mensalidades(conn, dados)
+
+    return RedirectResponse(
+        url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}&geradas={criadas}",
+        status_code=303)
 
 
 @router.get("/mensalidades/buscar", response_class=JSONResponse)

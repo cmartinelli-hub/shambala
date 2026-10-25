@@ -2,12 +2,52 @@
 
 Funções recebem a conexão aberta; só SELECT/INSERT/UPDATE idempotentes.
 Não importa módulos de rotas (evita import circular).
+
+TASK_012 §3: a competência (YYYY-MM) passou a ser coluna própria
+(`financeiro_movimentacoes.competencia`) e deixou de ser lida do texto da
+descrição nem inferida por `LIKE` sobre o vencimento. A chave
+(trabalhador_id, competencia) para mensalidade é garantida pelo banco (índice
+único parcial criado no startup, quando não há duplicidade histórica) e pelo
+serviço (checagem + `ON CONFLICT DO NOTHING`), de forma que repetição e
+concorrência da geração não criem segunda cobrança.
 """
+import re
 from datetime import date
 
-from banco import conectar, conta_id_por_tipo
+from banco import (
+    PREDICADO_MENSALIDADE, UQ_MENSALIDADE_COMPETENCIA, conectar, conta_id_por_tipo,
+)
 
 MESES_A_FRENTE = 12  # mês corrente + 12 futuros
+_COMPETENCIA_RE = re.compile(r"^(\d{4})-(\d{1,2})$")
+
+
+def competencial_de(ano: int, mes: int) -> str:
+    return f"{ano:04d}-{mes:02d}"
+
+
+def normalizar_competencia(texto) -> str | None:
+    """'2026-3' / '2026-03' / '2026-03-10' → '2026-03'; resto → None.
+
+    Não adivinha: sem mês entre 01 e 12 o período é inválido e quem recebe a
+    decisão é o operador, com mensagem simples.
+    """
+    t = (texto or "").strip()
+    m = _COMPETENCIA_RE.match(t[:7])
+    if not m:
+        return None
+    ano, mes = int(m.group(1)), int(m.group(2))
+    if not 1 <= mes <= 12:
+        return None
+    return competencial_de(ano, mes)
+
+
+def _indice_ativo(conn) -> bool:
+    """A guarda do banco existe NESTE banco? (startup pode ter pulado o índice
+    por duplicidade histórica — o serviço continua protegido pela checagem)."""
+    return conn.execute(
+        "SELECT COUNT(*) AS c FROM pg_class WHERE relname = %s",
+        (UQ_MENSALIDADE_COMPETENCIA,)).fetchone()["c"] > 0
 
 
 def _adicionar_meses(ano: int, mes: int, n: int) -> tuple:
@@ -24,40 +64,67 @@ def _data_vencimento(dia: int, ano: int, mes: int) -> str:
         return date(ano, mes, 28).isoformat()
 
 
-def _existe_mes(conn, trabalhador_id: int, ano_m: int, mes_m: int) -> bool:
+def _existe_mes(conn, trabalhador_id: int, competencia: str) -> bool:
     """Existe QUALQUER lançamento do mês (pago, pendente ou cancelado).
-    Cancelado NÃO é recriado."""
-    pref = f"{ano_m:04d}-{mes_m:02d}"
+    Cancelado NÃO é recriado — é a regra existente, agora pela coluna.
+
+    A segunda perna (competencia IS NULL + mês do vencimento) só alcança linhas
+    antigas de vencimento ilegível que o rótulo do startup não pôde rotular:
+    ela as protege de virar segunda cobrança, não reinterpreta nenhum fato.
+    """
     return conn.execute(
         """SELECT COUNT(*) AS c FROM financeiro_movimentacoes
            WHERE trabalhador_id = %s AND categoria = 'mensalidade'
-             AND data_movimentacao LIKE %s""",
-        (trabalhador_id, f"{pref}%"),
+             AND (competencia = %s
+                  OR (competencia IS NULL
+                      AND left(data_movimentacao, 7) = %s))""",
+        (trabalhador_id, competencia, competencia),
     ).fetchone()["c"] > 0
 
 
-def sincronizar_mensalidades(conn, trab: dict) -> None:
+def inserir_mensalidade(conn, *, trabalhador_id: int, competencia: str,
+                        vencimento: str, valor, descricao: str,
+                        conta_id) -> int | None:
+    """Cria a obrigação do mês. Retorna o id, ou None quando o mês já tem
+    obrigação (corrida entre duas gerações simultâneas, restart com o serviço
+    antigo ainda no ar, etc.) — nunca um segundo lançamento."""
+    col_conf = "ON CONFLICT (trabalhador_id, competencia) " \
+               f"WHERE {PREDICADO_MENSALIDADE} DO NOTHING RETURNING id" \
+        if _indice_ativo(conn) else "RETURNING id"
+    sql = f"""INSERT INTO financeiro_movimentacoes
+              (tipo, categoria, valor, data_movimentacao, competencia, descricao,
+               trabalhador_id, status, conta_id)
+              VALUES ('entrada', 'mensalidade', %s, %s, %s, %s, %s, 'pendente', %s)
+              {col_conf}"""
+    row = conn.execute(sql, (valor, vencimento, competencia, descricao,
+                             trabalhador_id, conta_id)).fetchone()
+    return row["id"] if row else None
+
+
+def sincronizar_mensalidades(conn, trab: dict) -> int:
     """Idempotente: garante mês corrente + 12 futuros pendentes.
-    Não faz nada se inativo ou valor_mensalidade <= 0."""
+    Não faz nada se inativo ou valor_mensalidade <= 0.
+
+    Retorna quantas obrigações NOVAS este chamador criou (0 = já gerada)."""
     valor = float(trab["valor_mensalidade"] or 0)
     if not trab.get("ativo", 1) or valor <= 0:
-        return
+        return 0
     dia_venc = int(trab["dia_vencimento"] or 10)
     cid_areceber = conta_id_por_tipo(conn, "areceber")
     hoje = date.today()
+    criadas = 0
     for i in range(0, MESES_A_FRENTE + 1):
         a, m = _adicionar_meses(hoje.year, hoje.month, i)
-        if _existe_mes(conn, trab["id"], a, m):
+        competencia = competencial_de(a, m)
+        if _existe_mes(conn, trab["id"], competencia):
             continue
-        pref = f"{a:04d}-{m:02d}"
-        conn.execute(
-            """INSERT INTO financeiro_movimentacoes
-               (tipo, categoria, valor, data_movimentacao, descricao,
-                trabalhador_id, status, conta_id)
-               VALUES ('entrada', 'mensalidade', %s, %s, %s, %s, 'pendente', %s)""",
-            (valor, _data_vencimento(dia_venc, a, m),
-             f"Mensalidade {trab['nome_completo']} - {pref}", trab["id"], cid_areceber),
-        )
+        if inserir_mensalidade(
+                conn, trabalhador_id=trab["id"], competencia=competencia,
+                vencimento=_data_vencimento(dia_venc, a, m), valor=valor,
+                descricao=f"Mensalidade {trab['nome_completo']} - {competencia}",
+                conta_id=cid_areceber) is not None:
+            criadas += 1
+    return criadas
 
 
 def atualizar_pendentes_futuras(conn, trab: dict) -> None:
@@ -68,21 +135,23 @@ def atualizar_pendentes_futuras(conn, trab: dict) -> None:
     dia_venc = int(trab["dia_vencimento"] or 10)
     valor = float(trab["valor_mensalidade"] or 0)
     rows = conn.execute(
-        """SELECT id, data_movimentacao FROM financeiro_movimentacoes
+        """SELECT id, data_movimentacao, competencia FROM financeiro_movimentacoes
            WHERE trabalhador_id = %s AND categoria = 'mensalidade'
              AND status = 'pendente' AND data_movimentacao >= %s""",
         (trab["id"], corte),
     ).fetchall()
     for r in rows:
         venc = str(r["data_movimentacao"])[:10]
-        ano_m, mes_m = int(venc[:4]), int(venc[5:7])
-        pref = f"{ano_m:04d}-{mes_m:02d}"
+        competencia = r["competencia"] or normalizar_competencia(venc)
+        if not competencia:
+            continue  # vencimento ilegível: nada é reescrito por suposição
         conn.execute(
             """UPDATE financeiro_movimentacoes
-               SET valor = %s, data_movimentacao = %s, descricao = %s
+               SET valor = %s, data_movimentacao = %s, competencia = %s, descricao = %s
                WHERE id = %s""",
-            (valor, _data_vencimento(dia_venc, ano_m, mes_m),
-             f"Mensalidade {trab['nome_completo']} - {pref}", r["id"]),
+            (valor, _data_vencimento(int(competencia[:4]), int(competencia[5:7]),
+                                     dia_venc), competencia,
+             f"Mensalidade {trab['nome_completo']} - {competencia}", r["id"]),
         )
     sincronizar_mensalidades(conn, trab)  # garante também os 13 meses
 
