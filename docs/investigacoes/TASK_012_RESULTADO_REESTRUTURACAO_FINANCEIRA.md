@@ -65,7 +65,7 @@ posteriores — assumi-los abertos teria desfazer trabalho alheio:
 | FIN-06 estorno de fiado pago | **contido por bloqueio**, não resolvido: a TASK_007 recusa o estorno (e a §4 ampliou a recusa para recebimento alocado). O **reembolso continua pendente** — não existe caminho para devolver dinheiro de fiado já pago, e a ordem o deixa fora de escopo (§7) |
 | FIN-07 consultas/datas divergentes | **resolvido no módulo financeiro** pela §5 (fórmula única no serviço, três datas rotuladas, filtros validados); conciliação bancária segue fora de escopo |
 | FIN-08 constraints/autorias/FKs | **parcial** — §2/§3/§4 acrescentaram as travas do escopo; backfill de autoria histórica, `auditoria_eventos` e duplicidade histórica de mensalidade seguem abertos por decisão explícita (§6.4) |
-| FIN-09 foto da compra escrita antes do commit | **em revisão** — a §6 corrigiu o ciclo (temporário + promoção atômica + recuperação no startup com limites estreitos e provados, §6.6) e provou os desfechos, mas a separação entre commit e promoção não tem atomicidade possível: o que existe é detecção e compensação (§6.5). Fica registrado como **corrigido e sob revisão**, não como fechado |
+| FIN-09 foto da compra escrita antes do commit | **em revisão** — o ciclo foi corrigido e provado ponta a ponta, inclusive a exclusão entre requisição ativa e recuperação (§6.6), mas a separação entre commit e promoção **não tem atomicidade possível**: o que existe é ordem segura, detecção, compensação e recuperação com limites. Fechar de vez exigiria journal/outbox — arquitetura nova, fora do escopo autorizado (§6.5). Fica registrado como **corrigido e sob revisão**, não como fechado |
 | Idempotência de reenvio | **inexistente como mecanismo** — só havia garantias pontuais derivadas de estado → §2 |
 
 Garantias existentes que **não** foram reescritas nesta tarefa (e continuam
@@ -865,6 +865,8 @@ total de dívidas: dois números de coisas diferentes na mesma frase.
 | Fiados por trabalhador | `SUM` com `float`, "Pago/Pendente" binário | **Comprado a fiado · Já recebido · Saldo devedor** (e crédito à parte), cada dívida com valor original, crédito usado, recebido, saldo e situação "Recebida em parte" |
 | Detalhe do lançamento | só a linha | acrescenta competência e **"Para onde foi este dinheiro"**, lendo `fiado_alocacao` do próprio lançamento |
 | Ficha do trabalhador / da pessoa | tabela de 6 colunas, `replace` de ponto | inclui **Competência**, **Recebido em**, `moeda` (ponto de milhar), versão *mobile*, e diz que a data é do vencimento |
+| Extrato do fiado (`/caixa/fiados/extrato/{id}`) | `%.2f` em 14 pontos (`R$ 25.00`), data ISO (`2026-10-25`), forma `especie`, links `L12` | tudo pelo filtro `moeda` (`R$ 25,00`), `data_br`/`data_hora_br`, forma em português ("Espécie"), "lançamento 12", "Crédito"/"Uso do crédito" |
+| Detalhe do lançamento | "Vínculos comprovados no banco", tipo cru (`recebimento_fiado`), `identidade` no texto corrido | "**De onde vem este lançamento**", descrição em português ("Recebimento de fiado"), e a chave técnica movida para um `<details>` "Conferência técnica" |
 
 Datas: competência, vencimento e pagamento são campos distintos e cada filtro
 declara qual usa; a competência é lida da coluna própria (nunca do texto da
@@ -954,7 +956,28 @@ reprovou, com número. A pista foi **removida**: a limpeza apaga só o que está
 `CHAVES_USADAS`, e a corrida seguinte fechou em 11 → 11. É o retrato do que a
 ordem pede: a prova tem de ser capaz de reprovar.
 
-### 5.7 Limitações e questões registradas
+### 5.7 Apresentação: formato e vocabulário (devolução do dono)
+
+A captura mostrou o que os testes de contrato não pegavam: o **extrato** ainda
+saía em formato C (`R$ 25.00`, `R$ 1000.00`) e com data `2026-10-25`, enquanto as
+outras telas usam formato brasileiro; e o **detalhe** expunha `recebimento_fiado`
+e a chave interna. Corrigido nos dois:
+
+- extrato: os 14 valores pelo filtro `moeda`, datas por `data_br`/`data_hora_br`,
+  forma de pagamento com rótulo, `L12` → "lançamento 12", "entrada/consumo" →
+  "Crédito/Uso do crédito", e o jargão "sem vínculo comprovado" → "registro
+  antigo, sem vínculo com uma entrega";
+- detalhe: título "De onde vem este lançamento"; a chave `recebimento_fiado:1`
+  **continua existindo** — é ela que permite rastrear duplicidade na gaveta — mas
+  dentro de "Conferência técnica", fora do caminho habitual.
+
+Provas novas (4) e asserções do §4 atualizadas para o formato correto — nenhuma
+foi enfraquecida: passaram a **exigir** o formato brasileiro e a ausência do
+código interno fora da chave. Um efeito colateral precisou de ajuste: a suíte de
+navegador da TASK_011 procurava o título "Vínculos comprovados" e foi atualizada
+para o título novo (as mesmas informações, na língua do operador).
+
+### 5.8 Limitações e questões registradas
 
 1. **Não há conciliação bancária**: o Σ acumulado por conta é a soma dos
    lançamentos pagos até a data, dito assim na tela. Saldo de extrato real
@@ -1117,15 +1140,44 @@ interrompida". Reescrita com cinco limites, cada um com prova própria:
 | Limite | Como é garantido | Prova |
 |---|---|---|
 | 1. só tentativa **nova** e **interrompida** | casa com tentativa `operacao='compra'` **concluída** apontando para a linha, com conclusão dentro de `INTERVALO_RECUPERACAO` (24 h); compra sem tentativa nunca é tocada | *compra com tentativa VELHA não é cancelada* |
-| 2. não interfere em compra **em processamento** | tentativa `em_andamento` fica fora; a varredura inteira roda sob `pg_try_advisory_lock` — quem não pega a trava não age | *tentativa em andamento não é recuperada* + *duas recuperações simultâneas cancelam UMA vez* |
+| 2. não interfere em compra **em processamento** | **trava por compra** (`_compra_em_finalizacao`, sessão dedicada): a requisição ativa a segura do antes-do-commit até a promoção terminar, e a recuperação só age no que ela conseguir travar. Tentativa `em_andamento` também fica fora, e a varredura roda sob `pg_try_advisory_lock` | *requisição ATIVA × recuperação: a compra em finalização NÃO é cancelada* + *o temporário dela não é removido* + *com a trava solta, então cancela e anula* + *tentativa em andamento não é recuperada* + *duas recuperações simultâneas cancelam UMA vez* |
 | 3. só com **prova independente** de que o arquivo nunca existiu | `os.path.exists() == False` é o mesmo sintoma de diretório não montado; o caso interrompido deixa o **temporário** ao lado do destino (conteúdo escrito antes do commit, promoção é o último passo). Sem temporário, sem recuperação | *arquivo ausente SEM temporário é preservado* + *compra com arquivo presente não é tocada* |
 | 4. **um commit** para o que anda junto | cancelamento e anulação no mesmo `with conectar()`: se a anulação falhar, o estado **não muda** e a próxima subida conclui; nunca "cancelado com a chave respondendo sucesso" | *anulação falhando (TRIGGER real): estado coerente e reenvio recusado* + *recuperação posterior conclui* |
 | 5. só cancela, **nunca apaga**; o que foi pulado é informado | a linha fica auditável; `puladas` vai para o log de subida | *a varredura informa o que pulou* |
 
+**A correção decisiva desta rodada.** O dono mostrou que meu limite 2 não provava
+nada: na janela entre o commit e a promoção a tentativa **já está `concluida`**,
+então excluir `em_andamento` não distingue requisição ativa de tentativa
+interrompida — e travar os recuperadores entre si não cobre a requisição. Medido
+antes de corrigir: com uma compra nessa janela, a recuperação **cancelou a compra
+em finalização** (`{'canceladas': 2}`, status pago → cancelado). A exclusão agora
+é por compra, com trava de sessão numa conexão dedicada, tomada antes do commit e
+segurada até a promoção terminar; a trava morre com o processo, então o caso
+interrompido continua recuperável.
+
+Dois defeitos de implementação que as provas pegaram no caminho: `putconn` devolve
+a sessão ao pool **sem encerrá-la** (a trava presa numa conexão do pool
+sobrevivia, e a compra ficava "em finalização" para sempre — agora é solta
+explicitamente antes de devolver); e o commit precisou ser explícito antes da
+janela, porque com a trava dentro do `with conectar()` nada estava confirmado
+ainda.
+
 **O que a recuperação NÃO faz** (e agora está explícito): não cancela por arquivo
-ausente sozinho, não age em compra histórica, não remove temporário de tentativa
-em voo, não apaga linha e não tenta "consertar" nada quando o diretório não pode
-ser lido — nesse caso ela não tem prova e não age.
+ausente sozinho, não age em compra histórica, não toca compra em finalização, não
+remove temporário de tentativa em voo, não apaga linha e não tenta "consertar"
+nada quando o diretório não pode ser lido — nesse caso ela não tem prova e não
+age.
+
+**O limite de 24 h, explícito.** Interrupção mais antiga que o intervalo **não** é
+recuperada automaticamente. Ela não fica invisível: o número aparece no log de
+subida (`fora_do_prazo`), e a identificação é por consulta —
+`operacao_idempotencia WHERE operacao='compra' AND status='concluida'
+AND documento IS NOT NULL`, com `concluido_em` anterior ao intervalo, cujo
+documento esteja `pago` sem arquivo e com temporário ao lado. Para essas, a
+conferência é manual: `/financeiro/relatorios` (categoria compra) mostra a compra,
+e o temporário em `static/fotos/` identifica a tentativa. O prazo existe porque,
+fora dele, "arquivo ausente" deixa de ser prova de interrupção e passa a ser
+histórico — recuperar histórico por heurística é justamente o que a ordem proíbe.
 
 **O recuperador alterou alguma compra no DEV?** Não. Três evidências
 independentes:

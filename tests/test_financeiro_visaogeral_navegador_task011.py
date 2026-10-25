@@ -350,8 +350,11 @@ def n3():
         pagina.click(".fin-somente-desktop tbody tr a:has-text('Ver')")
         pagina.wait_for_url("**/financeiro/lancamento/**")
         corpo = pagina.inner_text("body")
-        verificar("N3 tela do lançamento identifica o registro e os vínculos comprovados",
-                  "Lançamento #" in corpo and "Vínculos comprovados" in corpo)
+        # TASK_012 §5: o título deixou de ser jargão de banco ("Vínculos
+        # comprovados") e passou a "De onde vem este lançamento" — mesmas
+        # informações, na língua do operador.
+        verificar("N3 tela do lançamento identifica o registro e de onde ele vem",
+                  "Lançamento #" in corpo and "De onde vem este lançamento" in corpo)
         verificar("N3 a natureza humana aparece (Doação)", "Doação" in corpo)
         _evidencia(pagina, "depois-detalhe-desktop")
         pagina.click("a.btn-voltar")
