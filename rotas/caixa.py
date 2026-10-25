@@ -240,11 +240,19 @@ async def finalizar_venda(
                     date.today() > date.fromisoformat(str(trab["fiado_data_encerramento"])):
                 return _url_erro("fiado_encerrado")
 
+            # Dívida em aberto para o limite: valor de face menos crédito
+            # consumido na compra menos o que os recebimentos já alocaram
+            # (TASK_012 §4). Leitura sem lock, como antes — o vínculo com o
+            # trabalhador é que está travado acima.
             pendente = conn.execute(
-                """SELECT COALESCE(SUM(total - fiado_credito_usado), 0) AS total
-                   FROM vendas_pdv
-                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE
-                     AND status = 'concluida'""",
+                """SELECT COALESCE(SUM(GREATEST(
+                           v.total - v.fiado_credito_usado - COALESCE(a.alocado, 0), 0)), 0) AS total
+                   FROM vendas_pdv v
+                   LEFT JOIN (SELECT venda_id, SUM(valor) AS alocado
+                              FROM fiado_alocacao WHERE tipo = 'divida'
+                              GROUP BY venda_id) a ON a.venda_id = v.id
+                   WHERE v.fiado_trabalhador_id = %s AND v.fiado_pago = FALSE
+                     AND v.status = 'concluida'""",
                 (trabalhador_id,)
             ).fetchone()["total"]
             credito_usado = min(Decimal(str(trab["fiado_credito"])), total)
@@ -353,10 +361,13 @@ async def finalizar_venda(
                 "UPDATE trabalhadores SET fiado_credito = fiado_credito - %s WHERE id = %s",
                 (credito_usado, trabalhador_id)
             )
+            # Vínculo do consumo com a venda que o gerou (TASK_012 §4): sem
+            # isto, o extrato só teria o texto "Compra #id" para deduzir.
             conn.execute(
-                """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
-                   VALUES (%s, 'debito', %s, %s)""",
-                (trabalhador_id, credito_usado, f"Compra #{venda_id}")
+                """INSERT INTO fiado_credito_mov
+                   (trabalhador_id, tipo, valor, descricao, venda_id)
+                   VALUES (%s, 'debito', %s, %s, %s)""",
+                (trabalhador_id, credito_usado, f"Compra #{venda_id}", venda_id)
             )
 
         if mov_id and not sessao_eventos:
@@ -1384,8 +1395,12 @@ async def buscar_trabalhador_fiado(request: Request, q: str = Query("")):
                       t.fiado_limite, t.fiado_credito,
                       t.fiado_data_encerramento,
                       COALESCE((
-                          SELECT SUM(v.total - v.fiado_credito_usado)
+                          SELECT SUM(GREATEST(v.total - v.fiado_credito_usado
+                                              - COALESCE(a.alocado, 0), 0))
                           FROM vendas_pdv v
+                          LEFT JOIN (SELECT venda_id, SUM(valor) AS alocado
+                                     FROM fiado_alocacao WHERE tipo = 'divida'
+                                     GROUP BY venda_id) a ON a.venda_id = v.id
                           WHERE v.fiado_trabalhador_id = t.id
                             AND v.fiado_pago = FALSE
                             AND v.status = 'concluida'
@@ -1425,6 +1440,7 @@ async def listar_fiados(request: Request):
         return redir
 
     with conectar() as conn:
+        from decimal import Decimal
         from servico_sessao import contas_por_tipo, sessoes_abertas
         todas = [dict(s) for s in sessoes_abertas(conn)]
         sessoes = [s for s in todas if s["versao"] == "eventos"]
@@ -1445,17 +1461,42 @@ async def listar_fiados(request: Request):
                ORDER BY v.data_venda DESC, v.id DESC"""
         ).fetchall()
 
-        agrupado = defaultdict(lambda: {"vendas": [], "total": 0.0})
+        # TASK_012 §4: o que já foi recebido de cada dívida vem das alocações
+        # gravadas junto ao lançamento — não de presunção. Dívida sem alocação
+        # deve o valor de face.
+        ids_abertos = [f["id"] for f in fiados]
+        alocado_por_venda = {}
+        if ids_abertos:
+            alocado_por_venda = {
+                r["venda_id"]: Decimal(str(r["alocado"]))
+                for r in conn.execute(
+                    """SELECT venda_id, SUM(valor) AS alocado
+                       FROM fiado_alocacao
+                       WHERE tipo = 'divida' AND venda_id = ANY(%s)
+                       GROUP BY venda_id""", (ids_abertos,)).fetchall()}
+
+        agrupado = defaultdict(lambda: {"vendas": [], "total": Decimal("0.00")})
         for f in fiados:
             f_dict = dict(f)
             tid = f_dict["fiado_trabalhador_id"]
+            f_dict["alocado"] = alocado_por_venda.get(f_dict["id"], Decimal("0.00"))
+            f_dict["saldo"] = max(
+                Decimal("0.00"),
+                Decimal(str(f_dict["total"]))
+                - Decimal(str(f_dict.get("fiado_credito_usado") or 0))
+                - f_dict["alocado"])
             agrupado[tid]["trabalhador_nome"] = f_dict["trabalhador_nome"]
             agrupado[tid]["trabalhador_cpf"] = f_dict.get("trabalhador_cpf") or ""
-            agrupado[tid]["fiado_limite"] = float(f_dict.get("fiado_limite") or 0)
-            agrupado[tid]["fiado_credito"] = float(f_dict.get("fiado_credito") or 0)
+            agrupado[tid]["fiado_limite"] = Decimal(str(f_dict.get("fiado_limite") or 0))
+            agrupado[tid]["fiado_credito"] = Decimal(str(f_dict.get("fiado_credito") or 0))
             agrupado[tid]["fiado_data_encerramento"] = f_dict.get("fiado_data_encerramento")
             agrupado[tid]["vendas"].append(f_dict)
-            agrupado[tid]["total"] += float(f_dict["total"]) - float(f_dict.get("fiado_credito_usado") or 0)
+            agrupado[tid]["total"] += f_dict["saldo"]
+        # A lista de cada trabalhador sai da mais antiga para a mais recente:
+        # é a ordem que o serviço usa quando o operador não escolhe, e é a
+        # ordem que a tela mostra — seleção e regra coincidem à vista.
+        for grupo in agrupado.values():
+            grupo["vendas"].sort(key=lambda v: (v["data_venda"] or "", v["id"]))
 
     return templates.TemplateResponse("caixa/fiados.html", {
         "request": request,
@@ -1478,13 +1519,18 @@ async def pagar_fiado(
     conta_pix_id: int = Form(0),
     idempotencia: str = Form(""),
 ):
-    """Quitação de dívida individual no fiado (TASK_008).
+    """Quitação de dívida individual no fiado (TASK_008 / TASK_012 §4).
 
     O dinheiro recebido tem destino EXPLÍCITO: espécie exige sessão aberta
     (entra na gaveta dela); PIX exige conta PIX válida e nunca entra em
     gaveta. Repetir o pagamento da mesma venda é recusado pelo estado
     fiado_pago E pela identidade do evento (`fiadopagar:{venda_id}`) —
-    a mesma dívida não conta duas vezes."""
+    a mesma dívida não conta duas vezes.
+
+    §4: o cobrado é o SALDO (valor de face menos crédito consumido menos o que
+    alocações anteriores já receberam) e a quitação fica registrada como
+    vínculo durável lançamento↔dívida. Dívida abatida em parte não é cobrada
+    duas vezes."""
     atendente, redir = _guard(request)
     if redir:
         return redir
@@ -1492,8 +1538,9 @@ async def pagar_fiado(
         forma_pagamento = "especie"
 
     from decimal import Decimal
+    import servico_fiado
     from servico_sessao import (
-        SessaoInvalida, contabilizar_recebimento, sessao_para_recebimento,
+        SessaoInvalida, sessao_para_recebimento,
         validar_conta_para_forma,
     )
 
@@ -1513,8 +1560,7 @@ async def pagar_fiado(
                 return respondida
 
             venda = conn.execute(
-                """SELECT total, fiado_credito_usado, fiado_trabalhador_id,
-                          fiado_pago, forma_pagamento
+                """SELECT fiado_trabalhador_id, fiado_pago, forma_pagamento
                    FROM vendas_pdv WHERE id = %s FOR UPDATE""",
                 (venda_id,)).fetchone()
             if not venda or venda["forma_pagamento"] != "fiado":
@@ -1523,6 +1569,14 @@ async def pagar_fiado(
             if venda["fiado_pago"]:
                 raise SessaoInvalida("ja_pago",
                                      "Esta dívida já consta como paga — nada a receber.")
+
+            trab_id = venda["fiado_trabalhador_id"]
+            dividas = servico_fiado.dividas_em_aberto(
+                conn, trab_id, travar=True, venda_ids=[venda_id])
+            if not dividas:
+                raise SessaoInvalida("ja_pago",
+                                     "Esta dívida não está mais em aberto.")
+            valor_pago = dividas[0]["saldo"]
 
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             conta = validar_conta_para_forma(
@@ -1539,24 +1593,24 @@ async def pagar_fiado(
                 return RedirectResponse(url=e.destino or "/caixa/fiados",
                                         status_code=303)
 
-            conn.execute(
-                """UPDATE vendas_pdv
-                   SET fiado_pago = TRUE, fiado_data_pagamento = %s
-                   WHERE id = %s AND forma_pagamento = 'fiado'""",
-                (date.today().isoformat(), venda_id))
-
-            valor_pago = (Decimal(str(venda["total"]))
-                          - Decimal(str(venda["fiado_credito_usado"] or 0)))
-            trab_id = venda["fiado_trabalhador_id"]
             fin_id = None
-            if valor_pago > 0:
-                fin_id = contabilizar_recebimento(
-                    conn, tipo="recebimento_fiado", valor=valor_pago,
-                    categoria="recebimento_fiado",
+            if valor_pago > Decimal("0.00"):
+                fin_id = servico_fiado.aplicar_recebimento(
+                    conn, trabalhador_id=trab_id, dividas=dividas,
+                    valor=valor_pago, forma=forma_pagamento, conta_id=conta,
+                    sessao=sessao,
                     descricao=f"Recebimento fiado — venda #{venda_id}",
-                    forma=forma_pagamento, conta_id=conta, sessao=sessao,
-                    identidade=f"fiadopagar:{venda_id}", venda_id=venda_id,
-                    atendente_id=atendente["id"])
+                    atendente_id=atendente["id"],
+                    identidade=f"fiadopagar:{venda_id}",
+                    venda_id_evento=venda_id)["financeiro_id"]
+            else:
+                # A compra foi coberta por crédito antecipado consumido no PDV:
+                # não há dinheiro novo a lançar, só encerrar o débito.
+                conn.execute(
+                    """UPDATE vendas_pdv
+                       SET fiado_pago = TRUE, fiado_data_pagamento = %s
+                       WHERE id = %s AND forma_pagamento = 'fiado'""",
+                    (date.today().isoformat(), venda_id))
             destino = f"/caixa/fiados?pago_ok={trab_id}&valor={valor_pago:.2f}"
             confirmar(conn, chave=chave_tentativa,
                       documento=fin_id or venda_id, destino=destino)
@@ -1574,34 +1628,48 @@ async def pagar_divida_fiado(
     forma_pagamento: str = Form("especie"),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    venda_ids: list[str] = Form(default=[]),
     idempotencia: str = Form(""),
 ):
-    """Pagamento de dívida do fiado (total ou parcial) — TASK_008.
+    """Entrega de dinheiro para o fiado (total ou parcial) — TASK_008/§4.
 
-    O valor entregue vira UMA única entrada no financeiro com destino
-    explícito (sessão para espécie, conta PIX para PIX); a parte que sobra
-    e vira crédito antecipado não produz segunda entrada de dinheiro — o
-    consumo futuro desse crédito é que será registrado como evento sem
-    efeito físico."""
+    O valor entregue vira UMA única entrada no financeiro com destino explícito
+    (sessão para espécie, conta PIX para PIX) e o destino de cada centavo é
+    registrado em `fiado_alocacao`: uma linha por dívida abatida e, se sobrar,
+    uma linha de excedente que vira crédito antecipado — sem segunda entrada de
+    dinheiro (o consumo futuro desse crédito é evento sem efeito físico).
+
+    A seleção do operador é respeitada na ordem recebida. Sem seleção, vale a
+    regra que o sistema já tinha e que fica documentada: a compra mais antiga
+    primeiro. Pagamento menor que a dívida escolhida ABATE a dívida (o saldo
+    restante continua visível e `fiado_pago` segue FALSE) — só vira crédito o
+    que sobrar depois de cobertas as dívidas selecionadas."""
     atendente, redir = _guard(request)
     if redir:
         return redir
     if forma_pagamento not in ("especie", "pix"):
         forma_pagamento = "especie"
 
-    from decimal import Decimal
+    import servico_fiado
+    from decimal import InvalidOperation
     from servico_sessao import (
-        SessaoInvalida, contabilizar_recebimento, sessao_para_recebimento,
-        validar_conta_para_forma,
+        SessaoInvalida, sessao_para_recebimento, validar_conta_para_forma,
     )
+
+    def _erro_divida(chave_erro: str) -> str:
+        return f"/caixa/fiados?erro={chave_erro}"
+
+    try:
+        selecao = [int(str(v).strip()) for v in venda_ids if str(v).strip()]
+    except ValueError:
+        return RedirectResponse(url=_erro_divida("selecao_invalida"),
+                                status_code=303)
 
     corpo_tentativa = {"trabalhador_id": trabalhador_id,
                        "valor": (valor or "").strip().replace(",", "."),
                        "forma": forma_pagamento, "sessao_id": sessao_id,
-                       "conta_pix_id": conta_pix_id or None}
-
-    def _erro_divida(chave_erro: str) -> str:
-        return f"/caixa/fiados?erro={chave_erro}"
+                       "conta_pix_id": conta_pix_id or None,
+                       "dividas": selecao}
 
     try:
         with conectar() as conn:
@@ -1611,38 +1679,44 @@ async def pagar_divida_fiado(
             if respondida:
                 return respondida
 
+            if not conn.execute("SELECT id FROM trabalhadores WHERE id = %s",
+                                (trabalhador_id,)).fetchone():
+                raise SessaoInvalida("trabalhador_nao_encontrado",
+                                     "Trabalhador não encontrado.")
+
+            # Ordem dos locks: dívidas primeiro (por id, sempre), depois a
+            # sessão. Dois recebimentos concorrentes sobre o mesmo trabalhador
+            # caminham na mesma ordem e não deadlockam; os saldos lidos aqui
+            # valem sob lock, então a distribuição nunca aloca o mesmo centavo
+            # duas vezes.
+            dividas = servico_fiado.dividas_em_aberto(
+                conn, trabalhador_id, travar=True,
+                venda_ids=selecao if selecao else None)
+            if not dividas:
+                raise SessaoInvalida("sem_divida",
+                                     "Este trabalhador não tem dívidas de fiado em aberto.")
+            if selecao and len(dividas) != len(selecao):
+                raise SessaoInvalida(
+                    "selecao_invalida",
+                    "Alguma das dívidas escolhidas não está mais em aberto — "
+                    "nada foi registrado. Recarregue a lista e confira a seleção.")
+
+            total_devido = servico_fiado.total_devido(dividas)
+            texto = (valor or "").strip().replace(",", ".")
+            if not texto:
+                valor_recebido = total_devido
+            else:
+                try:
+                    valor_recebido = servico_fiado.moeda(texto)
+                except (InvalidOperation, ValueError):
+                    raise SessaoInvalida("valor_invalido", "Valor inválido.")
+            if valor_recebido <= servico_fiado.ZERO:
+                raise SessaoInvalida("valor_invalido", "Valor inválido.")
+
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             conta = validar_conta_para_forma(
                 conn, forma_pagamento,
                 (conta_pix_id or None) if forma_pagamento == "pix" else None)
-
-            vendas = conn.execute(
-                """SELECT id, total, fiado_credito_usado
-                   FROM vendas_pdv
-                   WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'
-                   ORDER BY data_venda ASC, id ASC
-                   FOR UPDATE""",
-                (trabalhador_id,)
-            ).fetchall()
-
-            if not vendas:
-                raise SessaoInvalida("sem_divida",
-                                     "Este trabalhador não tem dívidas de fiado em aberto.")
-
-            total_divida = round(sum(
-                float(v["total"]) - float(v["fiado_credito_usado"] or 0)
-                for v in vendas
-            ), 2)
-
-            try:
-                valor_dec = round(float(valor.strip().replace(",", ".")), 2)
-            except (ValueError, AttributeError):
-                valor_dec = total_divida
-
-            if valor_dec <= 0:
-                raise SessaoInvalida("valor_invalido", "Valor inválido.")
-
-            hoje = date.today().isoformat()
 
             try:
                 chave_tentativa = exigir_reserva(
@@ -1654,72 +1728,28 @@ async def pagar_divida_fiado(
                 return RedirectResponse(url=e.destino or "/caixa/fiados",
                                         status_code=303)
 
-            if valor_dec >= total_divida:
-                conn.execute(
-                    """UPDATE vendas_pdv
-                       SET fiado_pago = TRUE, fiado_data_pagamento = %s
-                       WHERE fiado_trabalhador_id = %s AND fiado_pago = FALSE AND status = 'concluida'""",
-                    (hoje, trabalhador_id)
-                )
-                sobra = round(valor_dec - total_divida, 2)
-                if sobra >= 0.01:
-                    conn.execute(
-                        "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
-                        (sobra, trabalhador_id)
-                    )
-                    conn.execute(
-                        """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
-                           VALUES (%s, 'credito', %s, 'Saldo de quitação de fiado')""",
-                        (trabalhador_id, sobra)
-                    )
-                valor_efetivo = total_divida
-            else:
-                # FIFO: quita as compras mais antigas primeiro
-                restante = valor_dec
-                for v in vendas:
-                    devido = round(float(v["total"]) - float(v["fiado_credito_usado"] or 0), 2)
-                    if restante >= devido:
-                        conn.execute(
-                            """UPDATE vendas_pdv
-                               SET fiado_pago = TRUE, fiado_data_pagamento = %s
-                               WHERE id = %s""",
-                            (hoje, v["id"])
-                        )
-                        restante = round(restante - devido, 2)
-                        if restante < 0.01:
-                            break
-                    else:
-                        break
-
-                # Sobra que não cobre a próxima compra vai para crédito
-                if restante >= 0.01:
-                    conn.execute(
-                        "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
-                        (restante, trabalhador_id)
-                    )
-                    conn.execute(
-                        """INSERT INTO fiado_credito_mov (trabalhador_id, tipo, valor, descricao)
-                           VALUES (%s, 'credito', %s, 'Saldo de pagamento parcial de fiado')""",
-                        (trabalhador_id, restante)
-                    )
-                valor_efetivo = valor_dec
-
             trab = conn.execute(
                 "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trabalhador_id,)
             ).fetchone()
             nome = trab["nome_completo"] if trab else f"#{trabalhador_id}"
-            fin_id = contabilizar_recebimento(
-                conn, tipo="recebimento_fiado",
-                valor=Decimal(str(valor_dec)),
-                categoria="recebimento_fiado",
-                descricao=f"Recebimento fiado — {nome}",
-                forma=forma_pagamento, conta_id=conta, sessao=sessao,
-                atendente_id=atendente["id"])
+            resumo = servico_fiado.aplicar_recebimento(
+                conn, trabalhador_id=trabalhador_id, dividas=dividas,
+                valor=valor_recebido, forma=forma_pagamento, conta_id=conta,
+                sessao=sessao, descricao=f"Recebimento fiado — {nome}",
+                atendente_id=atendente["id"],
+                venda_id_evento=(dividas[0]["venda_id"] if len(dividas) == 1
+                                 else None))
             destino = (f"/caixa/fiados?pago_ok={trabalhador_id}"
-                       f"&valor={valor_efetivo:.2f}")
-            confirmar(conn, chave=chave_tentativa, documento=fin_id, destino=destino)
+                       f"&valor={resumo['valor']:.2f}"
+                       f"&abatido={resumo['abatido']:.2f}"
+                       f"&credito={resumo['excedente']:.2f}"
+                       f"&quitadas={len(resumo['quitadas'])}")
+            confirmar(conn, chave=chave_tentativa,
+                      documento=resumo["financeiro_id"], destino=destino)
     except SessaoInvalida as e:
         return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
+    except servico_fiado.FiadoInvalido as e:
+        return RedirectResponse(url=_erro_divida(e.chave), status_code=303)
 
     return RedirectResponse(url=destino, status_code=303)
 
@@ -1834,6 +1864,11 @@ async def adicionar_credito_fiado(
                 return RedirectResponse(url=e.destino or "/caixa/fiados",
                                         status_code=303)
 
+            # TASK_012 §4: a linha do trabalhador é travada antes de somar —
+            # duas entregas de crédito concorrentes não podem gravar mais saldo
+            # do que o dinheiro efetivamente recebido.
+            conn.execute("SELECT id FROM trabalhadores WHERE id = %s FOR UPDATE",
+                         (trabalhador_id,)).fetchone()
             conn.execute(
                 "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
                 (valor_dec, trabalhador_id)
@@ -1844,11 +1879,20 @@ async def adicionar_credito_fiado(
                 (trabalhador_id, valor_dec, desc)
             )
             cred_id = cur.fetchone()["id"]
-            contabilizar_recebimento(
+            fin_id = contabilizar_recebimento(
                 conn, tipo="credito_anticipado", valor=valor_dec,
                 categoria="credito_anticipado", descricao=desc,
                 forma=forma_pagamento, conta_id=conta, sessao=sessao,
                 identidade=f"credito:{cred_id}", atendente_id=atendente["id"])
+            # O vínculo do crédito com o dinheiro que o gerou (mesmo
+            # lançamento, não uma segunda entrada).
+            conn.execute("UPDATE fiado_credito_mov SET financeiro_id = %s WHERE id = %s",
+                         (fin_id, cred_id))
+            conn.execute(
+                """INSERT INTO fiado_alocacao
+                   (financeiro_id, trabalhador_id, venda_id, tipo, valor)
+                   VALUES (%s, %s, NULL, 'credito', %s)""",
+                (fin_id, trabalhador_id, valor_dec))
             destino = f"/caixa/fiados?credito_ok={trabalhador_id}"
             confirmar(conn, chave=chave_tentativa, documento=cred_id,
                       destino=destino)
@@ -1878,6 +1922,33 @@ async def historico_credito_fiado(request: Request, trabalhador_id: int):
          "descricao": r["descricao"], "created_at": r["created_at"]}
         for r in rows
     ])
+
+
+@router.get("/fiados/extrato/{trabalhador_id}", response_class=HTMLResponse)
+async def extrato_fiado(request: Request, trabalhador_id: int):
+    """Extrato do fiado de um trabalhador (TASK_012 §4).
+
+    Saldo DEVEDOR e CRÉDITO aparecem separados, cada número com o link do
+    lançamento ou da venda que o origina. O que não tem vínculo durável
+    (histórico anterior a esta entrega) continua visível como limitação
+    explícita — não é redistribuído por nome, valor nem data."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    import servico_fiado
+    with conectar() as conn:
+        dados = servico_fiado.extrato_fiado(conn, trabalhador_id)
+    if not dados:
+        return RedirectResponse(url="/caixa/fiados?erro=trabalhador_nao_encontrado",
+                                status_code=303)
+
+    return templates.TemplateResponse("caixa/fiado_extrato.html", {
+        "request": request,
+        "atendente": atendente,
+        "e_admin": e_admin(request),
+        **dados,
+    })
 
 
 # ── Abertura de Caixa ───────────────────────────────────────────────────────

@@ -521,6 +521,43 @@ def _migrar_mensalidades_competencia(conn):
                 WHERE {PREDICADO_MENSALIDADE}""")
 
 
+# Guarda do saldo de crédito antecipado (TASK_012 §4): o consumo de crédito é
+# sempre limitado pelo próprio saldo, então um negativo seria o resultado de um
+# bug de concorrência — o banco passa a recusá-lo.
+CHECK_FIADO_CREDITO_NAO_NEGATIVO = "trabalhadores_fiado_credito_nao_negativo"
+
+
+def _migrar_fiado_credito_guarda(conn):
+    """Aplica CHECK (fiado_credito >= 0) quando o banco não tem negativo.
+
+    Havendo negativo histórico, o startup informa e NÃO altera linha alguma:
+    zerar um saldo devedor/credor alheio seria reescrever fato, e a ordem
+    proíbe escolher "vencedores" automaticamente. A guarda volta no próximo
+    startup depois que o operador resolver o saldo.
+    """
+    ja_aplicado = conn.execute(
+        """SELECT COUNT(*) AS c FROM pg_constraint
+           WHERE conname = %s AND conrelid = 'trabalhadores'::regclass""",
+        (CHECK_FIADO_CREDITO_NAO_NEGATIVO,)).fetchone()["c"]
+    if ja_aplicado:
+        return
+
+    negativos = conn.execute(
+        """SELECT id, nome_completo, fiado_credito FROM trabalhadores
+           WHERE fiado_credito < 0 ORDER BY id""").fetchall()
+    if negativos:
+        print("[startup] crédito de fiado negativo "
+              f"{[(n['id'], n['nome_completo'], str(n['fiado_credito'])) for n in negativos]} "
+              f"— guarda {CHECK_FIADO_CREDITO_NAO_NEGATIVO} NÃO foi criada e "
+              "NENHUM saldo foi alterado; regularize o crédito do trabalhador e "
+              "reinicie para ativar a guarda do banco.", flush=True)
+        return
+    conn.execute(
+        f"""ALTER TABLE trabalhadores
+            ADD CONSTRAINT {CHECK_FIADO_CREDITO_NAO_NEGATIVO}
+            CHECK (fiado_credito >= 0)""")
+
+
 def _migrar(conn):
     """Migrações incrementais — seguras para rodar múltiplas vezes."""
     para_adicionar = [
@@ -607,6 +644,13 @@ def _migrar(conn):
         # Sangria v2 = transferência interna: as duas movimentações (saída da
         # gaveta e entrada no destino) compartilham este vínculo de par.
         ("financeiro_movimentacoes", "sangria_id", "INTEGER REFERENCES caixa_sangrias(id)"),
+        # TASK_012 §4: o movimento de crédito passa a apontar o fato que o
+        # gerou — a venda que consumiu crédito, ou o lançamento que deu
+        # origem ao crédito. Linhas antigas ficam NULL (sem vínculo
+        # comprovado); nunca são preenchidas por suposição.
+        ("fiado_credito_mov", "venda_id", "INTEGER REFERENCES vendas_pdv(id) ON DELETE RESTRICT"),
+        ("fiado_credito_mov", "financeiro_id",
+         "INTEGER REFERENCES financeiro_movimentacoes(id) ON DELETE RESTRICT"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -645,6 +689,10 @@ def _migrar(conn):
     # Mensalidades: competência em coluna própria + uma obrigação por mês
     # (TASK_012 §3). Rode depois de adicionar a coluna acima.
     _migrar_mensalidades_competencia(conn)
+
+    # Fiado: crédito antecipado nunca negativo (TASK_012 §4). Rode depois de
+    # adicionar as colunas de vínculo acima.
+    _migrar_fiado_credito_guarda(conn)
 
     # Cria tabela chaves_pix se não existir (bancos existentes sem ela)
     conn.execute("""
@@ -1096,6 +1144,51 @@ def criar_tabelas():
                 competencia         TEXT,
                 status              TEXT            NOT NULL DEFAULT 'pago'  -- 'pago', 'pendente', 'cancelado'
             )
+        """)
+
+        # ── Alocações do recebimento de fiado (TASK_012 §4) ──
+        # Uma entrega de dinheiro é UM lançamento em financeiro_movimentacoes e
+        # pode quitar várias dívidas e ainda deixar excedente como crédito.
+        # Esta tabela é o vínculo durável: uma linha por dívida (venda_id) e no
+        # máximo uma linha de excedente (tipo='credito', venda_id NULL). A soma
+        # das linhas é exatamente o valor recebido — invariante escrita por
+        # servico_fiado.aplicar_recebimento, nunca deduzida de texto nem de FIFO
+        # presumido. Criada depois de vendas_pdv e financeiro_movimentacoes.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fiado_alocacao (
+                id              SERIAL PRIMARY KEY,
+                financeiro_id   INTEGER NOT NULL REFERENCES financeiro_movimentacoes(id)
+                                ON DELETE RESTRICT,
+                trabalhador_id  INTEGER NOT NULL REFERENCES trabalhadores(id)
+                                ON DELETE RESTRICT,
+                venda_id        INTEGER REFERENCES vendas_pdv(id) ON DELETE RESTRICT,
+                tipo            TEXT NOT NULL CHECK (tipo IN ('divida','credito')),
+                valor           NUMERIC(10,2) NOT NULL CHECK (valor > 0),
+                criado_em       TEXT NOT NULL DEFAULT
+                                (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp(0)::text,
+                CONSTRAINT fiado_alocacao_vinculo CHECK (
+                    (tipo = 'divida'  AND venda_id IS NOT NULL)
+                 OR (tipo = 'credito' AND venda_id IS NULL)
+                )
+            )
+        """)
+        # Um recebimento aloca no máximo uma vez em cada dívida.
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_fiado_alocacao_divida
+                ON fiado_alocacao (financeiro_id, venda_id) WHERE tipo = 'divida'
+        """)
+        # O excedente de um recebimento é um só.
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_fiado_alocacao_credito
+                ON fiado_alocacao (financeiro_id) WHERE tipo = 'credito'
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS ix_fiado_alocacao_venda
+                ON fiado_alocacao (venda_id) WHERE venda_id IS NOT NULL
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS ix_fiado_alocacao_trabalhador
+                ON fiado_alocacao (trabalhador_id)
         """)
 
         # ── Eventos detalhados da sessão de caixa (TASK_008 / FIN-04) ──

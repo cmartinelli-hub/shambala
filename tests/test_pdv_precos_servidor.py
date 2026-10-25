@@ -1175,7 +1175,26 @@ def b1():
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _limpar():
+    # Ordem da limpeza: os dependentes do fiado (TASK_012 §4) referenciam
+    # lançamento, venda e trabalhador com RESTRICT — é a guarda que impede
+    # apagar dinheiro vinculado a uma dívida — então saem antes das vendas,
+    # dos lançamentos e dos trabalhadores.
     with conectar() as conn:
+        conn.execute(
+            """DELETE FROM fiado_alocacao
+               WHERE financeiro_id IN (SELECT id FROM financeiro_movimentacoes
+                                        WHERE caixa_id IN (SELECT id FROM caixas WHERE nome LIKE %s))
+                  OR venda_id IN (SELECT id FROM vendas_pdv
+                                   WHERE caixa_id IN (SELECT id FROM caixas WHERE nome LIKE %s))
+                  OR trabalhador_id IN (SELECT id FROM trabalhadores
+                                         WHERE nome_completo LIKE %s)""",
+            (f"{PREFIXO}%", f"{PREFIXO}%", f"{PREFIXO}%"))
+        conn.execute(
+            """DELETE FROM fiado_credito_mov
+               WHERE trabalhador_id IN (SELECT id FROM trabalhadores WHERE nome_completo LIKE %s)
+                  OR venda_id IN (SELECT id FROM vendas_pdv
+                                   WHERE caixa_id IN (SELECT id FROM caixas WHERE nome LIKE %s))""",
+            (f"{PREFIXO}%", f"{PREFIXO}%"))
         conn.execute(
             "DELETE FROM vendas_pdv_itens WHERE venda_id IN "
             "(SELECT id FROM vendas_pdv WHERE caixa_id IN "
@@ -1189,9 +1208,6 @@ def _limpar():
                      "(SELECT id FROM caixas WHERE nome LIKE %s)", (f"{PREFIXO}%",))
         conn.execute("DELETE FROM estoque_movimentos WHERE produto_id IN "
                      "(SELECT id FROM produtos WHERE nome LIKE %s)", (f"{PREFIXO}%",))
-        conn.execute("DELETE FROM fiado_credito_mov WHERE trabalhador_id IN "
-                     "(SELECT id FROM trabalhadores WHERE nome_completo LIKE %s)",
-                     (f"{PREFIXO}%",))
         conn.execute("DELETE FROM produtos WHERE nome LIKE %s", (f"{PREFIXO}%",))
         conn.execute("DELETE FROM trabalhadores WHERE nome_completo LIKE %s", (f"{PREFIXO}%",))
         # TASK_008: PIX sem sessão cria lançamento com caixa_id na hora da

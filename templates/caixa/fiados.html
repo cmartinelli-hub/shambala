@@ -13,6 +13,17 @@
 }
 .progress-bar { height:6px; background:#ddd; border-radius:3px; margin-top:.3rem; overflow:hidden; }
 .progress-fill { height:100%; background:#c0392b; border-radius:3px; transition:width .2s; }
+.reparticao {
+    margin-top:.6rem; padding:.5rem .7rem; font-size:.82rem;
+    background:#fff; border:1px dashed #f9a825; border-radius:var(--raio);
+}
+.reparticao-titulo { font-weight:700; margin-bottom:.2rem; }
+.reparticao ul { margin:0; padding-left:1.1rem; }
+.reparticao .ok { color:#1da851; font-weight:700; }
+.reparticao .parcial { color:#e67e22; font-weight:700; }
+.reparticao .fora { color:var(--cor-texto-suave); }
+.reparticao .credito { color:#1da851; }
+.reparticao .aberto { color:#c0392b; }
 .modal-overlay {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(0,0,0,0.6);
@@ -85,10 +96,23 @@
 
 {% set _pago_ok = request.query_params.get('pago_ok') %}
 {% set _valor_pago = request.query_params.get('valor') %}
+{% set _abatido = request.query_params.get('abatido') %}
+{% set _credito_recebido = request.query_params.get('credito') %}
+{% set _quitadas = request.query_params.get('quitadas') %}
 {% if _pago_ok %}
 <div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
      padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
     <span id="msg-pago-ok">⏳ Pagamento registrado — imprimindo 2 vias…</span>
+    {% if _abatido %}
+    <div style="font-weight:500;font-size:.85rem;margin-top:.3rem">
+        Recebido R$ {{ _valor_pago }} — R$ {{ _abatido }} abatido
+        ({{ _quitadas }} dívida{{ 's' if _quitadas != '1' else '' }} quitada{{ 's' if _quitadas != '1' else '' }})
+        {% if _credito_recebido != '0.00' %}
+        e R$ {{ _credito_recebido }} registrado como crédito antecipado
+        {% endif %}.
+        <a href="/caixa/fiados/extrato/{{ _pago_ok }}">ver o extrato</a>
+    </div>
+    {% endif %}
 </div>
 {% endif %}
 
@@ -119,6 +143,10 @@
     'ja_pago': 'Esta dívida já consta como paga — nada foi registrado.',
     'sem_divida': 'Este trabalhador não tem dívidas de fiado em aberto.',
     'valor_invalido': '⛔ Valor inválido.',
+    'selecao_invalida': '⛔ Alguma das dívidas marcadas não está mais em aberto. '
+                        'Recarregue a lista e confira a seleção — nada foi registrado.',
+    'sem_saldo': '⛔ As dívidas marcadas já foram cobertas — não há saldo a receber. '
+                 'Para antecipar dinheiro sem dívida use “➕ Crédito”.',
     'venda_nao_encontrada': '⛔ Venda de fiado não encontrada.',
     'trabalhador_nao_encontrado': '⛔ Trabalhador não encontrado.',
     'tentativa_sem_chave': mensagens_tentativa['tentativa_sem_chave'],
@@ -205,6 +233,7 @@
             <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
                 <button class="btn btn-sm btn-primario" onclick="togglePagar({{ tid }}, {{ grupo.total }})">💰 Receber Pagamento</button>
                 <button class="btn btn-sm btn-secundario" onclick="toggleCredito({{ tid }})">➕ Crédito</button>
+                <a class="btn btn-sm btn-secundario" href="/caixa/fiados/extrato/{{ tid }}">📄 Extrato</a>
             </div>
         </div>
     </div>
@@ -213,30 +242,60 @@
     <div class="pagar-form" id="pagar-form-{{ tid }}">
         <div class="pagar-panel">
             <form method="post" action="/caixa/fiados/{{ tid }}/pagar-divida"
+                  id="form-pagar-{{ tid }}"
                   onsubmit="return handlePagarDivida(event, this, {{ grupo.total }})">
                 {{ campo_idempotencia() }}
                 <div style="font-weight:700;margin-bottom:.6rem;font-size:.95rem">
                     💰 Receber pagamento de {{ grupo.trabalhador_nome }}
                 </div>
+
+                <div style="margin-bottom:.6rem">
+                    <div style="font-size:.8rem;font-weight:700;margin-bottom:.25rem">
+                        Dívidas que este dinheiro quita (desmarque o que não foi pago agora):
+                    </div>
+                    {% for v in grupo.vendas %}
+                    <label style="display:flex;gap:.4rem;align-items:baseline;font-size:.82rem;margin-bottom:.15rem">
+                        <input type="checkbox" name="venda_ids" value="{{ v.id }}"
+                               data-saldo="{{ "%.2f"|format(v.saldo) }}" checked
+                               onchange="atualizarReparticao(this.form)">
+                        <span>#{{ v.id }} · {{ v.data_venda|data_br }} ·
+                            <strong>R$ {{ "%.2f"|format(v.saldo) }}</strong>
+                            {% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}
+                            <small style="color:var(--cor-texto-suave)">(face R$ {{ "%.2f"|format(v.total) }},
+                                crédito usado R$ {{ "%.2f"|format(v.fiado_credito_usado) }})</small>
+                            {% endif %}
+                            {% if v.alocado and v.alocado > 0 %}
+                            <small style="color:#1da851">(já recebeu R$ {{ "%.2f"|format(v.alocado) }})</small>
+                            {% endif %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+
                 <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
                     <label style="font-size:.85rem;font-weight:600;white-space:nowrap">Forma</label>
                     <select name="forma_pagamento" style="padding:.35rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:.85rem">
                         <option value="especie">Espécie</option>
                         <option value="pix">PIX</option>
                     </select>
-                    <label style="font-size:.85rem;font-weight:600;white-space:nowrap">Valor recebido (R$)</label>
+                    <label style="font-size:.85rem;font-weight:600;white-space:nowrap">Valor entregue (R$)</label>
                     <input type="number" name="valor" id="valor-pagar-{{ tid }}"
                            step="0.01" min="0.01" required
                            value="{{ "%.2f"|format(grupo.total) }}"
+                           oninput="atualizarReparticao(this.form)"
                            style="width:120px;padding:.35rem .5rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:1rem;font-weight:700">
                     <button class="btn btn-primario" type="submit" style="padding:.35rem .9rem">✅ Confirmar</button>
                     <button class="btn btn-secundario" type="button"
                             onclick="togglePagar({{ tid }}, 0)" style="padding:.35rem .7rem">Cancelar</button>
                 </div>
+
+                <div class="reparticao" id="reparticao-{{ tid }}"></div>
+
                 <div style="font-size:.78rem;color:#7a5c00;margin-top:.4rem">
-                    Dívida total: R$ {{ "%.2f"|format(grupo.total) }} —
-                    pagamento parcial quita as compras mais antigas primeiro;
-                    eventual sobra vira crédito para próximas compras.
+                    Dívida em aberto: R$ {{ "%.2f"|format(grupo.total) }} —
+                    o valor entregue abate as dívidas marcadas, na ordem acima;
+                    só vira crédito o que sobrar depois de todas elas cobertas.
+                    <a href="/caixa/fiados/extrato/{{ tid }}">Extrato</a>
                 </div>
             </form>
         </div>
@@ -271,31 +330,34 @@
                 <tr>
                     <th>#</th>
                     <th>Data</th>
-                    <th>Valor</th>
+                    <th>Valor original</th>
                     <th>Crédito usado</th>
-                    <th>A pagar</th>
+                    <th>Recebido</th>
+                    <th>Saldo a pagar</th>
                     <th>Caixa</th>
                     <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
                 {% for v in grupo.vendas %}
-                {% set _devido = v.total - (v.fiado_credito_usado or 0) %}
                 <tr>
                     <td>{{ v.id }}</td>
                     <td>{{ v.data_venda|data_br }}</td>
                     <td>R$ {{ "%.2f"|format(v.total) }}</td>
                     <td>{% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}R$ {{ "%.2f"|format(v.fiado_credito_usado) }}{% else %}—{% endif %}</td>
-                    <td style="font-weight:700;color:#c0392b">R$ {{ "%.2f"|format(_devido) }}</td>
+                    <td>{% if v.alocado and v.alocado > 0 %}
+                        <span style="color:#1da851;font-weight:600">R$ {{ "%.2f"|format(v.alocado) }}</span>
+                        {% else %}—{% endif %}</td>
+                    <td style="font-weight:700;color:#c0392b">R$ {{ "%.2f"|format(v.saldo) }}</td>
                     <td>{{ v.caixa_nome }}</td>
                     <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-                        <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return handleQuitarEsta(event, this, {{ v.id }}, {{ "%.2f"|format(_devido) }}">
+                        <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return handleQuitarEsta(event, this, {{ v.id }}, {{ "%.2f"|format(v.saldo) }}">
                             {{ campo_idempotencia() }}
                             <select name="forma_pagamento" style="padding:.1rem .3rem;font-size:.75rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
                                 <option value="especie">Espécie</option>
                                 <option value="pix">PIX</option>
                             </select>
-                            <button class="btn btn-sm btn-secundario">💰 Quitar esta</button>
+                            <button class="btn btn-sm btn-secundario">💰 Quitar o saldo (R$ {{ "%.2f"|format(v.saldo) }})</button>
                         </form>
                         <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
                         {% if e_admin %}
@@ -408,6 +470,48 @@ function handleCredito(event, form) {
     return true;
 }
 
+function atualizarReparticao(form) {
+    if (!form) return;
+    const tid = form.id.split('-').pop();
+    const alvo = document.getElementById('reparticao-' + tid);
+    if (!alvo) return;
+    const entregue = Math.max(0, Math.round((parseFloat(form.querySelector('input[name="valor"]').value) || 0) * 100));
+    const marcadas = Array.from(form.querySelectorAll('input[name="venda_ids"]'))
+        .filter(cb => cb.checked);
+    let restante = entregue;
+    const linhas = [];
+    let saldoRestante = 0;
+    marcadas.forEach(cb => {
+        const saldo = Math.round(parseFloat(cb.dataset.saldo) * 100);
+        const parte = Math.min(saldo, restante);
+        restante -= parte;
+        if (parte > 0 && parte < saldo) saldoRestante += (saldo - parte);
+        if (parte >= saldo && saldo > 0) {
+            linhas.push(`<li><span class="ok">quita</span> #${cb.value} — R$ ${(parte / 100).toFixed(2)}</li>`);
+        } else if (parte > 0) {
+            linhas.push(`<li><span class="parcial">abate parcialmente</span> #${cb.value} — `
+                + `R$ ${(parte / 100).toFixed(2)} de R$ ${(saldo / 100).toFixed(2)}, `
+                + `fica devendo R$ ${((saldo - parte) / 100).toFixed(2)}</li>`);
+        } else {
+            saldoRestante += saldo;
+            linhas.push(`<li><span class="fora">não recebe nada</span> #${cb.value} — `
+                + `continua R$ ${(saldo / 100).toFixed(2)}</li>`);
+        }
+    });
+    let rodape = '';
+    if (restante > 0) {
+        rodape = `<li class="credito">Sobra de R$ ${(restante / 100).toFixed(2)} vira crédito antecipado `
+               + `(o dinheiro entra uma única vez).</li>`;
+    }
+    if (saldoRestante > 0 && restante === 0) {
+        rodape = `<li class="aberto">Ainda restam R$ ${(saldoRestante / 100).toFixed(2)} em saldo devedor.</li>`;
+    }
+    alvo.innerHTML = (linhas.length || rodape)
+        ? `<div class="reparticao-titulo">Distribuição deste dinheiro:</div><ul>${linhas.join('')}${rodape}</ul>`
+        : `<div class="reparticao-titulo">Nenhuma dívida marcada — o valor inteiro viraria crédito. `
+        + `Use “➕ Crédito” para isso.</div>`;
+}
+
 function handlePagarDivida(event, form, total) {
     const fp = form.querySelector('select[name="forma_pagamento"]').value;
     const val = parseFloat(form.querySelector('input[name="valor"]').value);
@@ -415,11 +519,12 @@ function handlePagarDivida(event, form, total) {
     const dest = lerDestino(fp);
     if (!dest) { event.preventDefault(); return false; }
     injetarDestino(form, dest);
+    atualizarReparticao(form);
     if (val < total) {
         if (!confirm(
             `Pagamento parcial: R$ ${val.toFixed(2)} de R$ ${total.toFixed(2)}.\n` +
-            'As compras mais antigas serão quitadas primeiro.\n' +
-            'Eventuais centavos que não cobrirem a próxima compra viram crédito.\n\nConfirmar?'
+            'O valor abate as dívidas marcadas, na ordem da tela; a última fica com saldo.\n' +
+            'Só vira crédito o que sobrar depois de cobrir todas as marcadas.\n\nConfirmar?'
         )) { event.preventDefault(); return false; }
     }
     if (fp === 'pix') {

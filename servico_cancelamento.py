@@ -140,28 +140,42 @@ def avaliar(conn, venda_id: int) -> dict:
             motivos.append("Venda de fiado anterior a esta entrega: sem instante de "
                            "registro não é possível provar que não houve recebimento depois dela.")
         else:
-            fin = conn.execute(
-                """SELECT COUNT(*) AS c FROM financeiro_movimentacoes
-                   WHERE tipo = 'entrada' AND descricao = %s""",
-                (f"Recebimento fiado — venda #{venda_id}",)
-            ).fetchone()["c"]
-            if fin:
-                motivos.append("Há recebimento lançado especificamente para esta venda — "
-                               "cancelamento com reembolso é outro fluxo.")
+            # TASK_012 §4: o vínculo durável (fiado_alocacao) é a prova de que
+            # este recebimento existiu — antes dela a avaliação dependia só do
+            # texto da descrição, que o fluxo de quitação agrupada nunca emitiu.
+            aloc = conn.execute(
+                """SELECT COUNT(*) AS c, COALESCE(SUM(valor), 0) AS v
+                   FROM fiado_alocacao
+                   WHERE tipo = 'divida' AND venda_id = %s""",
+                (venda_id,)
+            ).fetchone()
+            if aloc["c"]:
+                motivos.append(f"Esta dívida já recebeu pagamento "
+                               f"(R$ {_moeda(aloc['v']):.2f} alocado em lançamento vinculado a ela) — "
+                               "estorno/recebimento é outro fluxo.")
             else:
-                # criada_em é truncada a segundos (arredonda para CIMA); com uma
-                # margem de 1 s nenhum movimento posterior à venda escapa da
-                # comparação — política conservadora: sem comprovação, bloqueia.
-                pos = conn.execute(
-                    """SELECT COUNT(*) AS c FROM fiado_credito_mov
-                       WHERE trabalhador_id = %s
-                         AND created_at::timestamp
-                             >= %s::timestamp - INTERVAL '1 second'""",
-                    (venda["fiado_trabalhador_id"], venda["criada_em"])
+                fin = conn.execute(
+                    """SELECT COUNT(*) AS c FROM financeiro_movimentacoes
+                       WHERE tipo = 'entrada' AND descricao = %s""",
+                    (f"Recebimento fiado — venda #{venda_id}",)
                 ).fetchone()["c"]
-                if pos:
-                    motivos.append("Há movimento de crédito do trabalhador posterior à venda "
-                                   "(ex.: saldo de pagamento parcial) — a relação não é comprovável.")
+                if fin:
+                    motivos.append("Há recebimento lançado especificamente para esta venda — "
+                                   "cancelamento com reembolso é outro fluxo.")
+                else:
+                    # criada_em é truncada a segundos (arredonda para CIMA); com uma
+                    # margem de 1 s nenhum movimento posterior à venda escapa da
+                    # comparação — política conservadora: sem comprovação, bloqueia.
+                    pos = conn.execute(
+                        """SELECT COUNT(*) AS c FROM fiado_credito_mov
+                           WHERE trabalhador_id = %s
+                             AND created_at::timestamp
+                                 >= %s::timestamp - INTERVAL '1 second'""",
+                        (venda["fiado_trabalhador_id"], venda["criada_em"])
+                    ).fetchone()["c"]
+                    if pos:
+                        motivos.append("Há movimento de crédito do trabalhador posterior à venda "
+                                       "(ex.: saldo de pagamento parcial) — a relação não é comprovável.")
 
     # ── reversão de estoque: só com baixa original determinável por item ─────
     itens = conn.execute(

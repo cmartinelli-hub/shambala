@@ -364,7 +364,7 @@ def m8a():
     _sem_efeitos(antes, _snapshot(vid, (p.suco,), trabalhador_id=trab, sessoes=(sess,)), vid)
 
 
-@teste("M8b pagamento parcial transformado em crédito solto: bloqueado (fiado_pago não prova nada)")
+@teste("M8b pagamento parcial destinado à dívida: bloqueado (o recebimento está alocado)")
 def m8b():
     p = pdv()
     trab = _trabalhador("fiado parcial")
@@ -374,10 +374,13 @@ def m8b():
             {"valor": "10.00", "forma_pagamento": "especie",
              "sessao_id": str(sess)})
     antes = _snapshot(vid, (p.suco,), trabalhador_id=trab, sessoes=(sess,))
-    assert_eq(antes["venda"]["fiado_pago"], False, "venda segue não paga (flag engana)")
+    assert_eq(antes["venda"]["fiado_pago"], False, "venda segue não paga (abatida em parte)")
     st, corpo, _ = _cancelar(vid, motivo="tentar cancelar fiado com recebimento parcial")
     assert_eq(st, 200, "recusado")
-    assert "movimento de crédito" in corpo or "comprovável" in corpo, "motivo claro"
+    # TASK_012 §4: o pagamento parcial agora ABATE a dívida e fica registrado
+    # como alocação vinculada ao lançamento — o motivo deixou de ser a
+    # heurística do "movimento de crédito posterior".
+    assert ("já recebeu pagamento" in corpo and "alocado" in corpo), "motivo claro"
     _sem_efeitos(antes,
                  _snapshot(vid, (p.suco,), trabalhador_id=trab, sessoes=(sess,)), vid)
 
@@ -859,6 +862,20 @@ def _limpar():
     # Os eventos da sessão (recebimentos em 'eventos') apontam para o
     # financeiro e para a sessão: saem primeiro, na mesma varredura.
     with conectar() as conn:
+        # TASK_012 §4: as alocações referenciam lançamento, venda e trabalhador
+        # com RESTRICT (é a guarda que impede apagar dinheiro vinculado) — por
+        # isso saem primeiro na varredura de limpeza.
+        conn.execute(
+            """DELETE FROM fiado_alocacao
+               WHERE financeiro_id IN (SELECT id FROM financeiro_movimentacoes
+                                        WHERE caixa_id IN (SELECT id FROM caixas WHERE nome LIKE %s)
+                                           OR descricao LIKE %s
+                                           OR descricao LIKE 'Recebimento fiado — venda #%%')
+                  OR venda_id IN (SELECT id FROM vendas_pdv
+                                   WHERE caixa_id IN (SELECT id FROM caixas WHERE nome LIKE %s))
+                  OR trabalhador_id IN (SELECT id FROM trabalhadores
+                                         WHERE nome_completo LIKE %s)""",
+            (f"{PREFIXO}%", f"%{PREFIXO}%", f"{PREFIXO}%", f"{PREFIXO}%"))
         conn.execute(
             "DELETE FROM vendas_pdv_cancelamento WHERE venda_id IN "
             "(SELECT id FROM vendas_pdv WHERE caixa_id IN "
