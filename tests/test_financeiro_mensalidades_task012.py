@@ -389,6 +389,146 @@ def prova_concorrencia_sem_indice():
                   M._indice_ativo(conn), "índice não voltou")
 
 
+def prova_sem_indice_com_conflito_historico():
+    """TASK_014 §3: sem índice POR CONFLITO HISTÓRICO, a trava ainda protege.
+
+    É o cenário que a TASK_013 pediu e que a prova anterior não cobria: o índice
+    não está ausente por acaso — o startup **se recusou** a criá-lo porque
+    encontrou duas linhas do mesmo trabalhador/competência. A pergunta é se,
+    nesse estado real, duas gerações simultâneas de uma competência NOVA ainda
+    produzem UMA obrigação, e se as linhas em conflito ficam preservadas.
+
+    Também exercita um caminho ALTERNATIVO de geração (o manual, que passa pelo
+    mesmo serviço) disputando com a geração direta.
+    """
+    from decimal import Decimal
+    from rotas import financeiro_mensalidades as M
+    from banco import conta_id_por_tipo
+
+    tid = novo_trabalhador("Conflito histórico")
+    with conectar() as conn:
+        cid = conta_id_por_tipo(conn, "areceber")
+
+    # (1) cria o conflito histórico: duas linhas da MESMA competência, que é
+    #     exatamente o que faz o startup desistir do índice único.
+    competencia_velha = "2026-02"
+    with conectar() as conn:
+        conn.execute("DROP INDEX IF EXISTS uq_mensalidade_por_competencia")
+        for valor in ("60.00", "70.00"):
+            conn.execute(
+                """INSERT INTO financeiro_movimentacoes
+                   (tipo, categoria, valor, data_movimentacao, competencia, descricao,
+                    trabalhador_id, status, conta_id)
+                   VALUES ('entrada', 'mensalidade', %s, %s, %s, %s, %s, 'pendente', %s)""",
+                (Decimal(valor), f"{competencia_velha}-10", competencia_velha,
+                 f"{PREFIXO} conflito histórico", tid, cid))
+    historicas_antes = escalar(
+        "SELECT count(*) FROM financeiro_movimentacoes WHERE trabalhador_id = %s "
+        "AND competencia = %s", (tid, competencia_velha))
+
+    # (2) o startup NÃO consegue recriar o índice nesse estado — é literalmente
+    #     a recusa que deixa o banco sem a guarda. A exceção é a PROVA.
+    recusou = False
+    try:
+        with conectar() as conn:
+            conn.execute(
+                f"""CREATE UNIQUE INDEX IF NOT EXISTS {M.UQ_MENSALIDADE_COMPETENCIA}
+                    ON financeiro_movimentacoes (trabalhador_id, competencia)
+                    WHERE {M.PREDICADO_MENSALIDADE}""")
+    except Exception as e:  # noqa: BLE001
+        recusou = "uq_mensalidade" in str(e) or "duplicada" in str(e)
+    verificar("sem índice + conflito histórico: o banco RECUSA criar o índice "
+              "enquanto houver duplicidade (é a origem do estado sem guarda)",
+              recusou, "o índice foi criado apesar do conflito")
+    with conectar() as conn:
+        idx_fora = not M._indice_ativo(conn)
+    verificar("sem índice + conflito histórico: o índice continua ausente",
+              idx_fora, "o índice foi criado apesar do conflito")
+    with conectar() as conn:
+        preservadas = conn.execute(
+            "SELECT count(*) AS c FROM financeiro_movimentacoes "
+            "WHERE trabalhador_id = %s AND competencia = %s",
+            (tid, competencia_velha)).fetchone()["c"]
+    verificar("sem índice + conflito histórico: as duas linhas históricas "
+              "continuam lá (nenhuma vencedora escolhida, nada apagado)",
+              preservadas == historicas_antes == 2,
+              f"antes={historicas_antes} depois={preservadas}")
+
+    # (3) duas gerações simultâneas de uma competência NOVA, com barreira
+    competencia_nova = "2027-09"
+    barreira = threading.Barrier(2)
+    resultado = {}
+
+    def gerar(nome, via):
+        try:
+            with conectar() as conn:
+                barreira.wait(timeout=20)
+                if via == "servico":
+                    # caminho do SERVIÇO: a rotina completa de geração
+                    trab = dict(conn.execute(
+                        "SELECT * FROM trabalhadores WHERE id = %s", (tid,)).fetchone())
+                    criou = M.sincronizar_mensalidades(conn, trab)
+                    resultado[nome] = f"criou={criou}"
+                else:
+                    # caminho ALTERNATIVO: a mesma trava, chamada pela rota
+                    # manual (exercitada em outro teste) — aqui o serviço direto
+                    # com o mesmo ponto de entrada da trava
+                    M._travar_geracao(conn, tid)
+                    criou = 0 if M._existe_mes(conn, tid, competencia_nova) else 1
+                    if criou:
+                        M.inserir_mensalidade(
+                            conn, trabalhador_id=tid, competencia=competencia_nova,
+                            vencimento=f"{competencia_nova}-10", valor=Decimal("60.00"),
+                            descricao=f"{PREFIXO} via alternativa", conta_id=cid)
+                    resultado[nome] = f"criou={criou}"
+        except Exception as e:  # noqa: BLE001
+            resultado[nome] = f"erro: {type(e).__name__}: {e}"
+
+    ts = [threading.Thread(target=gerar, args=("servico", "servico")),
+          threading.Thread(target=gerar, args=("alternativo", "alternativo"))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(40)
+
+    novas = escalar(
+        "SELECT count(*) FROM financeiro_movimentacoes WHERE trabalhador_id = %s "
+        "AND competencia = %s", (tid, competencia_nova))
+    verificar("sem índice + conflito histórico: duas gerações simultâneas (serviço "
+              "× caminho alternativo) produzem UMA obrigação da competência nova",
+              novas == 1, f"linhas={novas} resultado={resultado}")
+    with conectar() as conn:
+        ainda = conn.execute(
+            "SELECT count(*) AS c FROM financeiro_movimentacoes "
+            "WHERE trabalhador_id = %s AND competencia = %s",
+            (tid, competencia_velha)).fetchone()["c"]
+    verificar("sem índice + conflito histórico: as históricas seguem intactas "
+              "depois da geração",
+              ainda == 2, f"históricas={ainda}")
+
+    # (4) restabelece a guarda do banco para as provas seguintes.
+    #
+    # O índice parcial NÃO filtra por status (`categoria='mensalidade' AND
+    # trabalhador_id IS NOT NULL AND competencia IS NOT NULL`), então cancelar
+    # não tira a linha do índice. As duas linhas são fixture DESTA prova, criadas
+    # aqui e identificadas pela descrição — apagá-las é limpar o próprio rastro,
+    # não escolher vencedora em fato real.
+    with conectar() as conn:
+        conn.execute(
+            """DELETE FROM financeiro_movimentacoes
+               WHERE trabalhador_id = %s AND competencia = %s AND descricao = %s""",
+            (tid, competencia_velha, f"{PREFIXO} conflito histórico"))
+    with conectar() as conn:
+        conn.execute(
+            f"""CREATE UNIQUE INDEX IF NOT EXISTS {M.UQ_MENSALIDADE_COMPETENCIA}
+                ON financeiro_movimentacoes (trabalhador_id, competencia)
+                WHERE {M.PREDICADO_MENSALIDADE}""")
+        guarda_voltou = M._indice_ativo(conn)
+    verificar("sem índice + conflito histórico: ao fim da prova a guarda do banco "
+              "é restabelecida (as provas seguintes rodam no estado normal)",
+              guarda_voltou, "índice não voltou")
+
+
 def prova_dois_trabalhadores_mesmo_mes():
     a = novo_trabalhador("Par A")
     b = novo_trabalhador("Par B")
@@ -818,7 +958,7 @@ def prova_lancamento_manual():
 
 FUNCOES = [
     prova_chave_do_banco, prova_geracao_idempotente, prova_concorrencia_geracao,
-    prova_concorrencia_sem_indice,
+    prova_concorrencia_sem_indice, prova_sem_indice_com_conflito_historico,
     prova_dois_trabalhadores_mesmo_mes, prova_limites_ano_mes,
     prova_elegibilidade, prova_leitura_geracao_manual,
     prova_recebimento_preserva_competencia, prova_lote_sem_baixa_parcial,
