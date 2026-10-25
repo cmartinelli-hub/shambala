@@ -1,0 +1,91 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025021105-2492825 (identifica ESTA execução nas provas)
+  árvore ..: 416bf46ab27100576b268b29fd70eb44a56a1633-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025021105-2492825
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025021105-2492825'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_financeiro_mensalidades_task012.py
+  PASS  banco: índice único de mensalidade por competência existe
+  PASS  banco: segunda linha do mesmo trabalhador/competência é recusada
+  PASS  banco: OUTRO trabalhador na MESMA competência é legítimo
+  PASS  banco: MESMO trabalhador em OUTRA competência é legítimo
+  PASS  banco: competência cancelada também está sob a chave (não é recriada)
+  PASS  geração cria exatamente 13 competências
+  PASS  geração: cada linha traz a competência do seu mês (sem depender de texto)
+  PASS  geração: vencimento usa o dia do trabalhador na competência certa
+  PASS  geração: todas pendentes na conta de a receber
+  PASS  geração repetida não cria segunda cobrança
+  PASS  concorrência: as duas gerações responderam
+  PASS  concorrência: duas gerações simultâneas criam 13 linhas, não o dobro
+  PASS  concorrência: nenhuma competência ficou com duas linhas
+  PASS  dois trabalhadores no mesmo mês: uma obrigação cada
+  PASS  limite: dezembro + 1 = janeiro do ano seguinte
+  PASS  limite: virada de ano na janela de 13 meses
+  PASS  limite: dia 31 em fevereiro não-29 vira 28
+  PASS  limite: fevereiro de ano bissexto preserva dia 29
+  PASS  limite: mês curto com dia 30 vira 28 (sem inventar dia)
+  PASS  competência: normalização aceita '2026-3', '2026-03' e data cheia
+  PASS  competência: período inválido é recusado, não adivinhado
+  PASS  inativo não gera cobrança (regra existente preservada)
+  PASS  valor zero não gera cobrança
+  PASS  rota de geração recusa inativo com mensagem e sem escrita
+  PASS  GET da tela de mensalidades responde 200
+  PASS  GET NÃO gera cobrança (leitura sem efeito colateral)
+  PASS  geração manual cria o período e informa quantos são novos
+  PASS  tela diz 'já estão geradas' quando não há nada novo
+  PASS  tela traduz a recusa de inativo em linguagem de operador
+  PASS  tela de lançamento traduz período inválido
+  PASS  tela de lançamento traduz mensalidade já registrada
+  PASS  recebimento individual conclui pela rota
+  PASS  recebimento preserva a competência da obrigação
+  PASS  recebimento registra forma, conta, data de pagamento e sessão
+  PASS  as demais continuam pendentes (baixa só do selecionado)
+  PASS  reenvio do recebimento não gera segundo evento nem segundo dinheiro
+  PASS  lote baixa exatamente as pendências selecionadas
+  PASS  lote sem baixa parcial oculta: o total é a soma do que foi baixado
+  PASS  lote não regrava a que já estava paga (data e forma preservadas)
+  PASS  um evento por mensalidade baixada no lote
+  PASS  lote de seleção já recebida é recusado sem escrever
+  PASS  lote que falha no meio devolve erro do servidor
+  PASS  falha no meio do lote não baixa NENHUMA mensalidade
+  PASS  falha no meio do lote não grava evento nenhum
+  PASS  depois de removido o obstáculo, o mesmo lote conclui
+  PASS  duplicidade histórica: nenhuma linha é apagada, fundida ou preterida
+  PASS  duplicidade histórica: o índice único NÃO é criado
+  PASS  duplicidade histórica: o impedimento é registrado no startup
+  PASS  startup com conflito NÃO aborta: a migração terminou e o app seguiu vivo
+  PASS  rotulamento não escolhe vencedora: linha de grupo disputado segue sem rótulo
+  PASS  duplicidade histórica: a tela mostra o conflito, sem resolvê-lo
+  PASS  sem a constraint, o serviço ainda não duplica o mês em conflito
+  PASS  conflito resolvido: o grupo virou linha única, foi rotulada e a guarda do banco voltou no próximo startup
+  PASS  backfill: competência rótulada do vencimento já gravado
+  PASS  backfill: vencimento ilegível NÃO é reinterpretado (fica NULL)
+  PASS  backfill: o startup informa as linhas que não pôde rotular
+  PASS  backfill é idempotente: rodar de novo não altera nada
+  PASS  cancelamento de mensalidade futura conclui pela rota
+  PASS  mês cancelado NÃO é recriado pela geração (regra existente)
+  PASS  reenvio do cancelamento não muda nada
+  PASS  mensalidade manual sem período legível é recusada com mensagem
+  PASS  mensalidade manual entra com a competência do período
+  PASS  segunda mensalidade manual do mesmo mês é recusada sem escrita
+  PASS  a recusa por duplicidade não consome a chave da tentativa
+
+64/64 verificações aprovadas (TASK_012 §3 — mensalidades por competência)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_financeiro_mensalidades_task012.py: rc=0
+tests/rodar_testes.sh, linha 89: 2492906 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok

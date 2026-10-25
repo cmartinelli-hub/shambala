@@ -1,0 +1,836 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025014857-2398968 (identifica ESTA execução nas provas)
+  árvore ..: 416bf46ab27100576b268b29fd70eb44a56a1633-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025014857-2398968
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025014857-2398968'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_tres_passes.py
+  PASS  U1 calcular_sessoes_com_passe: 1, 2, 3 e 4 sessões usam o piso corretamente
+  PASS  U2 datas_agendamento respeita dias cadastrados (seg/qua) e as frequências
+  PASS  U3 datas_agendamento com calendário diferente (só quinta) não presume seg/qua
+  PASS  U4 data_atendimento_valida aceita só dia cadastrado e é dinâmica
+  PASS  P1 plano de 1 sessão: 1 passe, 1 data em dia de atendimento
+  PASS  P2 plano de 2 sessões: 2 passes (sem criar sessão extra)
+  PASS  P3 plano de 3 sessões: exatamente 3 passes
+  PASS  P4 plano de 4 sessões: 3 passes (o 4º opcional)
+  PASS  P5 plano de 6 sessões com 3 passes configurados: 3 passes
+  PASS  P6 plano com todas as sessões com passe (config negativa/legado)
+  PASS  P7 todas as datas geradas caem em dia de atendimento (semanal/quinzenal/mensal)
+  PASS  P8 frequência avulsa gera uma sessão em dia de atendimento (passe aplicado)
+  PASS  P9 plano com múltiplas pessoas gera agenda única e correta
+  PASS  P10 alta e cancelamento cancelam os agendamentos pendentes
+  PASS  A1 /agenda/novo NÃO contorna o piso: 4 sessões => 3 passes (fecha D1/S14)
+  PASS  A2 /agenda/novo respeita os dias de atendimento (fecha D2/S18)
+  PASS  A3 /agenda/novo bloqueia duplicidade para a pessoa (S15 preservado)
+  PASS  E1 editar o plano (config 3 -> 0) não remove a obrigatoriedade (fecha S11)
+  PASS  E2 acrescentar sessão não apaga o piso (plano de 4 -> 5 sessões)
+  PASS  E3 reagendar mantém todas as datas em dia de atendimento (fecha S9)
+  PASS  E4 reagendar não remove passe já marcado (acompanha a ordem das sessões)
+  PASS  D1 reenvio do Fraterno NÃO duplica plano (fecha S2)
+  PASS  D2 acolhimento SEM plano continua sem gerar passe (R2)
+  PASS  D3 acolhimento novo (outra data) cria plano novo legitimamente
+  PASS  D4 acolhimento com OUTRO médium cria plano novo legitimamente
+  PASS  D5 duas requisições CONCORRENTES não criam plano duplicado
+  PASS  R1 falhas: registrar falta não altera a marcação de passe (escopo intocado)
+
+27/27 testes passaram
+-- test_plano_unico.py
+  PASS  G1 rota do médium: 2ª falta consecutiva encerra o plano e cancela pendentes
+  PASS  G2 encerrar_dia: última sessão agendada de hoje vira falta e fecha o plano
+  PASS  G3 falta alternada com realização não encerra (precisa ser consecutiva)
+  PASS  G4 agendamentos futuros não contam para a regra
+  PASS  G5 unidade: exatamente 2 faltas vencidas encerram (fonte única)
+  PASS  F1 novo acolhimento cria plano e invalida o plano ativo anterior
+  PASS  F2 reenvio da MESMA sessão de acolhimento não duplica nem cancela o próprio plano
+  PASS  F3 acolhimento SEM médium não toca nos planos ativos
+  PASS  N1 /agenda/novo recusa pessoa que já tem plano ativo
+  PASS  N2 planos do médium recusa lote com pessoa em plano ativo (sem criação parcial)
+  PASS  C1 cancelar plano: admin cancela o plano e os pendentes
+  PASS  C2 cancelar plano: não-admin recebe 403 e o plano permanece ativo
+
+12/12 testes passaram (plano único)
+-- test_permissoes.py
+  PASS  P1 grupo com apenas agenda: entra em /agenda, 403 em todos os demais módulos
+  PASS  P2 auxiliares que não exigiam nada agora exigem o módulo
+  PASS  P3 não logado cai em /login (303), não em 403
+  PASS  P4 admin mantém bypass em todos os módulos
+  PASS  P7 POST cobra 'escrever': somente-leitura navega mas não grava
+  PASS  P8 grupo com escrever: POST passa pelo guard
+  PASS  P5 menu: usuário restrito vê só Agenda; admin vê tudo
+  PASS  P6 pessoas com leitura do módulo entram; escrita não é exigida pelo guard
+
+8/8 testes passaram (permissões)
+-- test_agenda_medium.py
+  PASS  CB1 /buscar devolve o médium do plano ativo (e null sem plano)
+  PASS  CB2 sem agenda.medium: 403 na tela e no lançar; com permissão: 200
+  PASS  CB3 lançar com plano ativo do médium acrescenta 1 sessão sem criar plano
+  PASS  CB3b duplicidade na mesma data é recusada sem inserir
+  PASS  CB4 lançar sem plano cria plano ativo com agenda e piso de 3 passes
+  PASS  CB5 pessoa com plano de outro médium é recusada, sem criar nada
+  PASS  CB6 admin vincula médiuns do usuário e os chips respeitam o vínculo
+  PASS  CB9 vínculo limita a agenda listada e recusa lançar fora das suas agendas
+  PASS  CB7 data em dia sem atendimento é recusada e não cria nada
+  PASS  CB8 tela exibe os atendidos do último dia de atendimento do médium
+
+10/10 testes passaram (agenda do médium)
+-- test_presenca_trabalhadores.py
+  PASS  U1 data sem dias_trabalho: registra presença sem criar dia de atendimento
+  PASS  U2 trabalhador inexistente e U3 inativo: recusa sem escrita indevida
+  PASS  U4 repetição: um registro, primeira chegada preservada, criado=False
+  PASS  U5 ausência explícita seguida de chegada: vira presente com horário
+  PASS  U6 presença histórica sem horário: repetição não fabrica hora
+  PASS  U7 concorrência: N requisições simultâneas geram exatamente 1 registro
+  PASS  U8 virada UTC/São Paulo: data é a de São Paulo, não do sistema
+  PASS  M1 migração: datas derivadas dos dias antigos, fatos preservados, unicidade trocada
+  PASS  M2 segunda execução da migração: sem duplicação, perda ou erro
+  PASS  M3 dados ambíguos: relata o caso concreto e NÃO altera o schema
+  PASS  M4 banco novo: schema nasce compatível com o fluxo (sem dia obrigatório)
+  PASS  H1/H2 dia fechado e sem agenda: tela abre, presente registra, repetição avisa
+  PASS  H3 dia aberto permanece aberto: presença não cria nem reabre dias
+  PASS  H4 inativo pela tela: recusa clara, sem escrita
+  PASS  H5 rotas legadas não gravam mais: URLs antigas dão 404
+  PASS  H6 permissões: sem módulo recusa (inclusive legadas); recepção não vira cadastro
+  PASS  H7 período vazio no relatório geral: contagens zeradas, sem trazer outros meses
+  PASS  H8 filtro de dias: segunda/quarta/domingo batem com ISODOW (sem deslocamento)
+  PASS  H9 presença sem dia de atendimento aparece no histórico individual
+
+19/19 testes passaram (presença TASK_001)
+-- test_codigo_trabalhador.py
+  PASS  K1 startup cria o schema e não emite nenhum código (mesmo com ativos)
+  PASS  K2 preparar duas vezes: gera N, depois zero e nada muda nos já emitidos
+  PASS  K3 cadastro de ativo e reativação ganham código; inativação reserva o código
+  PASS  K4 edição, reimpressão e reativação preservam exatamente o mesmo código
+  PASS  K5 0047: zeros iniciais sobrevivem ao banco, à tela, ao QR e à resolução
+  PASS  K6 oito emissões concorrentes: códigos distintos, um ativo por pessoa
+  PASS  K6b dois cliques na mesma pessoa resultam em UM único código (ambos preservam)
+  PASS  K6c duzentas emissões em lote: nenhum código repetido, todos no formato
+  PASS  K7 troca exige confirmação e é atômica: novo resolve, antigo fica retirado
+  PASS  K8/K9/K10 espaço esgotado: retirado nunca volta, troca que falha mantém o atual
+  PASS  K11 GETs repetidos de carteirinha, lote e lista não escrevem nada
+  PASS  K12 RBAC: leitura não escreve, sem módulo é 403 e a recepção não vira cadastro
+  PASS  K13 cartão traz nome/código/QR da mesma pessoa e nenhum dado financeiro ou documento
+  PASS  K14 QR da carteirinha decodifica exatamente os quatro dígitos do trabalhador
+  PASS  K15 lote A4 divide em folhas de 10, avisa bloqueados e não imprime inativos
+  PASS  K16 PDF de 70 carteirinhas: sete folhas e todos os QRs decodificados do papel
+  PASS  K18 FK de códigos nasce RESTRICT e a migração corrige CASCADE sem tocar nos dados
+  PASS  K19 RESTRICT: excluir quem tem código é recusado; inativar/reativar segue funcionando
+
+18/18 testes passaram (TASK_002 códigos e carteirinhas)
+-- test_terminal_presenca.py
+  PASS  T1 ativação emite a sessão restrita e encerra a sessão comum daquele navegador
+  PASS  T1b encerrar derruba só o aparelho que encerrou
+  PASS  T1a ativação recusada sem permissão de escrita e para anônimo
+  PASS  T2 token forjado e sessão vencida: nada de dado pessoal, nada de escrita
+  PASS  T3 terminal não alcança cadastro, carteirinha, financeiro, menu nem relatórios
+  PASS  T4 QR e teclado identificam a mesma pessoa; zeros iniciais não viram inteiro
+  PASS  T5 atual, retirado, inexistente, malformado e inativo: mensagens e escritas
+  PASS  T6 sem dia, dia aberto e dia fechado: presença aceita, atendimento intocado
+  PASS  T7 repetição por QR e teclado preserva a primeira chegada e a origem
+  PASS  T7b concorrência terminal × recepção: uma presença e a primeira chegada
+  PASS  T8 escrita confirmada e resposta perdida: repetir recupera sem duplicar
+  PASS  T8b ausência explícita seguida de chegada: presente com horário e origem
+  PASS  T9 troca de código concorrente: o retirado não é aceito depois da troca
+  PASS  T9b inativação concorrente: chegada recusada, nada gravado
+  PASS  T10 migração duas vezes: coluna nova, histórico intacto, origem não inventada
+  PASS  T10b registro manual da recepção tem origem 'recepcao'; origem inválida é recusada
+  PASS  T11 data e hora do servidor em America/Sao_Paulo, não o fuso da sessão
+  PASS  T12 sucesso devolve só nome, foto, data e horário; nada do cadastro
+
+18/18 testes passaram (TASK_003 terminal — sessão e backend)
+-- test_terminal_leitor.py
+  PASS  L1 QR real da carteirinha, com zero inicial, é decodificado e registra
+  PASS  L2 carteirinha mantida no enquadro: um envio só, sem som incessante
+  PASS  L3 duas carteirinhas consecutivas: a segunda é atendida na hora
+  PASS  L4 repetição: mantém o primeiro horário e diz que já estava registrada
+  PASS  L5 QR de outra coisa (URL): recusado, sem abrir link e sem envio
+  PASS  L6 código inexistente: 'Código não encontrado' e nada gravado
+  PASS  L7 carteirinha substituída: aviso próprio, sem revelar o nome
+  PASS  L8 cadastro inativo lido por câmera: 'Cadastro inativo; procure a recepção'
+  PASS  L9 foto do cadastro aparece na confirmação (referência local, sem CDN)
+  PASS  L10 teclado: quatro posições, apagar, limpar, teclado físico, zeros preservados
+  PASS  L11 entrada incompleta não é completada: confirmar pede os quatro números
+  PASS  L12 teclado com 0000: os quatro caracteres chegam intactos ao servidor
+  PASS  L13 envio em andamento pausa as duas entradas; sem resposta, a tela não trava
+  PASS  L14 sem resposta do servidor: 'Não foi possível confirmar', sem falso sucesso
+  PASS  L15 HTML de login no lugar do JSON: pede reativação, sem carregar para sempre
+  PASS  L16 servidor 500: mensagem clara, interface liberada, teclado como alternativa
+  PASS  L17 permissão negada pelo navegador: aviso e teclado disponível
+  PASS  L18 nenhuma câmera no aparelho: avisa e segue operando pelo teclado
+  PASS  L19 câmera ocupada: diz para liberar e Reiniciar câmera resolve
+  PASS  L20 alternar câmera, teclado e aba: sem trilha nem laço duplicado
+  PASS  L21 quem ativou perde o acesso: o aparelho para e pede nova ativação
+  PASS  L22 retrato e paisagem, smartphone e tablet: nada cortado, nada escondido
+  PASS  L23 a tela não tem navegação geral nem dado de cadastro
+  PASS  L24 endereço HTTP da LAN (o do DEV): câmera barrada pelo navegador, teclado registra
+
+24/24 testes passaram (TASK_003 terminal — leitor no navegador)
+  evidências: /home/claudio/Documentos/evidencias-task003-terminal
+-- test_correcoes_presenca.py
+  PASS  C1 origem administrativa é recusada na chegada normal
+  PASS  C2 repetição normal: primeiro horário e origem preservados, zero auditoria
+  PASS  C3 ausência explícita redesenhada: criada, repetida e recusada sobre presença
+  PASS  C4 corrigir horário preserva origem; auditoria guarda antes/depois
+  PASS  C5 presente→ausente limpa horários no fato; anteriores vivem na auditoria
+  PASS  C6 ausência→presença e inclusão retroativa usam origem administrativa
+  PASS  C7 recusas: motivo vazio, hora inválida, data futura — sem escrita parcial
+  PASS  C8 horário desconhecido continua desconhecido até correção explícita
+  PASS  C9 anulação: volta a Sem registro; chegada legítima recria sem apagar histórico
+  PASS  C10 conflito: formulário aberto sobre estado velho não sobrescreve nada
+  PASS  C11 concorrência correção x chegada do terminal: serializa, um resultado coerente
+  PASS  C12 falha ao escrever a auditoria: nenhuma alteração de presença persiste
+  PASS  C13 inativo com histórico: corrigível, sem reativar e sem código novo
+  PASS  C14 gestão: data consultada, origem traduzida, contagem e somente leitura no passado
+  PASS  C15 POST ausente pela tela: desfechos do serviço traduzidos em aviso
+  PASS  C16 correções protegidas: anônimo, sem módulo, só-leitura e terminal
+  PASS  C17 fluxo HTTP do formulário: corrigir, anular, conflito e recusa com motivo vazio
+  PASS  C18 geral: sem percentual, 7 dias no filtro, inativo com fato listado, origem filtra
+  PASS  C19 individual: dia da semana correto em PT, origem traduzida, sem contar anulados
+  PASS  C20 relatórios validam período e parâmetros sem 500
+  PASS  M1 tabela de correções nasce no schema novo e é idempotente
+
+21/21 testes passaram (correções TASK_004)
+-- test_gestao_correcoes_navegador.py
+  PASS  N1 gestão aberta sem dia de atendimento: origem, contador e cards corretos
+  PASS  N2 dia passado: consulta somente leitura, inativo com fato visível
+  PASS  N3 busca e filtros server-side preservados na navegação
+  PASS  N4 atualização parcial: muda sem recarregar; rede caída avisa e preserva
+  PASS  N5 fluxo de correção pela tela: corrigir horário, confirmar, histórico
+  PASS  N6 conflito: fato mudou depois de abrir o formulário — nada é sobrescrito
+  PASS  N7 recusas na tela: motivo vazio não sai do navegador; hora errada é recusada
+  PASS  N8 ficha: selo ajustado, origem por registro e histórico de alterações
+  PASS  N9 relatório geral: nota limpa, seletor só aceita cadastro da lista; impressão
+  PASS  N10 relatório individual: dia da semana em PT, origem, deep link e impressão
+  PASS  N11 medidas reais: gestão do dia e correção utilizáveis no smartphone
+
+11/11 testes passaram (TASK_004 — gestão e correções no navegador)
+  evidências: /home/claudio/Documentos/evidencias-task004-gestao-correcoes
+-- test_pdv_precos_servidor.py
+  PASS  S1 cesta honesta: servidor recalcula e bate com o cadastro
+  PASS  S2 preço adulterado: DivergenciaPreco com total do servidor
+  PASS  S3 nome mentiroso: snapshot usa o nome do cadastro
+  PASS  S4 payload sem campos de preço: servidor é a única fonte
+  PASS  S5 duplicatas agregadas: uma linha, quantidade somada
+  PASS  S6 exibido x servidor: soma linha a linha antes da agregação
+  PASS  S7 produto inexistente ou inativo: recusado
+  PASS  S8 cadastro com preço zero ou negativo: recusado
+  PASS  S9 quantidades inválidas e teto de quantidade
+  PASS  S10 teto NUMERIC(10,2): total acima de R$ 99.999.999,99 é recusado
+  PASS  S11 centavos: Decimal com ROUND_HALF_UP, duas casas
+  PASS  S12 caixa de preço aberto aceita valor declarado; catálogo é barrado
+  PASS  S13 cesta vazia ou malformed: recusada antes de tocar o banco
+  PASS  S14 falha na última escrita: venda, sessão e estoque somem juntos
+  PASS  R1 venda honesta 2×12,50: total persistido 25,00
+  PASS  R2 FIN-01: preço adulterado não baixa e não cobra
+  PASS  R3 preço mudou depois da cesta: revisão sem escrita
+  PASS  R4 valores enviados são ignorados: só produto e quantidade importam
+  PASS  R5 duplicados na cesta: um item, baixa única
+  PASS  R6 validações da rota: recusas com chave e item, sem escrita
+  PASS  R7 caixa de preço aberto: valor declarado vira total do servidor
+  PASS  R8 espécie, PIX e doação: mesmo cálculo, troco só na espécie
+  PASS  R9 fiado: crédito, limite e bloqueios pelo valor do servidor
+  PASS  R10 concorrência: 6 vendas de 3 unidades, saldo determinístico
+  PASS  R11 rollback pela rota: exceção na escrita não deixa venda nem estoque
+  PASS  R12 redirect de sucesso leva ao id persistido (comprovante)
+  PASS  R13 venda histórica: mudar o cadastro não reescreve o snapshot
+  PASS  R14 cesta multi-itens com centavos: total = soma dos subtotais persistidos
+  PASS  R15 mudança concorrente de preço: travado no FOR UPDATE, revisão sem escrita
+  PASS  A1 anônimo não finaliza venda
+  PASS  A2 sessão de terminal não vale para finalizar venda
+  PASS  A3 usuário autenticado sem permissão não finaliza venda
+  PASS  B1 navegador: adulteração na tela termina em revisão com a cesta reprificada
+
+33/33 testes passaram (TASK_006 — PDV no servidor)
+-- test_cancelamento_vendas.py
+  PASS   M1 à vista elegível: estoque devolvido uma vez, sessão exata, documentos preservados
+  PASS   M1b comprovante e listagem identificam a cancelada sem apagar o histórico
+  PASS   M2 produto repetido na cesta devolve a quantidade agregada, sem duplicar
+  PASS   M3 preço mudou ou produto foi inativado depois da venda: usa o fato original
+  PASS   M4 outras vendas após a original: devolução soma no estoque atual, extrato preservado
+  PASS   M5 caixa de preço aberto: só sessão revertida, nenhum movimento de estoque inventado
+  PASS   M6 doação vinculada some da sessão junto com a venda; doação independente intocada
+  PASS   M7 fiado elegível: sai da dívida atual por status, sem tocar crédito ou recebimentos
+  PASS   M8a fiado pago: bloqueado antes de qualquer efeito (FIN-06 é outro fluxo)
+  PASS   M8b pagamento parcial transformado em crédito solto: bloqueado (fiado_pago não prova nada)
+  PASS   M8c fiado que consumiu crédito antecipado: bloqueado
+  PASS   M8d fiado legado sem instante: bloqueado por falta de evidência temporal
+  PASS   M8e recebimento lançado nominalmente para a venda: bloqueado
+  PASS   M9 sessão fechada, ausente ou alheia: bloqueio sem efeitos; fechamento intacto
+  PASS   M10 venda marcada cancelada no legado: sem segunda reversão e sem prova inventada
+  PASS   M11 repetição sequencial e clique duplo concorrente: um único efeito efetivo
+  PASS   M12 cancelamento × venda concorrente do mesmo produto: estoque final coerente
+  PASS   M13 cancelamento × fechamento: antes reverte, depois bloqueia, nunca incoerente
+  PASS   M14 falha em etapa da reversão derruba a transação inteira (rollback integral)
+  PASS   M15 motivo vazio, sem confirmação e venda inexistente: recusa clara, zero escrita
+  PASS   M16 anônimo, não-admin e sessão de terminal recusados pelo servidor
+  PASS   M17 requisição com valores adulterados: usa os fatos persistidos
+  PASS   M18 criada_em nasce com a venda; legado nunca é preenchido; migração repetida inofensiva
+  PASS   M19 rota específica de fiado encaminha ao serviço único e recusa o resto com motivo
+  PASS   B1 navegador: cancelar pela tela com motivo, confirmação, resultado e bloqueio
+
+25/25 testes passaram, 0 pulados (TASK_007 — cancelamento rastreável)
+-- test_sessao_eventos_caixa.py
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025014857-2398968'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025014857-2398968)
+[seed] fixtures prontas
+
+══ CENÁRIO MISTO DETERMINÍSTICO (inicial 100 → físico esperado 183) ══
+  ✔ abrir sessão eventos (inicial R$ 100)
+  ✔ sessão nova nasce na versão 'eventos'
+  ✔ venda espécie R$ 20
+  ✔ venda PIX R$ 30
+  ✔ venda fiado R$ 40 (não recebida)
+  ✔ dívida prévia R$ 20 (Parcial, sem sessão)
+  ✔ dívida prévia R$ 8 (Antigo, caixa de preço aberto, sem sessão)
+  ✔ mensalidade espécie R$ 50 na sessão
+  ✔ mensalidade PIX R$ 60 (vínculo na sessão, fora da gaveta)
+  ✔ doação espécie R$ 10
+  ✔ doação PIX R$ 15 (vínculo na sessão, fora da gaveta)
+  ✔ quitação da dívida anterior: espécie R$ 8
+  ✔ crédito antecipado espécie R$ 25
+  ✔ venda fiado R$ 12 consumindo crédito antecipado
+  ✔ sangria física R$ 30 com destino identificado
+  ✔ acumuladores legados ficam em ZERO na versão eventos (sem contaminação)
+  ✔ vendas comerciais somam R$ 102
+  ✔ efeito físico das vendas = espécie (20) — PIX e fiado não tocam a gaveta
+  ✔ consumo de crédito: R$ 12 com efeito físico ZERO e sem lançamento novo
+  ✔ mensalidades: 2 eventos (110), físico só a de espécie (50)
+  ✔ doações avulsas: 25, físico só a de espécie (10)
+  ✔ quitação anterior: R$ 8 com efeito físico cheio
+  ✔ crédito antecipado: dinheiro de agora, efeito físico cheio (25)
+  ✔ sangria: efeito físico NEGATIVO (−30)
+  ✔ DINHEIRO FÍSICO ESPERADO = R$ 183 (inicial 100 + espécie 113 − sangria 30)
+  ✔ espécie que entra na gaveta = R$ 113 (venda 20 + recebimentos 93)
+  ✔ recebimentos PIX = R$ 105 com efeito físico zero
+  ✔ GET /caixa/fechar (prévia detalhada)
+  ✔ prévia mostra o esperado R$ 183,00
+  ✔ prévia lista os eventos da sessão
+  ✔ PDF sai da mesma fonte (eventos) — HTTP 200 e %PDF
+  ✔ todo recebimento/sangria tem lançamento financeiro VINCULADO (sem fonte concorrente)
+  ✔ vendas têm origem documentada na própria venda (vendas_pdv)
+  ✔ CASO 13 — par sangria saída↔entrada vinculado, efeito global ZERO, sem despesa falsa
+
+══ CASO 1 — doação sai do TROCO ══
+  ✔ venda com troco-doado (50 entregues, 20 venda, 5 doação)
+  ✔ troco devolvido = R$ 25 (50 − 20 − 5)
+  ✔ entrada física líquida na gaveta = R$ 25 (venda 20 + doação 5)
+  ✔ doação que EXCEDE a sobra é recusada antes de gravar (recebido_insuficiente)
+
+══ CASO 2 — CANCELAMENTO COMPENSATÓRIO ══
+  ✔ venda espécie R$ 40 para cancelar
+  ✔ cancelar a venda
+  ✔ evento de cancelamento único com efeito físico −40
+  ✔ estoque devolvido exatamente (4 unidades)
+  ✔ repetição do cancelamento NÃO duplica compensação nem estoque
+  ✔ fiado quitado é BLOQUEADO no cancelamento (outro fluxo), sem escrita
+
+══ CASO 6 — IDEMPOTÊNCIA DE RECEBIMENTOS ══
+  ✔ repetir quitação da mesma venda → recusado, nenhuma escrita
+  ✔ mensalidade espécie R$ 100 (MensB)
+  ✔ reenvio de mensalidade já paga → recusado sem baixar nada
+
+══ CASO 7 — PARÂMETROS ADULTERADOS ══
+  ✔ recusa sem escrita: finalizar → sessao_caixa_invalida
+  ✔ recusa sem escrita: receber → sessao_necessaria
+  ✔ recusa sem escrita: doacao → sessao_necessaria
+  ✔ recusa sem escrita: 26 → valor_invalido
+  ✔ recusa sem escrita: pagar → conta_invalida
+  ✔ sangria SEM DESTINO é recusada (destino_obrigatorio)
+  ✔ nenhuma das recusas gravou venda, evento ou lançamento
+
+══ CASO 14 — AUTORIZAÇÃO ══
+  ✔ usuário sem permissão: POST /caixa/pdv/finalizar → 403
+  ✔ usuário sem permissão: GET /caixa/pdv → 403
+  ✔ operador com permissão caixa/ler: GET /caixa/pdv → 200
+  ✔ cancelamento segue restrito a admin (não-admin é barrado na rota)
+
+══ FECHAMENTO DA SESSÃO MISTA + CASOS 3, 4 e 9 ══
+  ✔ esperado do fechamento = inicial + Σ efeito físico dos eventos (308)
+  ✔ CASO 9 — contado ≠ esperado SEM observação é recusado (observacao_obrigatoria)
+  ✔ contado inválido é recusado (valor_contado_invalido)
+  ✔ CASO 9 — contado ≠ esperado fecha COM divergência registrada (sem ajuste fictício)
+  ✔ CASO 9 — divergência −5,00 registrada ao lado; esperado NUNCA sobrescrito
+  ✔ CASO 9 — nenhuma movimentação financeira artificial foi criada pela divergência
+  ✔ reabrir o caixa A para testar fechamento duplicado
+  ✔ fechar a sessão recém-aberta (contado = esperado 1)
+  ✔ CASO 3 — fechar duas vezes (em concorrência) uma sessão já fechada: nada fecha de novo
+  ✔ CASO 3 — nenhum lançamento financeiro foi duplicado pelo segundo fechamento
+  ✔ caso 9 — esperado NUNCA é sobrescrito: saldo_final continua o esperado dos eventos
+  ✔ fechamento lançou CADA venda uma única vez (espécie e PIX) — nem mais, nem menos
+  ✔ CASO 4 — os dois fiados não recebidos ficaram SEM lançamento (viram a receber)
+  ✔ CASO 4 — recebimentos já lançados não foram duplicados pelo fechamento
+  ✔ doações: 1 avulsa espécie + 1 PIX + 1 troco-doado (25 no total)
+  ✔ todo evento de venda em dinheiro ficou vinculado após o fechamento
+  ✔ segundo fechamento sequencial não relança nada (sessão já fechada)
+  ✔ PDF pós-fechamento inclui contagem e conferência
+
+══ CASO 5 — PAGAMENTO PARCIAL COM SOBRA → UMA ENTREGA, UMA ENTRADA ══
+  ✔ dívida nova R$ 60 (MensB, caixa B)
+  ✔ sem sessão aberta a quitação em espécie é recusada (sessao_necessaria)
+  ✔ abrir sessão caixa B (inicial 50)
+  ✔ pagar 70 de uma dívida de 60 (espécie na sessão B)
+  ✔ CASO 5 — UMA única entrada de dinheiro para a quitação com sobra
+  ✔ sobra vira crédito do trabalhador, sem segunda entrada
+  ✔ evento de recebimento com efeito físico = valor entregue (70)
+
+══ CASO 10 — PIX SEM GAVETA ══
+  ✔ venda PIX R$ 20 SEM sessão alguma
+  ✔ PIX não obriga sessão de caixa
+  ✔ venda PIX sem sessão fica sem vínculo de gaveta (caixa_movimento_id NULL)
+  ✔ esperado da sessão B inalterado pela venda PIX sem sessão (só o recebimento de 70)
+  ✔ lançamento PIX existe e aponta para a conta PIX
+  ✔ rota da tela: PDV sem sessão responde em modo PIX (sem tela de bloqueio)
+  ✔ rota da tela: sem sessão, espécie e fiado chegam desabilitados no HTML
+  ✔ rota: espécie sem sessão continua recusada (sessao_necessaria)
+
+══ CASO 11 — ABERTURA CONCORRENTE ══
+  ✔ CASO 11 — duas aberturas concorrentes: exatamente UMA sessão aberta
+  ✔ abrir de novo sobre sessão aberta é recusado (sessao_ja_aberta)
+
+══ CASO 8 — ESCRITAS × FECHAMENTO CONCORRENTES ══
+  ✔ CASO 8 — nenhuma requição da corrida terminou em exceução não tratada
+  ✔ CASO 8 — a sessão fechou com o esperado vindo dos eventos finais da corrida
+  ✔ nenhum evento foi escrito depois do fechamento (trava compatível com TASK_006/007)
+  ✔ vendas da corrida gravaram exatamente um evento por venda concluída
+
+══ CASO 8b — FECHAR × VENDA × RECEBIMENTO × CANCELAMENTO ══
+  ✔ abrir sessão E com R$ 0,00
+  ✔ venda base R$ 40 na sessão E (alvo do cancelamento da corrida)
+  ✔ CASO 8b — venda base 40 persistida (alvo do cancelamento)
+  ✔ venda base R$ 30 na sessão E (alvo do cancelamento pós-fechamento)
+  ✔ CASO 8b — venda base 30 persistida (alvo pós-fechamento)
+  ✔ CASO 8b — nenhuma requisição da corrida terminou em exceção não tratada
+  ✔ fechar a sessão E após a corrida
+  ✔ CASO 8b — a sessão está fechada
+  ✔ CASO 8b — saldo_final = inicial + Σ efeito_físico dos eventos finais da corrida
+  ✔ CASO 8b — nenhum evento escrito depois do fechamento
+  ✔ CASO 8b — cancelamento da corrida OU integrado (evento+registro+status) OU recusado (nenhum dos três) — nunca parcial
+  ✔ CASO 8b — estoque bate com o livro-razão (bases + corrida − cancelamentos), sem escrita parcial
+  ✔ CASO 8b — cancelamento em sessão fechada é recusado com aviso, sem nada gravar
+  ✔ CASO 8b — recebimento OU integrado (pago + evento único) OU recusado sem baixar — nunca parcial
+  ✔ CASO 8b — todo recebimento/sangria da sessão tem lançamento VINCULADO (sem evento órfão)
+
+══ CASO 16 — REENVIO DA MESMA TENTATIVA (PROTEÇÃO DOCUMENTAL × HTTP) ══
+  ✔ abrir sessão F (inicial R$ 100)
+  ✔ recebimento original da mensalidade F1 (30, espécie)
+  ✔ CASO 16 — reenvio do MESMO recebimento: 1 evento, 1 baixa, convergência (proteção documental resiste à perda da resposta; sem chave HTTP)
+  ✔ CASO 16 — reenvio de VENDA sem chave de idempotência HTTP cria duas vendas (comportamento projetado; o PDV não finge idempotência)
+  ✔ venda R$ 40 para o cancelamento
+  ✔ CASO 16 — reenvio do MESMO comando de cancelamento: uma única compensação (identidade venda:{id}:cancelamento no banco)
+  ✔ fechar sessão F com o esperado exato da corrida
+  [dica] esperado F = 150.00
+
+══ CASO 6b — FALHA NA ÚLTIMA ESCRITA → ROLLBACK COMPLETO ══
+  ✔ a escrita final falhou de fato (HTTP 500 esperado, sem handler)
+  ✔ nenhum resíduo da transação falha: zero lançamentos, zero eventos, zero sangria
+
+══ CASO 12 — LEGADO: CONSULTÁVEL, SEM NOVOS RECEBIMENTOS, REGRA ANTIGA ══
+  ✔ fechar sessão B (contado = esperado 120)
+    [seed] sessão LEGADO #45 criada como se existisse antes da implantação
+  ✔ venda espécie R$ 20 na sessão LEGADO
+  ✔ legado continua acumulando total_vendas (regra antiga, isolada)
+  ✔ legado NÃO contamina o modelo novo (zero eventos gravados)
+  ✔ recebimento espécie em sessão LEGADO é recusado antes de qualquer escrita
+  ✔ recusa sem efeito: total_vendas segue 20.00, pendência segue pendente
+  ✔ recebimento PIX em sessão LEGADO também é recusado
+  ✔ LOTE contra sessão LEGADO é recusado antes de baixar qualquer parcela
+  ✔ sangria sem destino é recusada TAMBÉM no legado
+  ✔ sangria R$ 22 com destino na LEGADO
+  ✔ legado acumula sangria pela regra antiga e o par vinculado existe
+  ✔ fechar legado pela regra nova é recusado com explicação (sessao_legada)
+  ✔ fechar LEGADO pela regra anterior
+  ✔ regra antiga intacta: saldo_final = 10 + 20 − 22 = 8 (recebimentos recusados não entraram no acumulador)
+  ✔ sessão legada fechada não aceita novas vendas
+  ✔ reabrir o caixa C após fechar o legado
+  ✔ sessão nova do caixa C nasce na versão 'eventos' (transição pelo tempo)
+  ✔ mensalidade espécie R$ 50 na sessão EVENTOS (após a recusa no legado)
+  ✔ mensalidade PIX R$ 50 na sessão EVENTOS
+  ✔ as duas pendências pagas viram eventos na sessão nova (2 eventos, 100, físico 50)
+  ✔ sessão eventos NÃO usa acumulador legado: total_vendas segue 0
+Traceback (most recent call last):
+  File "/nc/projetos/shambala/tests/test_sessao_eventos_caixa.py", line 1243, in <module>
+    criar_tabelas()
+    ~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/banco.py", line 1459, in criar_tabelas
+    _migrar(conn)
+    ~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 617, in _migrar
+    _migrar_mensalidades_competencia(conn)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 456, in _migrar_mensalidades_competencia
+    rotuladas = conn.execute(
+                ~~~~~~~~~~~~^
+        f"""UPDATE financeiro_movimentacoes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            SET competencia = left(data_movimentacao, 7)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            WHERE categoria = 'mensalidade' AND competencia IS NULL
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              AND data_movimentacao ~ '^[0-9]{{4}}-[0-9]{{2}}'""").rowcount
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 21, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "uq_mensalidade_por_competencia"
+DETAIL:  Chave (trabalhador_id, competencia)=(26, 2026-10) já existe.
+
+-- test_caixa_navegador_task008.py
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025014857-2398968'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025014857-2398968)
+Traceback (most recent call last):
+  File "/nc/projetos/shambala/tests/test_caixa_navegador_task008.py", line 686, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/nc/projetos/shambala/tests/test_caixa_navegador_task008.py", line 663, in main
+    _semeadura()
+    ~~~~~~~~~~^^
+  File "/nc/projetos/shambala/tests/test_caixa_navegador_task008.py", line 249, in _semeadura
+    criar_tabelas()
+    ~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/banco.py", line 1459, in criar_tabelas
+    _migrar(conn)
+    ~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 617, in _migrar
+    _migrar_mensalidades_competencia(conn)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 456, in _migrar_mensalidades_competencia
+    rotuladas = conn.execute(
+                ~~~~~~~~~~~~^
+        f"""UPDATE financeiro_movimentacoes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            SET competencia = left(data_movimentacao, 7)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            WHERE categoria = 'mensalidade' AND competencia IS NULL
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              AND data_movimentacao ~ '^[0-9]{{4}}-[0-9]{{2}}'""").rowcount
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 21, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "uq_mensalidade_por_competencia"
+DETAIL:  Chave (trabalhador_id, competencia)=(26, 2026-10) já existe.
+
+-- test_financeiro_visaogeral_consultas_task011.py
+[ok] conexão do script: shambala_test_passes
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, banco shambala_test_passes
+Traceback (most recent call last):
+  File "/nc/projetos/shambala/tests/test_financeiro_visaogeral_consultas_task011.py", line 291, in <module>
+    semeadura()
+    ~~~~~~~~~^^
+  File "/nc/projetos/shambala/tests/test_financeiro_visaogeral_consultas_task011.py", line 166, in semeadura
+    criar_tabelas()
+    ~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/banco.py", line 1459, in criar_tabelas
+    _migrar(conn)
+    ~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 617, in _migrar
+    _migrar_mensalidades_competencia(conn)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 456, in _migrar_mensalidades_competencia
+    rotuladas = conn.execute(
+                ~~~~~~~~~~~~^
+        f"""UPDATE financeiro_movimentacoes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            SET competencia = left(data_movimentacao, 7)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            WHERE categoria = 'mensalidade' AND competencia IS NULL
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              AND data_movimentacao ~ '^[0-9]{{4}}-[0-9]{{2}}'""").rowcount
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 21, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "uq_mensalidade_por_competencia"
+DETAIL:  Chave (trabalhador_id, competencia)=(26, 2026-10) já existe.
+
+-- test_financeiro_visaogeral_navegador_task011.py
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025014857-2398968'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025014857-2398968)
+Traceback (most recent call last):
+  File "/nc/projetos/shambala/tests/test_financeiro_visaogeral_navegador_task011.py", line 501, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/nc/projetos/shambala/tests/test_financeiro_visaogeral_navegador_task011.py", line 481, in main
+    FIX.update(_semeadura())
+               ~~~~~~~~~~^^
+  File "/nc/projetos/shambala/tests/test_financeiro_visaogeral_navegador_task011.py", line 201, in _semeadura
+    criar_tabelas()
+    ~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/banco.py", line 1459, in criar_tabelas
+    _migrar(conn)
+    ~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 617, in _migrar
+    _migrar_mensalidades_competencia(conn)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 456, in _migrar_mensalidades_competencia
+    rotuladas = conn.execute(
+                ~~~~~~~~~~~~^
+        f"""UPDATE financeiro_movimentacoes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            SET competencia = left(data_movimentacao, 7)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            WHERE categoria = 'mensalidade' AND competencia IS NULL
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              AND data_movimentacao ~ '^[0-9]{{4}}-[0-9]{{2}}'""").rowcount
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 21, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "uq_mensalidade_por_competencia"
+DETAIL:  Chave (trabalhador_id, competencia)=(26, 2026-10) já existe.
+
+-- test_financeiro_idempotencia_task012.py
+Traceback (most recent call last):
+  File "/nc/projetos/shambala/tests/test_financeiro_idempotencia_task012.py", line 966, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/nc/projetos/shambala/tests/test_financeiro_idempotencia_task012.py", line 884, in main
+    preparar_banco()
+    ~~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/tests/test_tres_passes.py", line 96, in preparar_banco
+    criar_tabelas()
+    ~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/banco.py", line 1459, in criar_tabelas
+    _migrar(conn)
+    ~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 617, in _migrar
+    _migrar_mensalidades_competencia(conn)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 456, in _migrar_mensalidades_competencia
+    rotuladas = conn.execute(
+                ~~~~~~~~~~~~^
+        f"""UPDATE financeiro_movimentacoes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            SET competencia = left(data_movimentacao, 7)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            WHERE categoria = 'mensalidade' AND competencia IS NULL
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              AND data_movimentacao ~ '^[0-9]{{4}}-[0-9]{{2}}'""").rowcount
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 21, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "uq_mensalidade_por_competencia"
+DETAIL:  Chave (trabalhador_id, competencia)=(26, 2026-10) já existe.
+
+-- test_financeiro_mensalidades_task012.py
+Traceback (most recent call last):
+  File "/nc/projetos/shambala/tests/test_financeiro_mensalidades_task012.py", line 764, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/nc/projetos/shambala/tests/test_financeiro_mensalidades_task012.py", line 738, in main
+    preparar_banco()
+    ~~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/tests/test_tres_passes.py", line 96, in preparar_banco
+    criar_tabelas()
+    ~~~~~~~~~~~~~^^
+  File "/nc/projetos/shambala/banco.py", line 1459, in criar_tabelas
+    _migrar(conn)
+    ~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 617, in _migrar
+    _migrar_mensalidades_competencia(conn)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 456, in _migrar_mensalidades_competencia
+    rotuladas = conn.execute(
+                ~~~~~~~~~~~~^
+        f"""UPDATE financeiro_movimentacoes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            SET competencia = left(data_movimentacao, 7)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            WHERE categoria = 'mensalidade' AND competencia IS NULL
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              AND data_movimentacao ~ '^[0-9]{{4}}-[0-9]{{2}}'""").rowcount
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/banco.py", line 21, in execute
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UniqueViolation: ERRO:  duplicar valor da chave viola a restrição de unicidade "uq_mensalidade_por_competencia"
+DETAIL:  Chave (trabalhador_id, competencia)=(26, 2026-10) já existe.
+
+-- teste_negativo_isolamento.py
+
+==============================================================================
+EXECUÇÃO ABORTADA — AMBIENTE NÃO É DE TESTE
+==============================================================================
+  • banco 'shambala' é proibido para testes.
+
+  Esta trava existe porque testes destrutivos já atingiram o banco
+  de desenvolvimento. Nenhuma operação foi executada.
+
+  Para rodar os testes corretamente:
+    export SHAMBALA_DB_NAME=shambala_test_passes
+    export SHAMBALA_MODO_TESTE=1
+    bash tests/rodar_testes.sh
+==============================================================================
+
+
+==============================================================================
+EXECUÇÃO ABORTADA — AMBIENTE NÃO É DE TESTE
+==============================================================================
+  • banco 'postgres' é proibido para testes.
+
+  Esta trava existe porque testes destrutivos já atingiram o banco
+  de desenvolvimento. Nenhuma operação foi executada.
+
+  Para rodar os testes corretamente:
+    export SHAMBALA_DB_NAME=shambala_test_passes
+    export SHAMBALA_MODO_TESTE=1
+    bash tests/rodar_testes.sh
+==============================================================================
+
+
+==============================================================================
+EXECUÇÃO ABORTADA — AMBIENTE NÃO É DE TESTE
+==============================================================================
+  • banco 'shambala_prod' não contém o marcador obrigatório '_test' (ex.: shambala_test_passes).
+
+  Esta trava existe porque testes destrutivos já atingiram o banco
+  de desenvolvimento. Nenhuma operação foi executada.
+
+  Para rodar os testes corretamente:
+    export SHAMBALA_DB_NAME=shambala_test_passes
+    export SHAMBALA_MODO_TESTE=1
+    bash tests/rodar_testes.sh
+==============================================================================
+
+
+==============================================================================
+EXECUÇÃO ABORTADA — AMBIENTE NÃO É DE TESTE
+==============================================================================
+  • SHAMBALA_MODO_TESTE=1 não está definido (exigido para operar em testes).
+
+  Esta trava existe porque testes destrutivos já atingiram o banco
+  de desenvolvimento. Nenhuma operação foi executada.
+
+  Para rodar os testes corretamente:
+    export SHAMBALA_DB_NAME=shambala_test_passes
+    export SHAMBALA_MODO_TESTE=1
+    bash tests/rodar_testes.sh
+==============================================================================
+
+
+==============================================================================
+EXECUÇÃO ABORTADA — AMBIENTE NÃO É DE TESTE
+==============================================================================
+  • SHAMBALA_DB_NAME não definido (não é possível provar que é descartável).
+
+  Esta trava existe porque testes destrutivos já atingiram o banco
+  de desenvolvimento. Nenhuma operação foi executada.
+
+  Para rodar os testes corretamente:
+    export SHAMBALA_DB_NAME=shambala_test_passes
+    export SHAMBALA_MODO_TESTE=1
+    bash tests/rodar_testes.sh
+==============================================================================
+
+
+==============================================================================
+EXECUÇÃO ABORTADA — AMBIENTE NÃO É DE TESTE
+==============================================================================
+  • banco 'shambala' é proibido para testes.
+  • conexão efetiva aponta para o banco 'shambala', que não é comprovadamente descartável.
+
+  Esta trava existe porque testes destrutivos já atingiram o banco
+  de desenvolvimento. Nenhuma operação foi executada.
+
+  Para rodar os testes corretamente:
+    export SHAMBALA_DB_NAME=shambala_test_passes
+    export SHAMBALA_MODO_TESTE=1
+    bash tests/rodar_testes.sh
+==============================================================================
+
+==============================================================================
+TESTE NEGATIVO — a trava rejeita o banco de desenvolvimento?
+==============================================================================
+
+[1] Ambientes que DEVEM ser rejeitados:
+  OK   banco de DEV 'shambala' com modo de teste ligado
+        seguro=False (esperado False) | banco 'shambala' é proibido para testes.
+  OK   banco 'postgres' (administrativo)
+        seguro=False (esperado False) | banco 'postgres' é proibido para testes.
+  OK   banco de produção disfarçado de teste ('shambala_prod')
+        seguro=False (esperado False) | banco 'shambala_prod' não contém o marcador obrigatório '_test' (ex.: shambala_test_passes
+  OK   modo de teste DESLIGADO (mesmo com banco correto)
+        seguro=False (esperado False) | SHAMBALA_MODO_TESTE=1 não está definido (exigido para operar em testes).
+  OK   nome de banco vazio
+        seguro=False (esperado False) | SHAMBALA_DB_NAME não definido (não é possível provar que é descartável).
+
+[2] Ambiente que DEVE ser aceito:
+  OK   banco descartável 'shambala_test_passes' com modo de teste ligado
+        seguro=True (esperado True) | aceito
+
+[3] Prova com a CONEXÃO REAL (somente leitura, nada é alterado):
+        conexão efetiva: banco='shambala' usuário='shambala'
+        (nenhuma escrita executada — apenas SELECT de identidade)
+        REJEITADO corretamente: banco 'shambala' é proibido para testes. ; conexão efetiva aponta para o banco 'shambala', que não é
+        >>> Nenhum TRUNCATE/DROP/ALTER é executado antes desta checagem.
+
+[4] Contrato de configuração e prova de execução corrente:
+  OK    arquivo de configuração ausente — recusado: arquivo de configuração da execução ausente: /nao/existe/.env
+  OK    arquivo sem SHAMBALA_DB_NAME — recusado: o arquivo de configuração /tmp/shambala_neg_d_drobv2.env não define SHAMBALA_DB_NAME — des
+  OK    arquivo apontando banco de DEV ('shambala') — recusado: destino 'shambala' do arquivo /tmp/shambala_neg_818be1ue.env não é comprovadamente descart
+  OK    destino solicitado A diverge do arquivo B (sentinelas A/B) — recusado: divergência de destino: solicitado 'shambala_a_test', configuração nomeada '/tmp/shambala_
+  OK    destino solicitado bate com o arquivo — aceito: {'banco': 'shambala_a_test', 'arquivo': '/tmp/shambala_neg_0aelnuia.env'}
+  OK    log sem confirmação alguma (destino não provado) — recusado: o app nunca imprimiu 'Ambiente descartável confirmado' em /tmp/shambala_neg_log_niznmpdg: 
+  OK    log de OUTRA execução (token antigo) — recusado: o log pertence a OUTRA execução (token 'tok-ANTIGA' != 'tok-desta-execucao'): prova de log
+  OK    token corrente mas banco efetivo divergente do esperado — recusado: o servidor HTTP está no banco efetivo 'shambala_outra_test', a suíte espera 'shambala_a_te
+  OK    execução corrente provada (token + banco efetivo) — aceito: {'banco_efetivo': 'shambala_a_test', 'token': 'tok-desta-execucao', 'log': '/tmp/shambala_
+
+==============================================================================
+RESULTADO: 16/16 cenários corretos
+A trava REJEITA o banco de desenvolvimento em todos os cenários testados.
+Nenhum dado foi alterado neste teste (somente SELECT).
+==============================================================================
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_tres_passes.py: rc=0
+test_plano_unico.py: rc=0
+test_permissoes.py: rc=0
+test_agenda_medium.py: rc=0
+test_presenca_trabalhadores.py: rc=0
+test_codigo_trabalhador.py: rc=0
+test_terminal_presenca.py: rc=0
+test_terminal_leitor.py: rc=0
+test_correcoes_presenca.py: rc=0
+test_gestao_correcoes_navegador.py: rc=0
+test_pdv_precos_servidor.py: rc=0
+test_cancelamento_vendas.py: rc=0
+test_sessao_eventos_caixa.py: rc=1
+test_caixa_navegador_task008.py: rc=1
+test_financeiro_visaogeral_consultas_task011.py: rc=1
+test_financeiro_visaogeral_navegador_task011.py: rc=1
+test_financeiro_idempotencia_task012.py: rc=1
+test_financeiro_mensalidades_task012.py: rc=1
+teste_negativo_isolamento.py: rc=0
+tests/rodar_testes.sh, linha 89: 2399049 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok

@@ -1,0 +1,16 @@
+# TASK_012 §3 — diagnóstico ANTES da constraint (DEV, somente leitura)
+# executado em 2026-10-25T01:50:38-03:00 via psql -h /var/run/postgresql -U shambala -d shambala
+
+$ SELECT total, venc_null, legíveis, ilegíveis, sem_trabalhador FROM financeiro_movimentacoes WHERE categoria='mensalidade'
+  total=520  vencimento_nulo=0  legiveis=520  ilegiveis=0  sem_trabalhador=4
+
+$ mês do vencimento == mês escrito na descrição? (divergências)
+  divergentes: 0
+
+$ duplicidades (trabalhador, mês do vencimento) — impediriam o índice único
+  grupos duplicados: 0
+
+# Conclusão: rotular left(data_movimentacao,7) não reinterpreta fato nenhum (520/520
+# coincidem com o período já escrito na descrição) e o índice único pode ser criado
+# no restart — sem conflito histórico. As 4 linhas sem trabalhador ficam fora da chave
+# por construção (predicate exige trabalhador_id IS NOT NULL).

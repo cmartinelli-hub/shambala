@@ -1,0 +1,437 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025020438-2459484 (identifica ESTA execução nas provas)
+  árvore ..: 416bf46ab27100576b268b29fd70eb44a56a1633-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025020438-2459484
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025020438-2459484'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_sessao_eventos_caixa.py
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025020438-2459484'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025020438-2459484)
+[seed] fixtures prontas
+
+══ CENÁRIO MISTO DETERMINÍSTICO (inicial 100 → físico esperado 183) ══
+  ✔ abrir sessão eventos (inicial R$ 100)
+  ✔ sessão nova nasce na versão 'eventos'
+  ✔ venda espécie R$ 20
+  ✔ venda PIX R$ 30
+  ✔ venda fiado R$ 40 (não recebida)
+  ✔ dívida prévia R$ 20 (Parcial, sem sessão)
+  ✔ dívida prévia R$ 8 (Antigo, caixa de preço aberto, sem sessão)
+  ✔ mensalidade espécie R$ 50 na sessão
+  ✔ mensalidade PIX R$ 60 (vínculo na sessão, fora da gaveta)
+  ✔ doação espécie R$ 10
+  ✔ doação PIX R$ 15 (vínculo na sessão, fora da gaveta)
+  ✔ quitação da dívida anterior: espécie R$ 8
+  ✔ crédito antecipado espécie R$ 25
+  ✔ venda fiado R$ 12 consumindo crédito antecipado
+  ✔ sangria física R$ 30 com destino identificado
+  ✔ acumuladores legados ficam em ZERO na versão eventos (sem contaminação)
+  ✔ vendas comerciais somam R$ 102
+  ✔ efeito físico das vendas = espécie (20) — PIX e fiado não tocam a gaveta
+  ✔ consumo de crédito: R$ 12 com efeito físico ZERO e sem lançamento novo
+  ✔ mensalidades: 2 eventos (110), físico só a de espécie (50)
+  ✔ doações avulsas: 25, físico só a de espécie (10)
+  ✔ quitação anterior: R$ 8 com efeito físico cheio
+  ✔ crédito antecipado: dinheiro de agora, efeito físico cheio (25)
+  ✔ sangria: efeito físico NEGATIVO (−30)
+  ✔ DINHEIRO FÍSICO ESPERADO = R$ 183 (inicial 100 + espécie 113 − sangria 30)
+  ✔ espécie que entra na gaveta = R$ 113 (venda 20 + recebimentos 93)
+  ✔ recebimentos PIX = R$ 105 com efeito físico zero
+  ✔ GET /caixa/fechar (prévia detalhada)
+  ✔ prévia mostra o esperado R$ 183,00
+  ✔ prévia lista os eventos da sessão
+  ✔ PDF sai da mesma fonte (eventos) — HTTP 200 e %PDF
+  ✔ todo recebimento/sangria tem lançamento financeiro VINCULADO (sem fonte concorrente)
+  ✔ vendas têm origem documentada na própria venda (vendas_pdv)
+  ✔ CASO 13 — par sangria saída↔entrada vinculado, efeito global ZERO, sem despesa falsa
+
+══ CASO 1 — doação sai do TROCO ══
+  ✔ venda com troco-doado (50 entregues, 20 venda, 5 doação)
+  ✔ troco devolvido = R$ 25 (50 − 20 − 5)
+  ✔ entrada física líquida na gaveta = R$ 25 (venda 20 + doação 5)
+  ✔ doação que EXCEDE a sobra é recusada antes de gravar (recebido_insuficiente)
+
+══ CASO 2 — CANCELAMENTO COMPENSATÓRIO ══
+  ✔ venda espécie R$ 40 para cancelar
+  ✔ cancelar a venda
+  ✔ evento de cancelamento único com efeito físico −40
+  ✔ estoque devolvido exatamente (4 unidades)
+  ✔ repetição do cancelamento NÃO duplica compensação nem estoque
+  ✔ fiado quitado é BLOQUEADO no cancelamento (outro fluxo), sem escrita
+
+══ CASO 6 — IDEMPOTÊNCIA DE RECEBIMENTOS ══
+  ✔ repetir quitação da mesma venda → recusado, nenhuma escrita
+  ✔ mensalidade espécie R$ 100 (MensB)
+  ✔ reenvio de mensalidade já paga → recusado sem baixar nada
+
+══ CASO 7 — PARÂMETROS ADULTERADOS ══
+  ✔ recusa sem escrita: finalizar → sessao_caixa_invalida
+  ✔ recusa sem escrita: receber → sessao_necessaria
+  ✔ recusa sem escrita: doacao → sessao_necessaria
+  ✔ recusa sem escrita: 4 → valor_invalido
+  ✔ recusa sem escrita: pagar → conta_invalida
+  ✔ sangria SEM DESTINO é recusada (destino_obrigatorio)
+  ✔ nenhuma das recusas gravou venda, evento ou lançamento
+
+══ CASO 14 — AUTORIZAÇÃO ══
+  ✔ usuário sem permissão: POST /caixa/pdv/finalizar → 403
+  ✔ usuário sem permissão: GET /caixa/pdv → 403
+  ✔ operador com permissão caixa/ler: GET /caixa/pdv → 200
+  ✔ cancelamento segue restrito a admin (não-admin é barrado na rota)
+
+══ FECHAMENTO DA SESSÃO MISTA + CASOS 3, 4 e 9 ══
+  ✔ esperado do fechamento = inicial + Σ efeito físico dos eventos (308)
+  ✔ CASO 9 — contado ≠ esperado SEM observação é recusado (observacao_obrigatoria)
+  ✔ contado inválido é recusado (valor_contado_invalido)
+  ✔ CASO 9 — contado ≠ esperado fecha COM divergência registrada (sem ajuste fictício)
+  ✔ CASO 9 — divergência −5,00 registrada ao lado; esperado NUNCA sobrescrito
+  ✔ CASO 9 — nenhuma movimentação financeira artificial foi criada pela divergência
+  ✔ reabrir o caixa A para testar fechamento duplicado
+  ✔ fechar a sessão recém-aberta (contado = esperado 1)
+  ✔ CASO 3 — fechar duas vezes (em concorrência) uma sessão já fechada: nada fecha de novo
+  ✔ CASO 3 — nenhum lançamento financeiro foi duplicado pelo segundo fechamento
+  ✔ caso 9 — esperado NUNCA é sobrescrito: saldo_final continua o esperado dos eventos
+  ✔ fechamento lançou CADA venda uma única vez (espécie e PIX) — nem mais, nem menos
+  ✔ CASO 4 — os dois fiados não recebidos ficaram SEM lançamento (viram a receber)
+  ✔ CASO 4 — recebimentos já lançados não foram duplicados pelo fechamento
+  ✔ doações: 1 avulsa espécie + 1 PIX + 1 troco-doado (25 no total)
+  ✔ todo evento de venda em dinheiro ficou vinculado após o fechamento
+  ✔ segundo fechamento sequencial não relança nada (sessão já fechada)
+  ✔ PDF pós-fechamento inclui contagem e conferência
+
+══ CASO 5 — PAGAMENTO PARCIAL COM SOBRA → UMA ENTREGA, UMA ENTRADA ══
+  ✔ dívida nova R$ 60 (MensB, caixa B)
+  ✔ sem sessão aberta a quitação em espécie é recusada (sessao_necessaria)
+  ✔ abrir sessão caixa B (inicial 50)
+  ✔ pagar 70 de uma dívida de 60 (espécie na sessão B)
+  ✔ CASO 5 — UMA única entrada de dinheiro para a quitação com sobra
+  ✔ sobra vira crédito do trabalhador, sem segunda entrada
+  ✔ evento de recebimento com efeito físico = valor entregue (70)
+
+══ CASO 10 — PIX SEM GAVETA ══
+  ✔ venda PIX R$ 20 SEM sessão alguma
+  ✔ PIX não obriga sessão de caixa
+  ✔ venda PIX sem sessão fica sem vínculo de gaveta (caixa_movimento_id NULL)
+  ✔ esperado da sessão B inalterado pela venda PIX sem sessão (só o recebimento de 70)
+  ✔ lançamento PIX existe e aponta para a conta PIX
+  ✔ rota da tela: PDV sem sessão responde em modo PIX (sem tela de bloqueio)
+  ✔ rota da tela: sem sessão, espécie e fiado chegam desabilitados no HTML
+  ✔ rota: espécie sem sessão continua recusada (sessao_necessaria)
+
+══ CASO 11 — ABERTURA CONCORRENTE ══
+  ✔ CASO 11 — duas aberturas concorrentes: exatamente UMA sessão aberta
+  ✔ abrir de novo sobre sessão aberta é recusado (sessao_ja_aberta)
+
+══ CASO 8 — ESCRITAS × FECHAMENTO CONCORRENTES ══
+  ✔ CASO 8 — nenhuma requição da corrida terminou em exceução não tratada
+  ✔ CASO 8 — a sessão fechou com o esperado vindo dos eventos finais da corrida
+  ✔ nenhum evento foi escrito depois do fechamento (trava compatível com TASK_006/007)
+  ✔ vendas da corrida gravaram exatamente um evento por venda concluída
+
+══ CASO 8b — FECHAR × VENDA × RECEBIMENTO × CANCELAMENTO ══
+  ✔ abrir sessão E com R$ 0,00
+  ✔ venda base R$ 40 na sessão E (alvo do cancelamento da corrida)
+  ✔ CASO 8b — venda base 40 persistida (alvo do cancelamento)
+  ✔ venda base R$ 30 na sessão E (alvo do cancelamento pós-fechamento)
+  ✔ CASO 8b — venda base 30 persistida (alvo pós-fechamento)
+  ✔ CASO 8b — nenhuma requisição da corrida terminou em exceção não tratada
+  ✔ fechar a sessão E após a corrida
+  ✔ CASO 8b — a sessão está fechada
+  ✔ CASO 8b — saldo_final = inicial + Σ efeito_físico dos eventos finais da corrida
+  ✔ CASO 8b — nenhum evento escrito depois do fechamento
+  ✔ CASO 8b — cancelamento da corrida OU integrado (evento+registro+status) OU recusado (nenhum dos três) — nunca parcial
+  ✔ CASO 8b — estoque bate com o livro-razão (bases + corrida − cancelamentos), sem escrita parcial
+  ✔ CASO 8b — cancelamento em sessão fechada é recusado com aviso, sem nada gravar
+  ✔ CASO 8b — recebimento OU integrado (pago + evento único) OU recusado sem baixar — nunca parcial
+  ✔ CASO 8b — todo recebimento/sangria da sessão tem lançamento VINCULADO (sem evento órfão)
+
+══ CASO 16 — REENVIO DA MESMA TENTATIVA (PROTEÇÃO DOCUMENTAL × HTTP) ══
+  ✔ abrir sessão F (inicial R$ 100)
+  ✔ recebimento original da mensalidade F1 (30, espécie)
+  ✔ CASO 16 — reenvio do MESMO recebimento: 1 evento, 1 baixa, convergência (proteção documental resiste à perda da resposta; sem chave HTTP)
+  ✔ CASO 16 — reenvio de VENDA sem chave de idempotência HTTP cria duas vendas (comportamento projetado; o PDV não finge idempotência)
+  ✔ venda R$ 40 para o cancelamento
+  ✔ CASO 16 — reenvio do MESMO comando de cancelamento: uma única compensação (identidade venda:{id}:cancelamento no banco)
+  ✔ fechar sessão F com o esperado exato da corrida
+  [dica] esperado F = 150.00
+
+══ CASO 6b — FALHA NA ÚLTIMA ESCRITA → ROLLBACK COMPLETO ══
+  ✔ a escrita final falhou de fato (HTTP 500 esperado, sem handler)
+  ✔ nenhum resíduo da transação falha: zero lançamentos, zero eventos, zero sangria
+
+══ CASO 12 — LEGADO: CONSULTÁVEL, SEM NOVOS RECEBIMENTOS, REGRA ANTIGA ══
+  ✔ fechar sessão B (contado = esperado 120)
+    [seed] sessão LEGADO #7 criada como se existisse antes da implantação
+  ✔ venda espécie R$ 20 na sessão LEGADO
+  ✔ legado continua acumulando total_vendas (regra antiga, isolada)
+  ✔ legado NÃO contamina o modelo novo (zero eventos gravados)
+  ✔ recebimento espécie em sessão LEGADO é recusado antes de qualquer escrita
+  ✔ recusa sem efeito: total_vendas segue 20.00, pendência segue pendente
+  ✔ recebimento PIX em sessão LEGADO também é recusado
+  ✔ LOTE contra sessão LEGADO é recusado antes de baixar qualquer parcela
+  ✔ sangria sem destino é recusada TAMBÉM no legado
+  ✔ sangria R$ 22 com destino na LEGADO
+  ✔ legado acumula sangria pela regra antiga e o par vinculado existe
+  ✔ fechar legado pela regra nova é recusado com explicação (sessao_legada)
+  ✔ fechar LEGADO pela regra anterior
+  ✔ regra antiga intacta: saldo_final = 10 + 20 − 22 = 8 (recebimentos recusados não entraram no acumulador)
+  ✔ sessão legada fechada não aceita novas vendas
+  ✔ reabrir o caixa C após fechar o legado
+  ✔ sessão nova do caixa C nasce na versão 'eventos' (transição pelo tempo)
+  ✔ mensalidade espécie R$ 50 na sessão EVENTOS (após a recusa no legado)
+  ✔ mensalidade PIX R$ 50 na sessão EVENTOS
+  ✔ as duas pendências pagas viram eventos na sessão nova (2 eventos, 100, físico 50)
+  ✔ sessão eventos NÃO usa acumulador legado: total_vendas segue 0
+[startup] 7 mensalidade(s) receberam competência rotulada do vencimento já gravado.
+  ✔ CASO 12b — migração repetida é idempotente e o legado permanece consultável
+
+══ CASO 14b — cancelamento é restrito a admin mesmo com caixa/ler+escrever ══
+  ✔ operador não-admin não cancela vendas
+
+══ CASO 15 — TASK_010/REV-02: saldo inicial e contado NÃO NEGATIVOS, zero legítimo ══
+  ✔ parser não negativo: 0 e '0,00' aceitos como zero exato
+  ✔ parser não negativo: '0,001' → 0.00 ACEITO (política documentada, centavos)
+  ✔ parser não negativo: '0.005' → 0.01 (ROUND_HALF_UP da TASK_008 preservada)
+  ✔ parser não negativo: NEGATIVO recusado ANTES do arredondamento (-0,001 não se salva virando zero)
+  ✔ parser não negativo: NaN, infinito, texto inválido e vazio recusados
+  ✔ parser não negativo: teto conferido APÓS arredondamento — 9999999999.99 entra; 9999999999.995 (→ 10000000000.00) recusa
+  ✔ eventos continuam ESTRITAMENTE POSITIVOS: moeda() recusa 0 e negativo
+  ✔ POST real de abertura com R$ 0,00 (valor padrão da tela) — REV-02 corrigido
+  ✔ sessão zero criada na versão 'eventos' com saldo_inicial 0.00
+  ✔ abertura com saldo NEGATIVO recusa sem criar sessão nem evento
+  ✔ fechamento de sessão VAZIA com contado R$ 0,00
+  ✔ fechamento zero: esperado 0, divergência 0, nenhum evento e nenhum lançamento financeiro fictício
+  ✔ reabertura com '0,005' enviado direto (fora do step da tela)
+  ✔ POST direto '0,005' arredonda para 0.01 e grava 0.01 (HALF_UP)
+  ✔ contado 0 contra esperado 0.01: divergência exige observação (recusada sem ela)
+  ✔ fechamento da divergência de arredondamento COM observação
+  ✔ fechado com divergência -0.01 registrada, esperado intocado (0.01)
+
+[resultado] aprovadas=161 falhas=0
+-- test_financeiro_idempotencia_task012.py
+  PASS  fixtures: sessão de caixa na versão 'eventos' (regra atual)
+  PASS  PDV venda à vista: primeira tentativa produz exatamente um efeito
+  PASS  PDV venda à vista: primeira tentativa fica registrada como concluída
+  PASS  PDV venda à vista: reenvio não produz efeito novo
+  PASS  PDV venda à vista: reenvio devolve o mesmo destino
+  PASS  PDV venda à vista: as duas requisições concorrentes de fato responderam
+  PASS  PDV venda à vista: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  PDV venda à vista: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  PDV venda à vista: as duas requisições com a chave nova responderam
+  PASS  PDV venda à vista: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  PDV venda à vista: a chave concorrente aparece no máximo uma vez no banco
+  PASS  PDV venda à vista: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  PDV venda à vista: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  PDV venda à vista: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  doação avulsa: primeira tentativa produz exatamente um efeito
+  PASS  doação avulsa: primeira tentativa fica registrada como concluída
+  PASS  doação avulsa: reenvio não produz efeito novo
+  PASS  doação avulsa: reenvio devolve o mesmo destino
+  PASS  doação avulsa: as duas requisições concorrentes de fato responderam
+  PASS  doação avulsa: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  doação avulsa: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  doação avulsa: as duas requisições com a chave nova responderam
+  PASS  doação avulsa: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  doação avulsa: a chave concorrente aparece no máximo uma vez no banco
+  PASS  doação avulsa: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  doação avulsa: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  doação avulsa: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  sangria: primeira tentativa produz exatamente um efeito
+  PASS  sangria: primeira tentativa fica registrada como concluída
+  PASS  sangria: reenvio não produz efeito novo
+  PASS  sangria: reenvio devolve o mesmo destino
+  PASS  sangria: as duas requisições concorrentes de fato responderam
+  PASS  sangria: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  sangria: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  sangria: as duas requisições com a chave nova responderam
+  PASS  sangria: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  sangria: a chave concorrente aparece no máximo uma vez no banco
+  PASS  sangria: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  sangria: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  sangria: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  transferência entre contas: primeira tentativa produz exatamente um efeito
+  PASS  transferência entre contas: primeira tentativa fica registrada como concluída
+  PASS  transferência entre contas: reenvio não produz efeito novo
+  PASS  transferência entre contas: reenvio devolve o mesmo destino
+  PASS  transferência entre contas: as duas requisições concorrentes de fato responderam
+  PASS  transferência entre contas: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  transferência entre contas: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  transferência entre contas: as duas requisições com a chave nova responderam
+  PASS  transferência entre contas: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  transferência entre contas: a chave concorrente aparece no máximo uma vez no banco
+  PASS  transferência entre contas: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  transferência entre contas: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  transferência entre contas: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  lançamento avulso: primeira tentativa produz exatamente um efeito
+  PASS  lançamento avulso: primeira tentativa fica registrada como concluída
+  PASS  lançamento avulso: reenvio não produz efeito novo
+  PASS  lançamento avulso: reenvio devolve o mesmo destino
+  PASS  lançamento avulso: as duas requisições concorrentes de fato responderam
+  PASS  lançamento avulso: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  lançamento avulso: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  lançamento avulso: as duas requisições com a chave nova responderam
+  PASS  lançamento avulso: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  lançamento avulso: a chave concorrente aparece no máximo uma vez no banco
+  PASS  lançamento avulso: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  lançamento avulso: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  lançamento avulso: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  PDV: divergência de preço não cria venda
+  PASS  PDV: a tentativa recusada NÃO é consumida
+  PASS  PDV: a tela reprificada devolve chave nova de tentativa
+  PASS  PDV: confirmar a cesta reprificada conclui a venda sem conflito
+  PASS  rollback: nada gravado e a chave não ficou consumida
+  PASS  rollback: o reenvio da MESMA chave conclui a operação
+  PASS  corrida: a segunda transação ficou de fato aguardando a primeira
+  PASS  corrida: a segunda acorda e recebe a resposta original
+  PASS  corrida: um único documento para a tentativa disputada
+  PASS  corrida: a tentativa disputada tem exatamente uma linha
+  PASS  mensalidade lote: baixa exatamente as selecionadas (uma por competência)
+  PASS  mensalidade lote: reenvio da mesma tentativa não muda nada
+  PASS  mensalidade lote: reenvio devolve o mesmo recibo
+  PASS  mensalidade lote: nova tentativa sobre as mesmas pendências não inventa dinheiro
+  PASS  fiado: um recebimento com excedente vira crédito, uma única entrada
+  PASS  fiado: reenvio da mesma tentativa não duplica dinheiro nem crédito
+  PASS  fiado: a tentativa única ficou registrada como concluída
+  PASS  fiado: mesma chave com outro valor é recusada sem escrita
+  PASS  chave não substitui autenticação: anônimo não escreve
+  PASS  crédito antecipado: primeira tentativa produz exatamente um efeito
+  PASS  crédito antecipado: primeira tentativa fica registrada como concluída
+  PASS  crédito antecipado: reenvio não produz efeito novo
+  PASS  crédito antecipado: reenvio devolve o mesmo destino
+  PASS  crédito antecipado: as duas requisições concorrentes de fato responderam
+  PASS  crédito antecipado: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  crédito antecipado: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  crédito antecipado: as duas requisições com a chave nova responderam
+  PASS  crédito antecipado: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  crédito antecipado: a chave concorrente aparece no máximo uma vez no banco
+  PASS  crédito antecipado: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  crédito antecipado: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  crédito antecipado: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  quitar venda de fiado: primeira tentativa produz exatamente um efeito
+  PASS  quitar venda de fiado: primeira tentativa fica registrada como concluída
+  PASS  quitar venda de fiado: reenvio não produz efeito novo
+  PASS  quitar venda de fiado: reenvio devolve o mesmo destino
+  PASS  quitar venda de fiado: as duas requisições concorrentes de fato responderam
+  PASS  quitar venda de fiado: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  quitar venda de fiado: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  quitar venda de fiado: as duas requisições com a chave nova responderam
+  PASS  quitar venda de fiado: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  quitar venda de fiado: a chave concorrente aparece no máximo uma vez no banco
+  PASS  quitar venda de fiado: sem efeito, nenhuma tentativa foi consumida
+  PASS  quitar venda de fiado: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  quitar venda de fiado: nova tentativa com conteúdo idêntico é tratada como estado já alcançado
+  PASS  quitar venda de fiado: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  compra com nota (multipart): primeira tentativa produz exatamente um efeito
+  PASS  compra com nota (multipart): primeira tentativa fica registrada como concluída
+  PASS  compra com nota (multipart): reenvio não produz efeito novo
+  PASS  compra com nota (multipart): reenvio devolve o mesmo destino
+  PASS  compra com nota (multipart): as duas requisições concorrentes de fato responderam
+  PASS  compra com nota (multipart): duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  compra com nota (multipart): a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  compra com nota (multipart): as duas requisições com a chave nova responderam
+  PASS  compra com nota (multipart): duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  compra com nota (multipart): a chave concorrente aparece no máximo uma vez no banco
+  PASS  compra com nota (multipart): mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  compra com nota (multipart): nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  compra com nota (multipart): confirmação sem chave é recusada com orientação e sem efeito
+  PASS  venda de livro: primeira tentativa produz exatamente um efeito
+  PASS  venda de livro: primeira tentativa fica registrada como concluída
+  PASS  venda de livro: reenvio não produz efeito novo
+  PASS  venda de livro: reenvio devolve o mesmo destino
+  PASS  venda de livro: as duas requisições concorrentes de fato responderam
+  PASS  venda de livro: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  venda de livro: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  venda de livro: as duas requisições com a chave nova responderam
+  PASS  venda de livro: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  venda de livro: a chave concorrente aparece no máximo uma vez no banco
+  PASS  venda de livro: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  venda de livro: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  venda de livro: confirmação sem chave é recusada com orientação e sem efeito
+
+138/138 verificações aprovadas (TASK_012 §2 — idempotência)
+-- test_financeiro_mensalidades_task012.py
+[startup] 3 mensalidade(s) receberam competência rotulada do vencimento já gravado.
+  PASS  banco: índice único de mensalidade por competência existe
+  PASS  banco: segunda linha do mesmo trabalhador/competência é recusada
+  PASS  banco: OUTRO trabalhador na MESMA competência é legítimo
+  PASS  banco: MESMO trabalhador em OUTRA competência é legítimo
+  PASS  banco: competência cancelada também está sob a chave (não é recriada)
+  PASS  geração cria exatamente 13 competências
+  PASS  geração: cada linha traz a competência do seu mês (sem depender de texto)
+  PASS  geração: vencimento usa o dia do trabalhador na competência certa
+  PASS  geração: todas pendentes na conta de a receber
+  PASS  geração repetida não cria segunda cobrança
+  PASS  concorrência: as duas gerações responderam
+  PASS  concorrência: duas gerações simultâneas criam 13 linhas, não o dobro
+  PASS  concorrência: nenhuma competência ficou com duas linhas
+  PASS  dois trabalhadores no mesmo mês: uma obrigação cada
+  PASS  limite: dezembro + 1 = janeiro do ano seguinte
+  PASS  limite: virada de ano na janela de 13 meses
+  PASS  limite: dia 31 em fevereiro não-29 vira 28
+  PASS  limite: fevereiro de ano bissexto preserva dia 29
+  PASS  limite: mês curto com dia 30 vira 28 (sem inventar dia)
+  PASS  competência: normalização aceita '2026-3', '2026-03' e data cheia
+  PASS  competência: período inválido é recusado, não adivinhado
+  PASS  inativo não gera cobrança (regra existente preservada)
+  PASS  valor zero não gera cobrança
+  PASS  rota de geração recusa inativo com mensagem e sem escrita
+  PASS  GET da tela de mensalidades responde 200
+  PASS  GET NÃO gera cobrança (leitura sem efeito colateral)
+  PASS  geração manual cria o período e informa quantos são novos
+  PASS  tela diz 'já estão geradas' quando não há nada novo
+  PASS  tela traduz a recusa de inativo em linguagem de operador
+  PASS  tela de lançamento traduz período inválido
+  PASS  tela de lançamento traduz mensalidade já registrada
+  PASS  recebimento individual conclui pela rota
+  PASS  recebimento preserva a competência da obrigação
+  PASS  recebimento registra forma, conta, data de pagamento e sessão
+  PASS  as demais continuam pendentes (baixa só do selecionado)
+  PASS  reenvio do recebimento não gera segundo evento nem segundo dinheiro
+  PASS  lote baixa exatamente as pendências selecionadas
+  PASS  lote sem baixa parcial oculta: o total é a soma do que foi baixado
+  PASS  lote não regrava a que já estava paga (data e forma preservadas)
+  PASS  um evento por mensalidade baixada no lote
+  PASS  lote de seleção já recebida é recusado sem escrever
+  PASS  lote que falha no meio devolve erro do servidor
+  PASS  falha no meio do lote não baixa NENHUMA mensalidade
+  PASS  falha no meio do lote não grava evento nenhum
+  PASS  depois de removido o obstáculo, o mesmo lote conclui
+  PASS  duplicidade histórica: nenhuma linha é apagada, fundida ou preterida
+  PASS  duplicidade histórica: o índice único NÃO é criado
+  PASS  duplicidade histórica: o impedimento é registrado no startup
+  PASS  duplicidade histórica: a tela mostra o conflito, sem resolvê-lo
+  PASS  sem a constraint, o serviço ainda não duplica o mês em conflito
+  PASS  conflito resolvido: a guarda do banco volta no próximo startup
+  PASS  backfill: competência rótulada do vencimento já gravado
+  PASS  backfill: vencimento ilegível NÃO é reinterpretado (fica NULL)
+  PASS  backfill: o startup informa as linhas que não pôde rotular
+  PASS  backfill é idempotente: rodar de novo não altera nada
+  PASS  cancelamento de mensalidade futura conclui pela rota
+  PASS  mês cancelado NÃO é recriado pela geração (regra existente)
+  PASS  reenvio do cancelamento não muda nada
+  PASS  mensalidade manual sem período legível é recusada com mensagem
+  PASS  mensalidade manual entra com a competência do período
+  PASS  segunda mensalidade manual do mesmo mês é recusada sem escrita
+  PASS  a recusa por duplicidade não consome a chave da tentativa
+
+62/62 verificações aprovadas (TASK_012 §3 — mensalidades por competência)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_sessao_eventos_caixa.py: rc=0
+test_financeiro_idempotencia_task012.py: rc=0
+test_financeiro_mensalidades_task012.py: rc=0
+tests/rodar_testes.sh, linha 89: 2459527 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok
