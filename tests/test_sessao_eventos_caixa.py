@@ -857,6 +857,242 @@ verificar("vendas da corrida gravaram exatamente um evento por venda concluída"
           f"vendas={vendas_d}")
 
 # ═════════════════════════════════════════════════════════════════════════════
+# TASK_010 complementar: a devolução do revisor pediu a prova NOMEADA de
+# fechamento concorrendo com venda, recebimento E cancelamento — o CASO 8 só
+# corria vendas × fechamento. Aqui a corrida completa disputa o mesmo
+# FOR UPDATE da sessão (rotas/caixa.py:2182-2186); nenhuma ordem particular é
+# esperada, apenas coerência: integrado-ou-recusado, nunca parcial.
+print("\n══ CASO 8b — FECHAR × VENDA × RECEBIMENTO × CANCELAMENTO ══")
+
+with conectar() as conn:
+    cx_e = conn.execute(
+        "INSERT INTO caixas (nome, descricao, usa_produtos, ativo) "
+        "VALUES (%s, 'fixture TASK_010 corrida completa', TRUE, 1) RETURNING id",
+        (f"{PREFIXO} Cantina E",)).fetchone()["id"]
+    p_e1 = conn.execute(
+        """INSERT INTO produtos (nome, categoria, preco_venda, quantidade_estoque,
+                                 caixa_id, ativo)
+           VALUES (%s, 'outro', 10.00, 60, %s, 1) RETURNING id""",
+        (f"{PREFIXO} Item E1", cx_e)).fetchone()["id"]
+    t_mensa_e = conn.execute(
+        """INSERT INTO trabalhadores (nome_completo, ativo, fiado_limite, fiado_credito)
+           VALUES (%s, 1, 500.00, 0.00) RETURNING id""",
+        (f"{PREFIXO} MensE",)).fetchone()["id"]
+    mm_e1 = conn.execute(
+        """INSERT INTO financeiro_movimentacoes
+           (tipo, categoria, valor, data_movimentacao, descricao, trabalhador_id,
+            status, conta_id)
+           VALUES ('entrada', 'mensalidade', 40.00, %s, %s, %s, 'pendente', %s)
+           RETURNING id""",
+        (date.today().isoformat(), f"{PREFIXO} Mensalidade E1",
+         t_mensa_e, cid_areceber)).fetchone()["id"]
+
+st, _, loc = req("POST", "/caixa/abrir", {"caixa_id": str(cx_e), "saldo_inicial": "0.00"})
+passo("abrir sessão E com R$ 0,00", st, loc)
+se = sessao_aberta(cx_e)
+
+# as vendas base entram NA sessão — assim o cancelamento da corrida disputa o
+# mesmo FOR UPDATE do fechamento (venda sem sessão seria cancelável à margem
+# da gaveta e não provaria nada contra o fechamento).
+st, _, loc = req("POST", "/caixa/pdv/finalizar", {
+    "caixa_id": str(cx_e), "caixa_movimento_id": str(se),
+    "forma_pagamento": "especie", "valor_recebido": "40.00",
+    "itens_json": cesta((p_e1, 4)), "imprimir": "0"})
+passo("venda base R$ 40 na sessão E (alvo do cancelamento da corrida)", st, loc)
+v_base = escalar("SELECT id FROM vendas_pdv WHERE caixa_movimento_id=%s AND total=40 "
+                 "AND status='concluida' ORDER BY id DESC LIMIT 1", (se,))
+verificar("CASO 8b — venda base 40 persistida (alvo do cancelamento)", v_base is not None)
+st, _, loc = req("POST", "/caixa/pdv/finalizar", {
+    "caixa_id": str(cx_e), "caixa_movimento_id": str(se),
+    "forma_pagamento": "especie", "valor_recebido": "30.00",
+    "itens_json": cesta((p_e1, 3)), "imprimir": "0"})
+passo("venda base R$ 30 na sessão E (alvo do cancelamento pós-fechamento)", st, loc)
+v_base2 = escalar("SELECT id FROM vendas_pdv WHERE caixa_movimento_id=%s AND total=30 "
+                  "AND status='concluida' ORDER BY id DESC LIMIT 1", (se,))
+verificar("CASO 8b — venda base 30 persistida (alvo pós-fechamento)", v_base2 is not None)
+est_antes_e = escalar("SELECT quantidade_estoque FROM produtos WHERE id=%s", (p_e1,))
+
+saco8b = []
+alvos8b = [
+    ("POST", f"/caixa/vendas/{v_base}/cancelar",
+     {"motivo": "T010C corrida", "confirmar": "1"}, login_com("admin", "teste123")),
+    ("POST", "/financeiro/mensalidades/receber",
+     {"trabalhador_id": str(t_mensa_e), "mov_ids": str(mm_e1),
+      "forma_pagamento": "especie", "sessao_id": str(se)}, login_com("admin", "teste123")),
+    ("POST", "/caixa/pdv/finalizar",
+     {"caixa_id": str(cx_e), "caixa_movimento_id": str(se), "forma_pagamento": "especie",
+      "valor_recebido": "20.00", "itens_json": cesta((p_e1, 2)), "imprimir": "0"},
+     login_com("admin", "teste123")),
+    ("POST", "/caixa/fechar", {"caixa_movimento_id": str(se), "dinheiro_contado": "0.00"},
+     login_com("admin", "teste123")),
+]
+ts = [threading.Thread(target=req_t, args=(m, p, d, o, saco8b))
+      for (m, p, d, o) in alvos8b]
+[t.start() for t in ts]; [t.join() for t in ts]
+verificar("CASO 8b — nenhuma requisição da corrida terminou em exceção não tratada",
+          all(x[0] != "EXC" for x in saco8b), f"{saco8b}")
+
+# o fechamento da corrida pode ter vencido (e fechado com esperado 0) ou sido
+# recusado por observação/trava; em qualquer caso a sessão termina fechada
+# aqui, de forma determinística, para as invariantes de estado abaixo.
+st, _, loc = req("POST", "/caixa/fechar",
+                 {"caixa_movimento_id": str(se), "dinheiro_contado": "0.00",
+                  "observacao": "T010C conferência da corrida"})
+if not erro_em(loc, "sessao_invalida"):
+    passo("fechar a sessão E após a corrida", st, loc)
+m_e = consulta("SELECT * FROM caixa_movimentos WHERE id=%s", (se,))[0]
+verificar("CASO 8b — a sessão está fechada", m_e["status"] == "fechado", f"{m_e['status']}")
+esperado_e = dec(escalar(
+    "SELECT 0 + COALESCE(SUM(efeito_fisico),0) FROM caixa_sessao_eventos WHERE sessao_id=%s",
+    (se,)))
+verificar("CASO 8b — saldo_final = inicial + Σ efeito_físico dos eventos finais da corrida",
+          dec(m_e["saldo_final"]) == esperado_e,
+          f"final={m_e['saldo_final']} esperado={esperado_e}")
+pos_fechamento_e = escalar(
+    """SELECT COUNT(*) FROM caixa_sessao_eventos e JOIN caixa_movimentos m ON m.id = e.sessao_id
+       WHERE m.id = %s AND m.status = 'fechado'
+         AND e.criado_em::timestamp(0) > m.data_fechamento::timestamp(0)""", (se,))
+verificar("CASO 8b — nenhum evento escrito depois do fechamento",
+          pos_fechamento_e == 0, f"{pos_fechamento_e} eventos pós-fechamento")
+
+n_canc_e = escalar("SELECT COUNT(*) FROM caixa_sessao_eventos WHERE sessao_id=%s "
+                   "AND tipo='cancelamento' AND venda_id=%s", (se, v_base))
+st_vbase_e = escalar("SELECT status FROM vendas_pdv WHERE id=%s", (v_base,))
+reg_canc_e = escalar("SELECT COUNT(*) FROM vendas_pdv_cancelamento WHERE venda_id=%s",
+                     (v_base,))
+verificar("CASO 8b — cancelamento da corrida OU integrado (evento+registro+status) OU "
+          "recusado (nenhum dos três) — nunca parcial",
+          (n_canc_e == 1 and st_vbase_e == "cancelada" and reg_canc_e == 1)
+          or (n_canc_e == 0 and st_vbase_e == "concluida" and reg_canc_e == 0),
+          f"eventos={n_canc_e} status={st_vbase_e} registro={reg_canc_e}")
+n_venda20 = escalar("SELECT COUNT(*) FROM vendas_pdv WHERE caixa_movimento_id=%s "
+                    "AND total=20 AND status='concluida'", (se,))
+est_esperado_e = (est_antes_e - 2 * n_venda20
+                  + (4 if st_vbase_e == "cancelada" else 0))
+estoque_e = escalar("SELECT quantidade_estoque FROM produtos WHERE id=%s", (p_e1,))
+verificar("CASO 8b — estoque bate com o livro-razão (bases + corrida − cancelamentos), "
+          "sem escrita parcial",
+          estoque_e == est_esperado_e,
+          f"real={estoque_e} esperado={est_esperado_e} (bases {est_antes_e}, "
+          f"venda20={n_venda20}, cancel={'sim' if st_vbase_e == 'cancelada' else 'não'})")
+st_aft, corpo_aft, loc_aft = req("POST", f"/caixa/vendas/{v_base2}/cancelar",
+                                 {"motivo": "T010C após fechamento", "confirmar": "1"})
+corpo_aft = corpo_aft.decode("utf-8", "replace")
+verificar("CASO 8b — cancelamento em sessão fechada é recusado com aviso, sem nada gravar",
+          st_aft == 200 and "cancelado=" not in (loc_aft or "")
+          and escalar("SELECT COUNT(*) FROM caixa_sessao_eventos WHERE sessao_id=%s "
+                      "AND tipo='cancelamento' AND venda_id=%s", (se, v_base2)) == 0
+          and escalar("SELECT status FROM vendas_pdv WHERE id=%s", (v_base2,)) == "concluida"
+          and "fechada" in corpo_aft,
+          f"HTTP {st_aft} {loc_aft}")
+
+st_aft, _, loc_aft = req("POST", "/financeiro/mensalidades/receber", {
+    "trabalhador_id": str(t_mensa_e), "mov_ids": str(mm_e1), "forma_pagamento": "especie",
+    "sessao_id": str(se)})
+n_mens_e = escalar("SELECT COUNT(*) FROM caixa_sessao_eventos WHERE sessao_id=%s "
+                   "AND tipo='mensalidade'", (se,))
+status_mm_e = escalar("SELECT status FROM financeiro_movimentacoes WHERE id=%s", (mm_e1,))
+verificar("CASO 8b — recebimento OU integrado (pago + evento único) OU recusado sem baixar — "
+          "nunca parcial",
+          (status_mm_e == "pago" and n_mens_e == 1)
+          or (status_mm_e == "pendente" and n_mens_e == 0),
+          f"status={status_mm_e} eventos={n_mens_e}; reenvio pós-fechamento: {loc_aft}")
+orfaos = consulta("SELECT identidade, tipo FROM caixa_sessao_eventos "
+                  "WHERE sessao_id=%s AND financeiro_id IS NULL", (se,))
+verificar("CASO 8b — todo recebimento/sangria da sessão tem lançamento VINCULADO (sem evento órfão)",
+          escalar("SELECT COUNT(*) FROM caixa_sessao_eventos WHERE sessao_id=%s "
+                  "AND tipo IN ('mensalidade','doacao','recebimento_fiado',"
+                  "'credito_anticipado','sangria') AND financeiro_id IS NULL", (se,)) == 0,
+          f"órfãos: {orfaos}")
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TASK_010 complementar: reenvio da MESMA tentativa após perda da resposta.
+# A proteção real é a identidade do comando/documento (UNIQUE em
+# caixa_sessao_eventos + estado da pendência), não a requisição HTTP.
+print("\n══ CASO 16 — REENVIO DA MESMA TENTATIVA (PROTEÇÃO DOCUMENTAL × HTTP) ══")
+
+with conectar() as conn:
+    cx_f = conn.execute(
+        "INSERT INTO caixas (nome, descricao, usa_produtos, ativo) "
+        "VALUES (%s, 'fixture TASK_010 reenvio', TRUE, 1) RETURNING id",
+        (f"{PREFIXO} Cantina F",)).fetchone()["id"]
+    p_f1 = conn.execute(
+        """INSERT INTO produtos (nome, categoria, preco_venda, quantidade_estoque,
+                                 caixa_id, ativo)
+           VALUES (%s, 'outro', 10.00, 60, %s, 1) RETURNING id""",
+        (f"{PREFIXO} Item F1", cx_f)).fetchone()["id"]
+    t_mensa_f = conn.execute(
+        """INSERT INTO trabalhadores (nome_completo, ativo, fiado_limite, fiado_credito)
+           VALUES (%s, 1, 500.00, 0.00) RETURNING id""",
+        (f"{PREFIXO} MensF",)).fetchone()["id"]
+    mm_f1 = conn.execute(
+        """INSERT INTO financeiro_movimentacoes
+           (tipo, categoria, valor, data_movimentacao, descricao, trabalhador_id,
+            status, conta_id)
+           VALUES ('entrada', 'mensalidade', 30.00, %s, %s, %s, 'pendente', %s)
+           RETURNING id""",
+        (date.today().isoformat(), f"{PREFIXO} Mensalidade F1",
+         t_mensa_f, cid_areceber)).fetchone()["id"]
+
+st, _, loc = req("POST", "/caixa/abrir", {"caixa_id": str(cx_f), "saldo_inicial": "100.00"})
+passo("abrir sessão F (inicial R$ 100)", st, loc)
+sf = sessao_aberta(cx_f)
+
+tentativa = {"trabalhador_id": str(t_mensa_f), "mov_ids": str(mm_f1),
+             "forma_pagamento": "especie", "sessao_id": str(sf)}
+st, _, loc = req("POST", "/financeiro/mensalidades/receber", tentativa)
+passo("recebimento original da mensalidade F1 (30, espécie)", st, loc)
+st2, _, loc2 = req("POST", "/financeiro/mensalidades/receber", tentativa)
+ev_f = escalar("SELECT COUNT(*) FROM caixa_sessao_eventos WHERE sessao_id=%s "
+               "AND tipo='mensalidade'", (sf,))
+verificar("CASO 16 — reenvio do MESMO recebimento: 1 evento, 1 baixa, convergência "
+          "(proteção documental resiste à perda da resposta; sem chave HTTP)",
+          ev_f == 1
+          and escalar("SELECT status FROM financeiro_movimentacoes WHERE id=%s", (mm_f1,))
+          == "pago",
+          f"eventos={ev_f} 2a resposta={loc2}")
+
+vendas_f_antes = vendas_da_sessao(sf)
+st, _, _ = req("POST", "/caixa/pdv/finalizar", {
+    "caixa_id": str(cx_f), "caixa_movimento_id": str(sf), "forma_pagamento": "especie",
+    "valor_recebido": "10.00", "itens_json": cesta((p_f1, 1)), "imprimir": "0"})
+st, _, _ = req("POST", "/caixa/pdv/finalizar", {
+    "caixa_id": str(cx_f), "caixa_movimento_id": str(sf), "forma_pagamento": "especie",
+    "valor_recebido": "10.00", "itens_json": cesta((p_f1, 1)), "imprimir": "0"})
+vendas_f_depois = vendas_da_sessao(sf)
+verificar("CASO 16 — reenvio de VENDA sem chave de idempotência HTTP cria duas vendas "
+          "(comportamento projetado; o PDV não finge idempotência)",
+          vendas_f_depois == vendas_f_antes + 2,
+          f"antes={vendas_f_antes} depois={vendas_f_depois}")
+
+st, _, loc = req("POST", "/caixa/pdv/finalizar", {
+    "caixa_id": str(cx_f), "caixa_movimento_id": str(sf), "forma_pagamento": "especie",
+    "valor_recebido": "40.00", "itens_json": cesta((p_f1, 4)), "imprimir": "0"})
+passo("venda R$ 40 para o cancelamento", st, loc)
+v_c16 = escalar("SELECT id FROM vendas_pdv WHERE caixa_movimento_id=%s AND total=40 "
+                "ORDER BY id DESC LIMIT 1", (sf,))
+est_a16 = escalar("SELECT quantidade_estoque FROM produtos WHERE id=%s", (p_f1,))
+req("POST", f"/caixa/vendas/{v_c16}/cancelar",
+    {"motivo": "T010C idêntico 1", "confirmar": "1"})
+req("POST", f"/caixa/vendas/{v_c16}/cancelar",
+    {"motivo": "T010C idêntico 2", "confirmar": "1"})
+verificar("CASO 16 — reenvio do MESMO comando de cancelamento: uma única compensação "
+          "(identidade venda:{id}:cancelamento no banco)",
+          escalar("SELECT COUNT(*) FROM caixa_sessao_eventos WHERE sessao_id=%s "
+                  "AND tipo='cancelamento' AND venda_id=%s", (sf, v_c16)) == 1
+          and escalar("SELECT quantidade_estoque FROM produtos WHERE id=%s", (p_f1,))
+          == est_a16 + 4,
+          f"estoque {est_a16}->{escalar('SELECT quantidade_estoque FROM produtos WHERE id=%s', (p_f1,))}")
+
+esperado_f = dec(escalar(
+    "SELECT 100 + COALESCE(SUM(efeito_fisico),0) FROM caixa_sessao_eventos WHERE sessao_id=%s",
+    (sf,)))
+st, _, loc = req("POST", "/caixa/fechar",
+                 {"caixa_movimento_id": str(sf), "dinheiro_contado": str(esperado_f)})
+passo("fechar sessão F com o esperado exato da corrida", st, loc)
+print(f"  [dica] esperado F = {esperado_f}")
+
+# ═════════════════════════════════════════════════════════════════════════════
 print("\n══ CASO 6b — FALHA NA ÚLTIMA ESCRITA → ROLLBACK COMPLETO ══")
 
 executar("ALTER TABLE caixa_sangrias ADD CONSTRAINT t008_chk_recebedor "

@@ -32,6 +32,12 @@ LOG="/tmp/shambala_test_app.log"
 PID_FILE="/tmp/shambala_test_app.pid"
 PY=".venv/bin/python3"
 TOKEN="t010-$(date +%Y%m%d%H%M%S)-$$"
+# A evidência precisa dizer QUAL código foi validado: HEAD + sufixo -dirty
+# quando a árvore de trabalho tem mudanças não commitadas (TASK_010 §4).
+HASH_ARBORE="$(git rev-parse HEAD 2>/dev/null || echo desconhecido)"
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  HASH_ARBORE="${HASH_ARBORE}-dirty"
+fi
 
 if [ ! -f "$ARQ_ENV" ]; then
   echo "[ERRO] $ARQ_ENV não existe. A execução de testes exige um arquivo de" >&2
@@ -63,6 +69,7 @@ echo "  config ..: $ARQ_ENV (autoridade do destino)"
 echo "  banco ...: $BANCO_TESTE"
 echo "  porta ...: $PORTA"
 echo "  token ...: $TOKEN (identifica ESTA execução nas provas)"
+echo "  árvore ..: $HASH_ARBORE (código validado por esta execução)"
 
 # ── 2. Estado do DEV registrado ANTES de tudo (prova de não interferência) ───
 LER_DEV() {
