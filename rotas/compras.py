@@ -54,19 +54,6 @@ def _caminho_da_nota(nome_arquivo: str) -> str:
     return alvo
 
 
-def _salvar_foto_nota(conteudo: bytes, nome_arquivo: str) -> str:
-    """Grava a nota com o nome JÁ REGISTRADO no banco e devolve esse nome.
-
-    O nome não é sorteado aqui: é o mesmo que a linha guardou, senão banco e
-    disco falam de arquivos diferentes (foi o defeito da primeira versão desta
-    correção). A falha do próprio disco desfaz o lançamento logo acima
-    (`_descartar_compra`) — nenhum arquivo sobra, porque nenhum chegou a existir.
-    """
-    with open(_caminho_da_nota(nome_arquivo), "wb") as f:
-        f.write(conteudo)
-    return nome_arquivo
-
-
 def _falha_de_disco_injetada(etapa: str, request=None) -> None:
     """Levanta `OSError` quando o ambiente descartável pediu falha nesta etapa.
 

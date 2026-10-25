@@ -917,6 +917,16 @@ criou, e o piso não desce. Nas corridas em que outro processo recriou o banco n
 meio, a sentinela caiu e a suíte **reprovou com mensagem própria** em vez de
 declarar limpeza verificada — que é o comportamento desejado.
 
+**Uma segunda armadilha, achada pela própria conferência.** A limpeza também
+usava `operacao_idempotencia.documento` como pista ("apago a chave cujo
+documento é uma fixture minha"). Os ids do banco descartável são **reciclados a
+cada execução** (o runner o recria), então uma chave de OUTRA suíte podia
+apontar para o "documento 7" — o mesmo número de uma fixture nossa. Numa corrida
+isso apagou 4 chaves alheias (11 → 7) e a conferência do universo alheio
+reprovou, com número. A pista foi **removida**: a limpeza apaga só o que está em
+`CHAVES_USADAS`, e a corrida seguinte fechou em 11 → 11. É o retrato do que a
+ordem pede: a prova tem de ser capaz de reprovar.
+
 ### 5.7 Limitações e questões registradas
 
 1. **Não há conciliação bancária**: o Σ acumulado por conta é a soma dos
@@ -979,6 +989,10 @@ mudou o desenho, não a asserção.
 | rollback (`except` interno) | se o commit não acontecer | `_remover_arquivo(tmp)` remove **só o temporário desta tentativa** |
 | falha da promoção | depois do commit | `_descartar_compra(mov_id)`: o lançamento é **cancelado** (nunca apagado — fica auditável) e a tentativa é liberada para reenvio; o temporário é removido |
 | `_caminho_da_nota(nome)` | em toda escrita/remoção | `abspath` + prefixo obrigatório de `static/fotos`; nome fora da pasta levanta `ValueError` em vez de apagar |
+
+O helper antigo `_salvar_foto_nota` (que gravava com um nome sorteado) foi
+removido: depois da mudança ele seria código morto — e código morto que grava
+arquivo é convite ao defeito de volta.
 
 Chaves de tentativa consumidas e nunca reaproveitadas; a tentativa que falhou
 por disco libera o reenvio (`_descartar_compra` marca a compra como cancelada e

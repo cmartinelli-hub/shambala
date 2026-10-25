@@ -928,12 +928,14 @@ def limpar_suíte():
             "SELECT id FROM atendentes WHERE nome_usuario LIKE 't12cons_%'", None).fetchall()]
 
         # ── de onde saem as chaves de tentativa, antes de apagar as fixtures ──
-        documentos = {str(i) for i in vendas} | {str(i) for i in fins}
-        chaves = {r["chave"] for r in conn.execute(
-            """SELECT chave FROM operacao_idempotencia
-               WHERE documento = ANY(%s)""",
-            (sorted(documentos) or ["-"],)).fetchall()}
-        chaves |= set(CHAVES_USADAS)
+        #
+        # As tentativas desta suíte são as que ela REGISTROU em `CHAVES_USADAS`.
+        # `documento` não serve como pista: os ids do banco descartável são
+        # reciclados a cada execução (o runner recria o banco), então uma chave
+        # de OUTRA suíte pode apontar para "documento 7" — o mesmo número de uma
+        # fixture nossa. Foi assim que uma corrida apagou 4 chaves alheias; a
+        # conferência do universo alheio pegou o caso, e a pista foi removida.
+        chaves = set(CHAVES_USADAS)
 
         # ── alocações: as do trabalhador da suíte e as que apontam para
         #    lançamento/venda da suíte (um mesmo nunca é de outra execução) ──
