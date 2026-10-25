@@ -144,6 +144,8 @@ def _remover_arquivo(caminho: str) -> None:
 # handler, depois do `with`): guardada para que a injeção de falha — e o log —
 # saibam de qual requisição se trata. ContextVar porque o servidor é assíncrono.
 import contextvars
+from contextlib import contextmanager
+from psycopg2.extras import RealDictCursor
 
 request_atual: contextvars.ContextVar = contextvars.ContextVar(
     "compras_request_atual", default=None)
@@ -229,6 +231,84 @@ def _descartar_compra(mov_id: int, chave_tentativa: str) -> bool:
 INTERVALO_RECUPERACAO = "interval '24 hours'"
 
 
+# Trava por COMPRA em finalização. Uma requisição ativa segura esta trava desde
+# antes do commit até a promoção do arquivo terminar. A recuperação só age nas
+# compras cuja trava ela CONSEGUE pegar — e não pegar significa "há alguém
+# finalizando agora", que é exatamente o que não se pode tocar.
+TRAVA_COMPRA = "compra_em_finalizacao"
+
+
+@contextmanager
+def _compra_em_finalizacao(mov_id: int):
+    """Segura a trava da compra numa conexão dedicada, do início ao fim.
+
+    Trava de sessão pertence à CONEXÃO, não à transação: se fosse tomada numa
+    conexão do pool e solta em outra, não protegeria nada (e ficaria presa até a
+    conexão morrer). Por isso aqui há uma conexão só, aberta antes do commit e
+    fechada no fim — o `finally` solta a trava pelo fechamento da conexão.
+    """
+    from banco import _obter_pool
+    conn = _obter_pool().getconn()
+    try:
+        conn.cursor_factory = RealDictCursor
+        cur = conn.cursor()   # RealDictCursor: a coluna vem por nome, não por índice
+        cur.execute("SELECT pg_try_advisory_lock(hashtext(%s), %s) AS ok",
+                    (TRAVA_COMPRA, int(mov_id)))
+        linha = cur.fetchone()
+        segurou = bool(linha and linha["ok"])
+        cur.close()
+        yield segurou
+    finally:
+        # Soltar a trava EXPLICITAMENTE antes de devolver a conexão: `putconn`
+        # devolve a sessão ao pool sem encerrá-la, e uma trava de sessão presa
+        # numa conexão do pool sobrevive ao `putconn` — foi assim que a compra
+        # ficou "em finalização" para sempre na primeira versão desta trava.
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT pg_advisory_unlock(hashtext(%s), %s)",
+                        (TRAVA_COMPRA, int(mov_id)))
+            cur.close()
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        _obter_pool().putconn(conn)
+
+
+def _segurar_compra(conn, mov_id: int) -> bool:
+    """Marca esta compra como "em finalização" nesta sessão do banco.
+
+    Trava de SESSÃO (`pg_advisory_lock`), de propósito: ela precisa sobreviver ao
+    commit da transação e só cair no `finally` da requisição. `pg_try_advisory_lock`
+    não bloqueia: se outra sessão já a tem, devolve False.
+    """
+    linha = conn.execute(
+        "SELECT pg_try_advisory_lock(hashtext(%s), %s) AS ok",
+        (TRAVA_COMPRA, int(mov_id))).fetchone()
+    return bool(linha and linha["ok"])
+
+
+def _soltar_compra(conn, mov_id: int) -> None:
+    try:
+        conn.execute("SELECT pg_advisory_unlock(hashtext(%s), %s)",
+                     (TRAVA_COMPRA, int(mov_id)))
+    except Exception:  # noqa: BLE001 - soltar trava nunca derruba a resposta
+        pass
+
+
+def _pode_recuperar(conn, mov_id: int) -> bool:
+    """A recuperação pode mexer nesta compra?
+
+    Só se NINGUÉM estiver finalizando — isto é, se ela conseguir tomar a trava
+    da compra. A trava fica presa à conexão da recuperação até o fim dela (é o
+    que impede uma requisição de entrar no meio); quem não consegue tomar
+    significa "há alguém finalizando agora" e a compra é preservada.
+    """
+    linha = conn.execute(
+        "SELECT pg_try_advisory_lock(hashtext(%s), %s) AS ok",
+        (TRAVA_COMPRA, int(mov_id))).fetchone()
+    return bool(linha and linha["ok"])
+
+
 def _trava_de_recuperacao(conn) -> bool:
     """Trava de execução única da recuperação (não bloqueante).
 
@@ -283,11 +363,13 @@ def recuperar_compras_sem_nota() -> dict:
     from servico_idempotencia import DESTINO_ANULADO
 
     feito = {"executou": False, "canceladas": 0,
-             "temporarios_removidos": 0, "puladas": 0}
+             "temporarios_removidos": 0, "puladas": 0, "em_finalizacao": 0,
+             "fora_do_prazo": 0}
     with _conectar() as conn:
         if not _trava_de_recuperacao(conn):
             # Outro processo já está recuperando: não interfere.
             return feito
+        recuperadas: list[int] = []
         try:
             candidatas = [dict(r) for r in conn.execute(
                 f"""SELECT fm.id, fm.nota_fiscal_foto,
@@ -306,16 +388,43 @@ def recuperar_compras_sem_nota() -> dict:
                             - {INTERVALO_RECUPERACAO}
                    FOR UPDATE OF fm""").fetchall()]
 
-            recuperaveis, puladas, temporarios = [], 0, 0
+            recuperaveis, puladas, travadas, temporarios = [], 0, 0, 0
             for linha in candidatas:
+                # 0) A COMPRA ESTÁ SENDO FINALIZADA AGORA? A tentativa dela já
+                #    está `concluida` na janela entre o commit e o arquivo, então
+                #    status de tentativa não distingue nada. Quem distingue é a
+                #    trava: se a requisição ativa a segura, `_pode_recuperar`
+                #    devolve False e a compra NÃO é tocada.
+                if not _pode_recuperar(conn, linha["id"]):
+                    travadas += 1
+                    continue
                 estado = _estado_interrompido(linha)
                 if estado is None:
                     puladas += 1
                     continue
                 recuperaveis.append(linha)
 
+            # Fora do prazo: tentativa interrompida antiga NÃO entra na
+            # recuperação automática. Fica contada (e vai para o log) para não
+            # desaparecer: são tentativas identificáveis por
+            # `operacao_idempotencia WHERE operacao='compra' AND status='concluida'
+            #  AND documento IS NOT NULL` com conclusão anterior ao intervalo,
+            # cujo documento esteja pago sem arquivo e com temporário ao lado.
+            feito["fora_do_prazo"] = conn.execute(
+                f"""SELECT count(*) AS c
+                    FROM financeiro_movimentacoes fm
+                    JOIN operacao_idempotencia oi
+                      ON oi.documento = fm.id::text
+                     AND oi.operacao = 'compra' AND oi.status = 'concluida'
+                   WHERE fm.categoria = 'compra' AND fm.status = 'pago'
+                     AND fm.nota_fiscal_foto IS NOT NULL
+                     AND COALESCE(oi.concluido_em, oi.criado_em)::timestamp
+                         < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')
+                           - {INTERVALO_RECUPERACAO}""").fetchone()["c"]
+
             if not recuperaveis:
                 feito["puladas"] = puladas
+                feito["em_finalizacao"] = travadas
                 feito["executou"] = True
                 return feito
 
@@ -343,8 +452,16 @@ def recuperar_compras_sem_nota() -> dict:
                     temporarios += 1
 
             feito.update(executou=True, canceladas=len(recuperaveis),
-                         temporarios_removidos=temporarios, puladas=puladas)
+                         temporarios_removidos=temporarios, puladas=puladas,
+                         em_finalizacao=travadas)
+            recuperadas = [l["id"] for l in recuperaveis]
         finally:
+            for mid in recuperadas:
+                try:
+                    conn.execute("SELECT pg_advisory_unlock(hashtext(%s), %s)",
+                                 (TRAVA_COMPRA, int(mid)))
+                except Exception:  # noqa: BLE001
+                    pass
             conn.execute(
                 "SELECT pg_advisory_unlock(hashtext('recuperacao_compra_sem_nota'))")
     return feito
@@ -486,45 +603,53 @@ async def salvar_compra(
         # Disco testado antes da linha ser confirmada: se não cabe, nada é
         # committed e nenhum arquivo definitivo aparece.
         temporario = _preparar_nota(conteudo, nome_tentativa, request)
-        try:
-            conn.execute(
-                "UPDATE financeiro_movimentacoes SET nota_fiscal_foto = %s WHERE id = %s",
-                (nome_tentativa, mov_id),
-            )
-            confirmar(conn, chave=chave_tentativa, documento=mov_id,
-                      destino=destino_sucesso)
-        except BaseException:
-            # Rollback: o temporário desta tentativa vai junto (só ele).
-            _remover_arquivo(temporario)
-            raise
+        # Trava por compra, tomada ANTES do commit e segurada até a promoção
+        # terminar. É ela que separa "requisição ativa" de "tentativa
+        # interrompida": na janela entre o commit e o arquivo a tentativa JÁ
+        # está `concluida` — excluir `em_andamento` não prova proteção sozinho
+        # (foi o que o dono mostrou). Quem está na janela SEGURA a trava; a
+        # recuperação só age no que ela conseguir travar.
+        with _compra_em_finalizacao(mov_id):
+            try:
+                conn.execute(
+                    """UPDATE financeiro_movimentacoes
+                       SET nota_fiscal_foto = %s WHERE id = %s""",
+                    (nome_tentativa, mov_id),
+                )
+                confirmar(conn, chave=chave_tentativa, documento=mov_id,
+                          destino=destino_sucesso)
+            except BaseException:
+                # Rollback: o temporário desta tentativa vai junto (só ele).
+                _remover_arquivo(temporario)
+                raise
 
-    # Transação confirmada. Promover é uma renomeação atômica: a partir daqui a
-    # nota tem o nome que a linha gravou.
-    #
-    # Entre o commit e a promoção NÃO existe transação que proteja o par
-    # banco↔disco. Se o processo morrer aqui, sobra um documento "pago" cuja
-    # nota não está no disco e um temporário solto — estado que
-    # `recuperar_compras_sem_nota` (startup) conserta. A injeção abaixo
-    # reproduz essa morte para a prova.
-    _falha_de_processo_injetada("morrer", request)
-    try:
-        _promover_nota(temporario, nome_tentativa, request)
-    except OSError:
-        # Renomear falhou depois do commit. O lançamento não pode ficar "pago"
-        # sem a nota que a tela exige: a compra é CANCELADA (não apagada, para
-        # o fato ficar auditável) e a tentativa é ANULADA na mesma transação, de
-        # modo que reenviar não devolva "deu certo" para documento cancelado.
-        # O temporário é removido — só ele, e só se estiver em static/fotos.
-        _remover_arquivo(temporario)
-        compensou = _descartar_compra(mov_id, chave_tentativa)
-        if not compensou:
-            # A compensação falhou: a tentativa continua CONSUMIDA apontando
-            # para o documento cancelado (rastro preservado, estado coerente) e
-            # a varredura de startup fecha o que faltar. O operador recebe erro,
-            # nunca "deu certo".
-            print(f"[compras] promoção e compensação falharam para a compra "
-                  f"{mov_id}; a tentativa segue consumida com o documento",
-                  flush=True)
-        raise
+            # A transação tem de estar CONFIRMADA aqui: a janela entre o commit
+            # e o arquivo é justamente o que esta trava protege, e enquanto o
+            # `with conectar()` não sai, nada foi confirmado ainda. Commit
+            # explícito agora; o `with` externo só fecha a conexão depois.
+            conn.commit()
+
+            # Promover é uma renomeação atômica: a partir daqui a nota tem o
+            # nome que a linha gravou.
+            #
+            # Entre o commit e a promoção NÃO existe transação que proteja o par
+            # banco↔disco. Se o processo morrer aqui, sobra um documento "pago"
+            # cuja nota não está no disco e um temporário solto — estado que
+            # `recuperar_compras_sem_nota` fecha, porque a trava desta compra
+            # morre junto com o processo. A injeção abaixo reproduz essa morte.
+            _falha_de_processo_injetada("morrer", request)
+            try:
+                _promover_nota(temporario, nome_tentativa, request)
+            except OSError:
+                # Renomear falhou depois do commit: o lançamento não pode ficar
+                # "pago" sem a nota. A compra é CANCELADA (não apagada) e a
+                # tentativa ANULADA na mesma transação — reenviar não devolve
+                # "deu certo" para documento cancelado.
+                _remover_arquivo(temporario)
+                if not _descartar_compra(mov_id, chave_tentativa):
+                    print(f"[compras] promoção e compensação falharam para a "
+                          f"compra {mov_id}; a tentativa segue consumida com o "
+                          f"documento", flush=True)
+                raise
 
     return RedirectResponse(url=destino_sucesso, status_code=303)

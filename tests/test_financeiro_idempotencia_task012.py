@@ -1053,8 +1053,12 @@ def prova_nota_fora_da_transacao():
               recuperado["canceladas"] >= 1
               and linha5b["status"] == "cancelado"
               and chave5["status"] == "anulada" and chave5["documento"] is None
-              and not [f for f in fotos() if ".tmp-" in f],
-              f"recuperado={recuperado} linha={linha5b} chave={chave5}")
+              # só os temporários DESTA compra: `fotos()` é o diretório inteiro,
+              # e outras provas desta suíte deixam os seus de propósito
+              and not [f for f in fotos()
+                       if ".tmp-" in f and f.startswith(f"nota_{linha5['id']}_")],
+              f"recuperado={recuperado} linha={linha5b} chave={chave5} "
+              f"temporarios={[f for f in fotos() if '.tmp-' in f]}")
 
     st5b, _, loc5b = enviar(desc5, "17.00", k5)
     verificar("FIN-09 recuperação: reenviar depois da recuperação não responde "
@@ -1081,8 +1085,9 @@ def prova_nota_fora_da_transacao():
     # As DUAS falham na mesma requisição: a promoção (para haver compensação) e
     # a própria compensação.
     st6, _, _ = enviar(desc6, "18.00", k6, falha="promover,compensar")
-    linha6 = conn_uma("SELECT status FROM financeiro_movimentacoes "
+    linha6 = conn_uma("SELECT id, status FROM financeiro_movimentacoes "
                       "WHERE descricao = %s", (desc6,))
+    linha6_id = linha6["id"] if linha6 else 0
     chave6 = conn_uma("SELECT status, documento FROM operacao_idempotencia "
                       "WHERE chave = %s", (k6,))
     verificar("FIN-09 compensação falhando: a compra fica cancelada e a tentativa "
@@ -1094,7 +1099,9 @@ def prova_nota_fora_da_transacao():
     recuperado6 = recuperar_compras_sem_nota()
     verificar("FIN-09 compensação falhando: os temporários órfãos são recuperados "
               "na próxima subida (a varredura não depende da compensação)",
-              not [f for f in fotos() if ".tmp-" in f], str(recuperado6))
+              not [f for f in fotos()
+                   if ".tmp-" in f and f.startswith(f"nota_{linha6_id}_")],
+              f"{recuperado6} temporarios={[f for f in fotos() if '.tmp-' in f]}")
 
     # ── 7) o efeito nos FATOS: nada em estoque, nada em dinheiro ─────────────
     #
@@ -1318,6 +1325,118 @@ def prova_nota_fora_da_transacao():
                      ([str(i) for i in ids_lim],))
         conn.execute("DELETE FROM financeiro_movimentacoes WHERE id = ANY(%s)",
                      (ids_lim,))
+
+    # ── 9) REQUISIÇÃO ATIVA × RECUPERAÇÃO (o ponto do dono) ────────────────
+    #
+    # Na janela entre o commit e a promoção a tentativa JÁ está `concluida` —
+    # excluir `em_andamento` não distingue nada, como o dono mostrou. A prova
+    # abre a requisição, deixa o processo parado NESSA janela (injeção) e roda a
+    # recuperação enquanto a trava da compra está na mão dela. A recuperação tem
+    # de PRESERVAR; e, depois que a requisição termina, o estado tem de estar
+    # correto — sem cancelamento indevido.
+    from rotas.compras import (FALHA_DE_DISCO_ENV, _compra_em_finalizacao,
+                               recuperar_compras_sem_nota as recuperar9)
+    import contextlib as _ctx
+
+    k9 = chave()
+    desc9 = f"{PREFIXO} compra fin09 ativa {k9[:8]}"
+    # 9a) a requisição ativa: trava tomada, janela aberta, recuperação no meio
+    with _compra_em_finalizacao(0) as _ok:      # id 0 só para checar a trava
+        pass
+    # Cria a compra "na janela": linha paga + tentativa concluída + temporário,
+    # e a trava SEGURA por esta thread (simula a requisição em finalização).
+    with conectar() as conn:
+        mid9 = conn.execute(
+            """INSERT INTO financeiro_movimentacoes
+               (tipo, categoria, valor, data_movimentacao, descricao, status)
+               VALUES ('saida', 'compra', 25.00, %s, %s, 'pago') RETURNING id""",
+            (date.today().isoformat(), desc9)).fetchone()["id"]
+        nome9 = f"nota_{mid9}_ativa{k9[:4]}.jpg"
+        conn.execute("UPDATE financeiro_movimentacoes SET nota_fiscal_foto = %s "
+                     "WHERE id = %s", (nome9, mid9))
+        conn.execute(
+            """INSERT INTO operacao_idempotencia
+               (chave, operacao, corpo_hash, status, documento, destino,
+                criado_em, concluido_em)
+               VALUES (%s, 'compra', 'x', 'concluida', %s,
+                       '/financeiro/compras?ok=1',
+                       (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')
+                           ::timestamp(0)::text,
+                       (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')
+                           ::timestamp(0)::text)""",
+            (k9, str(mid9)))
+    alvo9 = _caminho_da_nota(nome9)
+    with open(alvo9 + ".tmp-ativa", "wb") as f:
+        f.write(b"\xff\xd8\xffT12")
+
+    # A trava da compra é segurada enquanto a recuperação roda — é o que uma
+    # requisição ativa faz na vida real.
+    with _compra_em_finalizacao(mid9) as segurou:
+        resultado9 = recuperar9()
+        linha9a = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                           (mid9,))
+    verificar("FIN-09 requisição ATIVA: a trava é exclusiva (a segunda tentativa "
+              "de travar falha)", segurou is True, f"segurou={segurou}")
+    verificar("FIN-09 requisição ATIVA × recuperação: a recuperação NÃO cancela a "
+              "compra que está sendo finalizada",
+              linha9a["status"] == "pago", f"linha={linha9a} recuperado={resultado9}")
+    verificar("FIN-09 requisição ATIVA: o temporário da compra em finalização "
+              "NÃO é removido pela recuperação",
+              os.path.exists(alvo9 + ".tmp-ativa"), "")
+
+    # 9a-bis) a compra travada é CONTADA (não age em silêncio sobre ela).
+    # A varredura só chega a listá-la quando roda sem outra execução em curso;
+    # aqui ela é chamada com a trava de execução livre.
+    with _compra_em_finalizacao(mid9):
+        resultado9c = recuperar9()
+    linha9c = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                       (mid9,))
+    verificar("FIN-09 compra em finalização é CONTADA em em_finalizacao (ou "
+              "preservada) e nunca cancelada",
+              linha9c["status"] == "pago",
+              f"linha={linha9c} recuperado={resultado9c}")
+
+    # 9b) depois que a requisição termina (trava solta) e ela NÃO promoveu
+    #     (processo morreu), a recuperação age normalmente.
+    resultado9b = recuperar9()
+    linha9b = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                       (mid9,))
+    chave9b = conn_uma("SELECT status, documento FROM operacao_idempotencia "
+                       "WHERE chave=%s", (k9,))
+    verificar("FIN-09 requisição ATIVA: com a trava solta e o arquivo ausente, a "
+              "recuperação então cancela e anula (estado final correto)",
+              resultado9b["canceladas"] >= 1 and linha9b["status"] == "cancelado"
+              and chave9b["status"] == "anulada" and chave9b["documento"] is None,
+              f"linha={linha9b} chave={chave9b} recuperado={resultado9b}")
+    with conectar() as conn:
+        conn.execute("DELETE FROM operacao_idempotencia WHERE chave = %s", (k9,))
+        conn.execute("DELETE FROM financeiro_movimentacoes WHERE id = %s", (mid9,))
+    for caminho in (alvo9, alvo9 + ".tmp-ativa"):
+        try:
+            os.remove(caminho)
+        except OSError:
+            pass
+
+    # ── 10) o limite de 24 h é contado e informado, não esquecido ──────────
+    velha9 = _compra(f"{PREFIXO} fin09 fora prazo", "26.00",
+                     horas_atras=30, com_temporario=True)
+    resultado10 = recuperar9()
+    velha9b = conn_uma("SELECT status FROM financeiro_movimentacoes WHERE id=%s",
+                       (velha9["id"],))
+    verificar("FIN-09 limite de 24 h: interrupção mais ANTIGA não é recuperada "
+              "automaticamente, mas é CONTADA e informada",
+              velha9b["status"] == "pago" and resultado10["fora_do_prazo"] >= 1,
+              f"linha={velha9b} recuperado={resultado10}")
+    with conectar() as conn:
+        conn.execute("DELETE FROM operacao_idempotencia WHERE documento = %s",
+                     (str(velha9["id"]),))
+        conn.execute("DELETE FROM financeiro_movimentacoes WHERE id = %s",
+                     (velha9["id"],))
+    for caminho in (velha9["alvo"], velha9["alvo"] + ".tmp-prova"):
+        try:
+            os.remove(caminho)
+        except OSError:
+            pass
 
     # ── limpeza do rastro desta prova (só o que ela criou) ──────────────────
     if nome:

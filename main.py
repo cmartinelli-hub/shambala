@@ -57,6 +57,17 @@ async def lifespan(app: FastAPI):
               f"interrompida foram canceladas e suas chaves anuladas "
               f"({_recuperado['temporarios_removidos']} temporário(s) removido(s)).",
               flush=True)
+    if _recuperado["em_finalizacao"]:
+        print(f"[startup] {_recuperado['em_finalizacao']} compra(s) estavam em "
+              f"FINALIZAÇÃO durante esta subida (trava ativa): preservadas.",
+              flush=True)
+    if _recuperado["fora_do_prazo"]:
+        # Interrupção mais antiga que o prazo não é recuperada automaticamente.
+        # Não fica invisível: aparece no log com o número para conferência.
+        print(f"[startup] {_recuperado['fora_do_prazo']} compra(s) com tentativa "
+              f"interrompida FORA do prazo de {24}h: NÃO recuperadas "
+              f"automaticamente — conferir em /financeiro/relatorios "
+              f"(categoria compra) ou na tela de compras.", flush=True)
     if _recuperado["puladas"]:
         # Não é falha: é o limite da regra agindo (arquivo ausente sem prova de
         # interrupção, compra histórica). Fica visível para não passar calado.

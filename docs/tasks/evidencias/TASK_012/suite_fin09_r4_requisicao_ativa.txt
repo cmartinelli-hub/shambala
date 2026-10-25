@@ -1,0 +1,200 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025104536-338919 (identifica ESTA execução nas provas)
+  árvore ..: 44e1de94beed7f6b084e68ac7878dec1de1021e7-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025104536-338919
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025104536-338919'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_financeiro_idempotencia_task012.py
+  PASS  fixtures: sessão de caixa na versão 'eventos' (regra atual)
+  PASS  PDV venda à vista: primeira tentativa produz exatamente um efeito
+  PASS  PDV venda à vista: primeira tentativa fica registrada como concluída
+  PASS  PDV venda à vista: reenvio não produz efeito novo
+  PASS  PDV venda à vista: reenvio devolve o mesmo destino
+  PASS  PDV venda à vista: as duas requisições concorrentes de fato responderam
+  PASS  PDV venda à vista: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  PDV venda à vista: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  PDV venda à vista: as duas requisições com a chave nova responderam
+  PASS  PDV venda à vista: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  PDV venda à vista: a chave concorrente aparece no máximo uma vez no banco
+  PASS  PDV venda à vista: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  PDV venda à vista: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  PDV venda à vista: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  doação avulsa: primeira tentativa produz exatamente um efeito
+  PASS  doação avulsa: primeira tentativa fica registrada como concluída
+  PASS  doação avulsa: reenvio não produz efeito novo
+  PASS  doação avulsa: reenvio devolve o mesmo destino
+  PASS  doação avulsa: as duas requisições concorrentes de fato responderam
+  PASS  doação avulsa: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  doação avulsa: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  doação avulsa: as duas requisições com a chave nova responderam
+  PASS  doação avulsa: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  doação avulsa: a chave concorrente aparece no máximo uma vez no banco
+  PASS  doação avulsa: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  doação avulsa: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  doação avulsa: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  sangria: primeira tentativa produz exatamente um efeito
+  PASS  sangria: primeira tentativa fica registrada como concluída
+  PASS  sangria: reenvio não produz efeito novo
+  PASS  sangria: reenvio devolve o mesmo destino
+  PASS  sangria: as duas requisições concorrentes de fato responderam
+  PASS  sangria: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  sangria: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  sangria: as duas requisições com a chave nova responderam
+  PASS  sangria: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  sangria: a chave concorrente aparece no máximo uma vez no banco
+  PASS  sangria: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  sangria: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  sangria: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  transferência entre contas: primeira tentativa produz exatamente um efeito
+  PASS  transferência entre contas: primeira tentativa fica registrada como concluída
+  PASS  transferência entre contas: reenvio não produz efeito novo
+  PASS  transferência entre contas: reenvio devolve o mesmo destino
+  PASS  transferência entre contas: as duas requisições concorrentes de fato responderam
+  PASS  transferência entre contas: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  transferência entre contas: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  transferência entre contas: as duas requisições com a chave nova responderam
+  PASS  transferência entre contas: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  transferência entre contas: a chave concorrente aparece no máximo uma vez no banco
+  PASS  transferência entre contas: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  transferência entre contas: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  transferência entre contas: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  lançamento avulso: primeira tentativa produz exatamente um efeito
+  PASS  lançamento avulso: primeira tentativa fica registrada como concluída
+  PASS  lançamento avulso: reenvio não produz efeito novo
+  PASS  lançamento avulso: reenvio devolve o mesmo destino
+  PASS  lançamento avulso: as duas requisições concorrentes de fato responderam
+  PASS  lançamento avulso: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  lançamento avulso: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  lançamento avulso: as duas requisições com a chave nova responderam
+  PASS  lançamento avulso: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  lançamento avulso: a chave concorrente aparece no máximo uma vez no banco
+  PASS  lançamento avulso: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  lançamento avulso: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  lançamento avulso: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  PDV: divergência de preço não cria venda
+  PASS  PDV: a tentativa recusada NÃO é consumida
+  PASS  PDV: a tela reprificada devolve chave nova de tentativa
+  PASS  PDV: confirmar a cesta reprificada conclui a venda sem conflito
+  PASS  rollback: nada gravado e a chave não ficou consumida
+  PASS  rollback: o reenvio da MESMA chave conclui a operação
+  PASS  corrida: a segunda transação ficou de fato aguardando a primeira
+  PASS  corrida: a segunda acorda e recebe a resposta original
+  PASS  corrida: um único documento para a tentativa disputada
+  PASS  corrida: a tentativa disputada tem exatamente uma linha
+  PASS  mensalidade lote: baixa exatamente as selecionadas (uma por competência)
+  PASS  mensalidade lote: reenvio da mesma tentativa não muda nada
+  PASS  mensalidade lote: reenvio devolve o mesmo recibo
+  PASS  mensalidade lote: nova tentativa sobre as mesmas pendências não inventa dinheiro
+  PASS  fiado: um recebimento com excedente vira crédito, uma única entrada
+  PASS  fiado: reenvio da mesma tentativa não duplica dinheiro nem crédito
+  PASS  fiado: a tentativa única ficou registrada como concluída
+  PASS  fiado: mesma chave com outro valor é recusada sem escrita
+  PASS  chave não substitui autenticação: anônimo não escreve
+  PASS  FIN-09 sucesso: a compra fica com a nota registrada e o arquivo existe
+  PASS  FIN-09 preparo falhando: nenhum arquivo (nem temporário) em static/fotos/
+  PASS  FIN-09 preparo falhando: o lançamento não é gravado e a chave não fica consumida com documento
+  PASS  FIN-09 rollback: transação recusada (o temporário já estava em disco) não deixa arquivo em static/fotos/ nem temporário
+  PASS  FIN-09 rollback: nenhum lançamento e nenhuma chave consumida com documento
+  PASS  FIN-09 promoção falhando após o commit: a compra não fica 'paga' sem a nota — é cancelada, com a linha preservada para auditoria
+  PASS  FIN-09 promoção falhando após o commit: nenhum arquivo (nem temporário) fica no disco
+  PASS  FIN-09 compensação: a tentativa fica ANULADA (linha preservada, sem documento, destino de recusa)
+  PASS  FIN-09 compensação: REENVIAR a mesma chave NÃO responde sucesso — recebe a recusa legível e não cria segundo lançamento
+  PASS  FIN-09 compensação: operação NOVA (chave nova) passa e grava a nota
+  PASS  FIN-09 morte após o commit: o estado real fica INCONSISTENTE — compra 'paga' com nota registrada e arquivo inexistente
+  PASS  FIN-09 recuperação no startup: a compra sem nota em disco deixa de ficar 'paga' (cancelada, linha preservada), a tentativa é anulada e o temporário órfão é removido
+  PASS  FIN-09 recuperação: reenviar depois da recuperação não responde sucesso (recusa legível) e não duplica a compra
+  PASS  FIN-09 recuperação é idempotente: rodar de novo não encontra nada
+  PASS  FIN-09 compensação falhando: a compra fica cancelada e a tentativa fica CONSUMIDA apontando para o documento (rastro preservado)
+  PASS  FIN-09 compensação falhando: os temporários órfãos são recuperados na próxima subida (a varredura não depende da compensação)
+  PASS  FIN-09 efeito nos fatos: nenhuma compra (inclusive as que falharam) movimenta estoque nem gaveta — só o livro-caixa
+  PASS  FIN-09 efeito no financeiro: as compras que falharam ficam canceladas (não entram como despesa paga) e só a operação boa fica paga
+  PASS  FIN-09 limite histórico: compra com tentativa VELHA não é cancelada (arquivo ausente não basta)
+  PASS  FIN-09 limite sem prova: arquivo ausente SEM temporário é preservado (pode ser volume não montado ou falha de leitura)
+  PASS  FIN-09 limite em processamento: tentativa em andamento não é recuperada por esta varredura
+  PASS  FIN-09 limite sadio: compra com arquivo presente não é tocada
+  PASS  FIN-09 recuperação informa o que PULOU (não age em silêncio)
+  PASS  FIN-09 recuperação não removeu temporário de tentativa em voo
+  PASS  FIN-09 recuperação concorrente: duas ao mesmo tempo cancelam UMA vez (trava de execução única)
+    [injeção] recuperação falhou como esperado: InFailedSqlTransaction
+  PASS  FIN-09 anulação falhando: o estado NÃO muda (cancelamento e anulação são um commit só) — nada fica 'cancelado com chave respondendo ok'
+  PASS  FIN-09 anulação falhando: o REENVIO nunca responde sucesso
+  PASS  FIN-09 recuperação posterior CONCLUI o estado pendente (cancelada + chave anulada)
+  PASS  FIN-09 requisição ATIVA: a trava é exclusiva (a segunda tentativa de travar falha)
+  PASS  FIN-09 requisição ATIVA × recuperação: a recuperação NÃO cancela a compra que está sendo finalizada
+  PASS  FIN-09 requisição ATIVA: o temporário da compra em finalização NÃO é removido pela recuperação
+  PASS  FIN-09 compra em finalização é CONTADA em em_finalizacao (ou preservada) e nunca cancelada
+  PASS  FIN-09 requisição ATIVA: com a trava solta e o arquivo ausente, a recuperação então cancela e anula (estado final correto)
+  PASS  FIN-09 limite de 24 h: interrupção mais ANTIGA não é recuperada automaticamente, mas é CONTADA e informada
+  PASS  crédito antecipado: primeira tentativa produz exatamente um efeito
+  PASS  crédito antecipado: primeira tentativa fica registrada como concluída
+  PASS  crédito antecipado: reenvio não produz efeito novo
+  PASS  crédito antecipado: reenvio devolve o mesmo destino
+  PASS  crédito antecipado: as duas requisições concorrentes de fato responderam
+  PASS  crédito antecipado: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  crédito antecipado: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  crédito antecipado: as duas requisições com a chave nova responderam
+  PASS  crédito antecipado: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  crédito antecipado: a chave concorrente aparece no máximo uma vez no banco
+  PASS  crédito antecipado: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  crédito antecipado: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  crédito antecipado: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  quitar venda de fiado: primeira tentativa produz exatamente um efeito
+  PASS  quitar venda de fiado: primeira tentativa fica registrada como concluída
+  PASS  quitar venda de fiado: reenvio não produz efeito novo
+  PASS  quitar venda de fiado: reenvio devolve o mesmo destino
+  PASS  quitar venda de fiado: as duas requisições concorrentes de fato responderam
+  PASS  quitar venda de fiado: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  quitar venda de fiado: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  quitar venda de fiado: as duas requisições com a chave nova responderam
+  PASS  quitar venda de fiado: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  quitar venda de fiado: a chave concorrente aparece no máximo uma vez no banco
+  PASS  quitar venda de fiado: sem efeito, nenhuma tentativa foi consumida
+  PASS  quitar venda de fiado: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  quitar venda de fiado: nova tentativa com conteúdo idêntico é tratada como estado já alcançado
+  PASS  quitar venda de fiado: confirmação sem chave é recusada com orientação e sem efeito
+  PASS  compra com nota (multipart): primeira tentativa produz exatamente um efeito
+  PASS  compra com nota (multipart): primeira tentativa fica registrada como concluída
+  PASS  compra com nota (multipart): reenvio não produz efeito novo
+  PASS  compra com nota (multipart): reenvio devolve o mesmo destino
+  PASS  compra com nota (multipart): as duas requisições concorrentes de fato responderam
+  PASS  compra com nota (multipart): duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  compra com nota (multipart): a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  compra com nota (multipart): as duas requisições com a chave nova responderam
+  PASS  compra com nota (multipart): duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  compra com nota (multipart): a chave concorrente aparece no máximo uma vez no banco
+  PASS  compra com nota (multipart): mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  compra com nota (multipart): nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  compra com nota (multipart): confirmação sem chave é recusada com orientação e sem efeito
+  PASS  venda de livro: primeira tentativa produz exatamente um efeito
+  PASS  venda de livro: primeira tentativa fica registrada como concluída
+  PASS  venda de livro: reenvio não produz efeito novo
+  PASS  venda de livro: reenvio devolve o mesmo destino
+  PASS  venda de livro: as duas requisições concorrentes de fato responderam
+  PASS  venda de livro: duas requisições simultâneas de uma tentativa concluída não duplicam
+  PASS  venda de livro: a concorrência sobre tentativa concluída devolve o mesmo destino
+  PASS  venda de livro: as duas requisições com a chave nova responderam
+  PASS  venda de livro: duas requisições simultâneas com a mesma chave nova produzem no máximo um efeito
+  PASS  venda de livro: a chave concorrente aparece no máximo uma vez no banco
+  PASS  venda de livro: mesma chave com conteúdo divergente é recusada sem escrita
+  PASS  venda de livro: nova tentativa com conteúdo idêntico é tratada como segunda operação
+  PASS  venda de livro: confirmação sem chave é recusada com orientação e sem efeito
+
+172/172 verificações aprovadas (TASK_012 §2 — idempotência)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_financeiro_idempotencia_task012.py: rc=0
+tests/rodar_testes.sh, linha 89: 338997 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok
