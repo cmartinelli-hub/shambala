@@ -521,7 +521,8 @@ def n6():
                       "os => os.map(o => o.value)"))
 
 
-@cenario("N7 nenhuma rolagem horizontal em 412, 768, 1024 e 1366")
+@cenario("N7 rolagem horizontal por TELA e por largura (o PDV em 412 tem defeito "
+         "pré-existente, medido e registrado em vez de contado como aprovado)")
 def n7():
     telas = [("/caixa/pdv", "pdv"), ("/caixa/doacao", "doacao"),
              ("/caixa/fiados", "fiados"), ("/financeiro/mensalidades", "mensalidades")]

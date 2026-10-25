@@ -1,0 +1,32 @@
+sessão legada 71 | contas conhecidas A=172 B=173 | escolhidas: espécie=174 pix=175 | obrigações=4
+
+-- 1. a tela pede conta SÓ para o que é desconhecido
+   pede espécie? True | pix? True | fiado? False
+  ✔ 1.1 a tela pede a conta de ESPÉCIE (há venda antiga sem destino)
+  ✔ 1.2 a tela pede a conta de PIX (há venda antiga sem destino)
+  ✔ 1.3 a tela NÃO pede conta de fiado (regra da casa: obrigações)
+  ✔ 1.4 a tela não pede conta para as vendas de destino conhecido (só dois campos de escolha existem)
+
+-- 2. sem as escolhas: recusa e NADA é escrito
+  ✔ 2.1 recusa pedindo os destinos desconhecidos
+  ✔ 2.2 nenhum lançamento criado
+  ✔ 2.3 a sessão continua aberta
+
+-- 3. com as duas escolhas: separa por conta e preserva os vínculos
+   resposta: 303 /caixa/fechar?caixa_movimento_id=71
+     conta 4 · fiado · R$ 50.00
+     conta 172 · especie · R$ 10.00
+     conta 173 · pix · R$ 30.00
+     conta 174 · especie · R$ 20.00
+     conta 175 · pix · R$ 40.00
+   por conta: {4: '50.00', 172: '10.00', 173: '30.00', 174: '20.00', 175: '40.00'}
+  ✔ 3.1 venda de espécie CONHECIDA foi para a conta persistida (A=10,00)
+  ✔ 3.2 venda de PIX CONHECIDA foi para a conta persistida (B=30,00)
+  ✔ 3.3 espécie DESCONHECIDA foi para a conta escolhida (20,00)
+  ✔ 3.4 PIX DESCONHECIDO foi para a conta escolhida (40,00)
+  ✔ 3.5 fiado foi para a conta de obrigações (50,00)
+  ✔ 3.6 nada foi concentrado numa conta só
+  ✔ 3.7 o total fecha em 150,00 (nada perdido nem duplicado)
+  ✔ 3.8 a sessão foi fechada
+
+[resultado] aprovadas=15 falhas=0

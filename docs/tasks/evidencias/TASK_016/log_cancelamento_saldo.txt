@@ -1,0 +1,26 @@
+conta de espécie: 2 | sessão: 70 | venda: 179
+
+-- estado ANTES do cancelamento
+   saldo da conta (A): 1236130.00
+   esperado da gaveta (B): 135.00
+   eventos: [('entrada', '35.00')]
+  ✔ A.1 a venda em espécie de R$ 35,00 entrou na gaveta
+
+-- cancelando a venda
+   resposta: 303
+   saldo da conta (A): 1236130.00 -> 1236130.00
+   esperado da gaveta (B): 135.00 -> 100.00
+   eventos agora: [('entrada', '35.00'), ('saida', '-35.00')]
+  ✔ A.2 o saldo da CONTA não mudou (a venda eventos vira lançamento só no fechamento — não havia lançamento a anular)
+  ✔ B.1 o esperado da gaveta voltou exatamente ao valor de antes da venda
+  ✔ B.2 existe EXATAMENTE UMA compensação
+  ✔ B.3 a compensação anula exatamente o efeito físico da entrada (efeito negativo, mesmo módulo)
+  ✔ B.4 a compensação fica na MESMA sessão da entrada e não cria destino de conta novo (conta_id nulo: não há dinheiro indo a outra conta, e o livro financeiro não é tocado)
+  ✔ B.5 nenhum lançamento financeiro foi criado para esta venda
+
+-- segunda tentativa de cancelar (deve ser recusada)
+   resposta: 200 http://127.0.0.1:9085/caixa/vendas/179/cancelar
+  ✔ C.1 o segundo cancelamento não é aplicado de novo
+  ✔ C.2 continua havendo UMA só compensação
+
+[resultado] aprovadas=9 falhas=0

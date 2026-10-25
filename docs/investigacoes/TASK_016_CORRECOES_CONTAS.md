@@ -169,7 +169,8 @@ continua verde · `—` fora do escopo da ordem
 | Eixo transversal | Executado | Prova |
 |---|---|---|
 | **Idempotência com troca de conta** | ◉ — mesma chave mudando a conta = `tentativa_conflito`, sem escrita | `matriz E3.4` |
-| **Inativação concorrente** | ◉ — conta inativada entre a tela e o envio: recusa `conta_inativa`, 0 lançamentos | `matriz E4` |
+| **Inativação — antes do envio** | ◉ — conta inativada entre a tela e o envio: recusa `conta_inativa`, 0 lançamentos | `matriz E4` |
+| **Inativação — disputa transacional REAL** | ◉ — duas conexões, commit controlado (D1–D4) | `log_disputa_concorrente.txt` |
 | **Fechamento** | ◉ — vínculo, recusa sem vínculo, escolha validada, escolha inválida recusada | `matriz E5.1–E5.4` |
 | **Cancelamento** | ◉ — venda cancelada estorna o efeito físico e não mexe no saldo da conta | `matriz E5.5–E5.7` |
 | **Saldo anterior ao período** | ◉ — histórico de 2024/2025 intacto; recebimento de hoje soma a ele; saldo anterior não foi recalculado | `matriz E6` |
@@ -225,9 +226,56 @@ Provas (`evidencias/TASK_016/prova_fechamento_legado.py`):
 | venda sem conta, com escolha | grava na conta escolhida (13,00 → conta 167), sessão fechada |
 | escolha inválida (espécie para PIX) | recusa, **0 lançamentos**, sessão aberta |
 
+### Fechamento com formas e destinos MISTURADOS na mesma sessão
+
+A pergunta: o fechamento preserva os vínculos conhecidos e pede **só** os
+desconhecidos, sem concentrar tudo numa conta? Provado em sessão legada com cinco
+vendas (`prova_fechamento_misto.py`, `log_fechamento_misto.txt`):
+
+| Venda | Forma | Vínculo | Destino do lançamento |
+|---|---|---|---|
+| V1 | espécie R$ 10 | conhecido (conta A) | **A** — 10,00 |
+| V2 | espécie R$ 20 | desconhecido | **conta escolhida** — 20,00 |
+| V3 | PIX R$ 30 | conhecido (conta B) | **B** — 30,00 |
+| V4 | PIX R$ 40 | desconhecido | **conta escolhida** — 40,00 |
+| V5 | fiado R$ 50 | — | **conta de obrigações** — 50,00 |
+
+- a tela pede conta **só** para espécie e PIX, **nunca** para fiado;
+- sem as duas escolhas: `conta_do_fechamento`, **0 lançamentos**, sessão segue
+  **aberta**;
+- com as escolhas: **cinco contas distintas**, total 150,00 fechando exato —
+  nada concentrado, nada perdido, nada duplicado. **15/15**.
+
 O caso "sem conta" é hoje **vazio no DEV por construção**: as 58 sessões legadas
 já foram fechadas pela regra anterior. A coluna fica NULL nelas, e é exatamente o
 cenário que o teste cobre — se alguma for reaberta/reprocessada, ela pede a conta.
+
+## 5-B. Disputa transacional: inativação × recebimento
+
+A prova da matriz (E4) era **sequencial**: inativar, depois enviar. Isso responde
+"a conta é conferida na transação?" mas **não** é disputa. A prova real está em
+`prova_disputa_concorrente.py` / `log_disputa_concorrente.txt`, com duas conexões
+independentes e commit controlado na mão.
+
+**O que o código faz** (por leitura, confirmado nos testes): `conta_de_destino`
+lê a conta com `SELECT ... WHERE id = %s` — **sem `FOR UPDATE`**. A validação
+acontece **na mesma transação** que grava, mas não trava a linha da conta.
+
+| Cenário | Resultado medido |
+|---|---|
+| D1 inativação **commita antes** | recusa `conta_inativa`, **0 lançamentos** |
+| D2 inativação **commita durante** (após a validação, antes do commit do recebimento) | o recebimento **grava** — a conta estava ativa no instante da validação, e a escrita é atômica com ela |
+| D3 recebimento **commita antes** | grava; a inativação posterior **não** desfaz o fato consumado |
+| D4 duas inativações simultâneas | ambas concluem (UPDATE idempotente), conta termina inativa |
+
+**Nunca houve efeito parcial** em nenhum dos quatro: ou grava inteiro, ou não
+grava nada. D2 não é corrupção — é uma ordem válida de commits.
+
+**O que eu NÃO afirmo**: que a conta seja "reservada" durante o recebimento. Ela
+não é. Se o dono quiser que "inativar" vença sempre, é preciso `SELECT ... FOR
+UPDATE` na conta dentro da transação de recebimento — uma decisão de regra de
+negócio (bloquear recebimento em conta inativada já em voo) que **não** tomei
+sozinho, porque muda o comportamento de operações já aceitas.
 
 ## 6. Aplicação no DEV
 
@@ -254,14 +302,30 @@ id/tipo/status/categoria/valor/data (alcance já documentado na TASK_014: não c
 
 1. **Navegador — validado.** `test_t016_navegador.py` roda Chromium real com
    duas contas de espécie e PIX em banco/poupança: **39/39**. Cobre escolha
-   visível, destino persistido, venda bloqueada sem escolha, recusa sem efeito,
-   formulário preservado após erro e ausência de rolagem horizontal em 412, 768,
-   1024 e 1366 nas telas de doação, fiado e mensalidade.
+   visível, destino persistido, venda bloqueada sem escolha, recusa sem efeito e
+   formulário preservado após erro.
+
+   **Rolagem horizontal — por tela, não em bloco.** A frase anterior ("ausência de
+   rolagem em 412, 768, 1024 e 1366") juntava telas diferentes e era imprecisa.
+   O que foi medido, asserção N7, `evidencias/TASK_016/navegador.txt`:
+
+   | Tela | 412px | 768px | 1024px | 1366px |
+   |---|---|---|---|---|
+   | `/caixa/doacao` | ✔ aprovada | ✔ | ✔ | ✔ |
+   | `/caixa/fiados` | ✔ aprovada | ✔ | ✔ | ✔ |
+   | `/financeiro/mensalidades` | ✔ aprovada | ✔ | ✔ | ✔ |
+   | `/caixa/pdv` | **· isenta** (defeito pré-existente) | ✔ | ✔ | ✔ |
+
+   A asserção é a mesma nas três telas aprovadas: `scrollWidth <= innerWidth + 1`.
+   No PDV em 412px ela **falharia** (`scrollWidth=470`, `innerWidth=412`), então o
+   teste a marca como `·` conhecida e não a soma às aprovações.
+
 2. **Defeito de layout pré-existente, não corrigido**: o PDV em **412px**
-   transborda 470px. Medi contra o commit anterior (`git stash`) e o resultado é
-   **idêntico** — não é regressão dos seletores desta tarefa. A suíte o registra
-   como conhecido em vez de silenciá-lo nas outras telas. Corrigi-lo é uma tarefa
-   de layout própria (o PDV não tem nenhuma media query).
+   transborda 470px (`div.pdv-carrinho-wrap`, `.pdv-carrinho-titulo`,
+   `#pdv-itens`, `.pdv-total-bar`). Medi com `git stash` contra o commit anterior
+   e o resultado é **numericamente idêntico** — não é regressão dos seletores
+   desta tarefa (o PDV não tem nenhuma media query, e o layout de duas colunas não
+   colapsa). Corrigir é uma tarefa de layout própria.
 3. **Saldo inicial, conciliação e data de referência** continuam inexistentes —
    a ordem os deixa fora. O saldo é sempre a soma dos lançamentos.
 4. **Histórico sem destino** não existe no DEV (0 de 862 movimentos); nada foi
@@ -291,6 +355,37 @@ id/tipo/status/categoria/valor/data (alcance já documentado na TASK_014: não c
   da tentativa, e a comparação de contexto continua acontecendo antes.
 
 ---
+
+## 8-A. "Cancelamento com estorno sem tocar no saldo" — o que isso quer dizer
+
+A frase era ambígua e podia soar contraditória. Existem **dois** lugares com
+"saldo" no produto, e o cancelamento trata cada um de forma diferente. Medido em
+`prova_cancelamento_saldo.py` / `log_cancelamento_saldo.txt`, venda de **R$ 35,00
+em espécie**, sessão com inicial R$ 100,00:
+
+| Grandeza | Antes | Depois | Leitura |
+|---|---|---|---|
+| **Saldo da conta** (livro `financeiro_movimentacoes`, pago) | 1.236.130,00 | **1.236.130,00** | **não muda** |
+| **Esperado da gaveta** (inicial + Σ `efeito_fisico`) | 135,00 | **100,00** | volta ao valor de antes da venda |
+| Eventos da sessão | `entrada +35,00` | `entrada +35,00`, `saida −35,00` | **uma** compensação |
+
+O porquê, e não é efeito colateral: venda em sessão `eventos` **só vira
+lançamento financeiro no fechamento**. Cancelar antes do fechamento não tem
+lançamento para anular — não há o que estornar no livro. O que existe é o efeito
+físico na gaveta, e é ele que a compensação anula.
+
+Garantias verificadas (**9/9**):
+
+- a compensação é **exatamente uma**, com efeito físico **negativo** de mesmo
+  módulo (`−35,00`), na **mesma sessão** e na mesma `venda_id` — é o evento
+  `venda:{id}:cancelamento` documentado em `servico_cancelamento.py`;
+- o esperado da gaveta volta **exatamente** a 100,00;
+- **nenhum** lançamento financeiro é criado para a venda;
+- **segundo** cancelamento é recusado e **não** compensa de novo (continua uma só);
+- `conta_id` da compensação é **nulo** de propósito: não há dinheiro indo a outra
+  conta, e o livro financeiro não é tocado.
+
+Se o saldo da conta (A) tivesse mudado, o número estaria medido na tabela acima.
 
 ## 9. Decisões ainda pendentes do dono
 
@@ -356,3 +451,8 @@ cujo lançamento não usa essa categoria, e por isso não aparecem no agregado. 
 | `prova_r2_pix_banco_poupanca.py` | §7.3/§7.4 |
 | `prova_r4_saldos.py` / `resultado_r4_saldos.txt` | §7.7 |
 | `limpar_recursos.py` | limpeza dos recursos de teste |
+| `prova_disputa_concorrente.py` / `log_disputa_concorrente.txt` | §5-B — inativação × recebimento em 4 ordens de commit (8/8) |
+| `prova_cancelamento_saldo.py` / `log_cancelamento_saldo.txt` | §8-A — valores por conta e sessão antes/depois (9/9) |
+| `prova_fechamento_misto.py` / `log_fechamento_misto.txt` | §5-A — formas e destinos misturados numa sessão (15/15) |
+| `matriz_cobertura.txt` | matriz E1–E6 (24/24) |
+| `navegador.txt` + `navegador/*.png` | 39 asserções de navegador, com as capturas por tela e largura |
