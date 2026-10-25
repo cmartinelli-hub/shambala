@@ -7,8 +7,17 @@
     <a href="/financeiro" class="btn btn-secundario">← Voltar</a>
 </div>
 
+{% set _erro = request.query_params.get('erro') %}
+{% if _erro in mensagens_tentativa %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    ⚠️ {{ mensagens_tentativa[_erro] }}
+</div>
+{% endif %}
+
 <div class="card-form">
     <form method="post">
+        {{ campo_idempotencia() }}
         <div class="grade-form">
             <div class="campo">
                 <label>Tipo *</label>

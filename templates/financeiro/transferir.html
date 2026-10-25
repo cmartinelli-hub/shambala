@@ -13,11 +13,13 @@
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
     {% if _erro == 'valor_invalido' %}⚠️ Informe um valor válido maior que zero.{% endif %}
     {% if _erro == 'contas_iguais' %}⚠️ Selecione duas contas diferentes.{% endif %}
+    {% if _erro in mensagens_tentativa %}⚠️ {{ mensagens_tentativa[_erro] }}{% endif %}
 </div>
 {% endif %}
 
 <div class="card-form">
     <form method="post">
+        {{ campo_idempotencia() }}
         <div class="grade-form">
             <div class="campo">
                 <label>Conta de Origem *</label>

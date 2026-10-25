@@ -12,7 +12,11 @@ from fastapi import APIRouter, Request, Form, Query, UploadFile, File, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from banco import conectar, _normalizar, conta_id_por_tipo
+from servico_idempotencia import (
+    TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
+)
 from rotas.auth import obter_atendente_logado, e_admin
+from rotas.tentativa import resposta_de_tentativa
 from templates_config import templates
 
 router = APIRouter(prefix="/caixa")
@@ -137,6 +141,7 @@ async def finalizar_venda(
     trabalhador_id: int = Form(0),
     imprimir: str = Form("1"),
     doacao_valor: str = Form("0"),
+    idempotencia: str = Form(""),
 ):
     """Finaliza venda com o servidor como única autoridade de valores.
 
@@ -160,12 +165,28 @@ async def finalizar_venda(
         return RedirectResponse(
             url=base + (f"&item={item}" if item else ""), status_code=303)
 
+    # Conteúdo da tentativa, canonizado a partir do que foi enviado — não dos
+    # valores que o servidor recalcula (preço, subtotal, troco).
+    corpo_tentativa = {
+        "caixa_id": caixa_id, "sessao_id": caixa_movimento_id,
+        "forma": forma_pagamento, "trabalhador_id": trabalhador_id,
+        "recebido": str(valor_recebido or "0"), "doacao": str(doacao_valor or "0"),
+        "itens": itens_json,
+    }
+
     try:
         itens = parse_cesta(itens_json)
     except CestaInvalida as e:
         return _url_erro(e.chave, e.item)
 
     with conectar() as conn:
+        respondida = resposta_de_tentativa(
+            conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+            erro_para=lambda ce: f"/caixa/pdv?caixa_id={caixa_id}&erro={ce}",
+            destino_padrao=f"/caixa/pdv?caixa_id={caixa_id}")
+        if respondida:
+            return respondida
+
         caixa = conn.execute(
             "SELECT * FROM caixas WHERE id = %s AND ativo = 1", (caixa_id,)
         ).fetchone()
@@ -276,6 +297,19 @@ async def finalizar_venda(
                 if forma_pagamento == "especie" else Decimal("0.00")
 
         # ── validações concluídas: a partir daqui é transação única de escrita ──
+        # A tentativa é reservada antes do primeiro efeito e confirmada no fim
+        # da MESMA transação: duplo clique, reenvio com a resposta perdida e
+        # duas requisições simultâneas produzem uma única venda (TASK_012 §2).
+        try:
+            chave_tentativa = exigir_reserva(
+                conn, idempotencia=idempotencia, operacao="pdv_venda",
+                autor_id=atendente["id"], corpo=corpo_tentativa)
+        except TentativaRecusada as e:
+            return _url_erro(e.chave_erro)
+        except TentativaJaRegistrada as e:
+            return RedirectResponse(
+                url=e.destino or f"/caixa/pdv?caixa_id={caixa_id}", status_code=303)
+
         cur = conn.execute(
             """INSERT INTO vendas_pdv
                (caixa_id, data_venda, total, forma_pagamento, troco, status, atendente_id,
@@ -384,20 +418,18 @@ async def finalizar_venda(
                  novo_saldo, venda_id, atendente["id"])
             )
 
+        if imprimir != "0":
+            fiado_param = "&fiado=1" if forma_pagamento == "fiado" else ""
+            destino = f"/caixa/pdv?caixa_id={caixa_id}&ok={venda_id}{fiado_param}"
+        else:
+            destino = f"/caixa/pdv?caixa_id={caixa_id}"
+        confirmar(conn, chave=chave_tentativa, documento=venda_id, destino=destino)
+
     # Sinaliza ao segundo monitor que a venda foi concluída
     import asyncio
     asyncio.create_task(_gerenciador_qr.transmitir({"tipo": "confirmado"}))
 
-    if imprimir != "0":
-        fiado_param = "&fiado=1" if forma_pagamento == "fiado" else ""
-        return RedirectResponse(
-            url=f"/caixa/pdv?caixa_id={caixa_id}&ok={venda_id}{fiado_param}",
-            status_code=303
-        )
-    return RedirectResponse(
-        url=f"/caixa/pdv?caixa_id={caixa_id}",
-        status_code=303
-    )
+    return RedirectResponse(url=destino, status_code=303)
 
 
 # ── API: gerar QR Code PIX ────────────────────────────────────────────────────
@@ -882,6 +914,7 @@ async def registrar_doacao(
     descricao: str = Form(""),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    idempotencia: str = Form(""),
 ):
     """Doação avulsa sem cesta (TASK_008): o destino é declarado, não presumido.
 
@@ -911,12 +944,34 @@ async def registrar_doacao(
                                 status_code=303)
 
     desc = descricao.strip() or f"Doação avulsa via {'PIX' if forma == 'pix' else 'Dinheiro'}"
+    corpo_tentativa = {"forma": forma, "valor": str(valor_dec), "descricao": desc,
+                       "sessao_id": sessao_id, "conta_pix_id": conta_pix_id or None}
+    destino_doacao = f"/caixa/doacao?ok=1&valor={valor_dec:.2f}&forma={forma}"
+
+    def _erro_doacao(chave_erro: str) -> str:
+        return f"/caixa/doacao?erro={chave_erro}&forma={forma}"
+
     try:
         with conectar() as conn:
+            respondida = resposta_de_tentativa(
+                conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+                erro_para=_erro_doacao, destino_padrao=destino_doacao)
+            if respondida:
+                return respondida
+
             mov = sessao_para_recebimento(conn, sessao_id, forma)
             conta = validar_conta_para_forma(
                 conn, forma,
                 (conta_pix_id or None) if forma == "pix" else None)
+
+            try:
+                chave_tentativa = exigir_reserva(
+                    conn, idempotencia=idempotencia, operacao="doacao_avulsa",
+                    autor_id=atendente["id"], corpo=corpo_tentativa)
+            except TentativaRecusada as e:
+                return RedirectResponse(url=_erro_doacao(e.chave_erro), status_code=303)
+            except TentativaJaRegistrada as e:
+                return RedirectResponse(url=e.destino or destino_doacao, status_code=303)
 
             cur = conn.execute(
                 """INSERT INTO financeiro_movimentacoes
@@ -936,13 +991,15 @@ async def registrar_doacao(
                     efeito_fisico=valor_dec if forma == "especie" else Decimal("0.00"),
                     conta_id=conta, atendente_id=atendente["id"],
                     observacao=desc)
+            confirmar(conn, chave=chave_tentativa, documento=fin_id,
+                      destino=destino_doacao)
     except SessaoInvalida as e:
         # A exceção vazou do `with conectar()` → rollback integral: nada desta
         # doação permanece gravado.
         return RedirectResponse(url=f"/caixa/doacao?erro={e.chave}&forma={forma}",
                                 status_code=303)
 
-    return RedirectResponse(url=f"/caixa/doacao?ok=1&valor={valor_dec:.2f}&forma={forma}", status_code=303)
+    return RedirectResponse(url=destino_doacao, status_code=303)
 
 
 
@@ -1419,6 +1476,7 @@ async def pagar_fiado(
     forma_pagamento: str = Form("especie"),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    idempotencia: str = Form(""),
 ):
     """Quitação de dívida individual no fiado (TASK_008).
 
@@ -1439,8 +1497,21 @@ async def pagar_fiado(
         validar_conta_para_forma,
     )
 
+    corpo_tentativa = {"venda_id": venda_id, "forma": forma_pagamento,
+                       "sessao_id": sessao_id,
+                       "conta_pix_id": conta_pix_id or None}
+
+    def _erro_fiado(chave_erro: str) -> str:
+        return f"/caixa/fiados?erro={chave_erro}"
+
     try:
         with conectar() as conn:
+            respondida = resposta_de_tentativa(
+                conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+                erro_para=_erro_fiado, destino_padrao="/caixa/fiados")
+            if respondida:
+                return respondida
+
             venda = conn.execute(
                 """SELECT total, fiado_credito_usado, fiado_trabalhador_id,
                           fiado_pago, forma_pagamento
@@ -1458,6 +1529,16 @@ async def pagar_fiado(
                 conn, forma_pagamento,
                 (conta_pix_id or None) if forma_pagamento == "pix" else None)
 
+            try:
+                chave_tentativa = exigir_reserva(
+                    conn, idempotencia=idempotencia, operacao="fiado_quitar_venda",
+                    autor_id=atendente["id"], corpo=corpo_tentativa)
+            except TentativaRecusada as e:
+                return RedirectResponse(url=_erro_fiado(e.chave_erro), status_code=303)
+            except TentativaJaRegistrada as e:
+                return RedirectResponse(url=e.destino or "/caixa/fiados",
+                                        status_code=303)
+
             conn.execute(
                 """UPDATE vendas_pdv
                    SET fiado_pago = TRUE, fiado_data_pagamento = %s
@@ -1467,19 +1548,22 @@ async def pagar_fiado(
             valor_pago = (Decimal(str(venda["total"]))
                           - Decimal(str(venda["fiado_credito_usado"] or 0)))
             trab_id = venda["fiado_trabalhador_id"]
+            fin_id = None
             if valor_pago > 0:
-                contabilizar_recebimento(
+                fin_id = contabilizar_recebimento(
                     conn, tipo="recebimento_fiado", valor=valor_pago,
                     categoria="recebimento_fiado",
                     descricao=f"Recebimento fiado — venda #{venda_id}",
                     forma=forma_pagamento, conta_id=conta, sessao=sessao,
                     identidade=f"fiadopagar:{venda_id}", venda_id=venda_id,
                     atendente_id=atendente["id"])
+            destino = f"/caixa/fiados?pago_ok={trab_id}&valor={valor_pago:.2f}"
+            confirmar(conn, chave=chave_tentativa,
+                      documento=fin_id or venda_id, destino=destino)
     except SessaoInvalida as e:
         return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
 
-    return RedirectResponse(
-        url=f"/caixa/fiados?pago_ok={trab_id}&valor={valor_pago:.2f}", status_code=303)
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.post("/fiados/{trabalhador_id}/pagar-divida")
@@ -1490,6 +1574,7 @@ async def pagar_divida_fiado(
     forma_pagamento: str = Form("especie"),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    idempotencia: str = Form(""),
 ):
     """Pagamento de dívida do fiado (total ou parcial) — TASK_008.
 
@@ -1510,8 +1595,22 @@ async def pagar_divida_fiado(
         validar_conta_para_forma,
     )
 
+    corpo_tentativa = {"trabalhador_id": trabalhador_id,
+                       "valor": (valor or "").strip().replace(",", "."),
+                       "forma": forma_pagamento, "sessao_id": sessao_id,
+                       "conta_pix_id": conta_pix_id or None}
+
+    def _erro_divida(chave_erro: str) -> str:
+        return f"/caixa/fiados?erro={chave_erro}"
+
     try:
         with conectar() as conn:
+            respondida = resposta_de_tentativa(
+                conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+                erro_para=_erro_divida, destino_padrao="/caixa/fiados")
+            if respondida:
+                return respondida
+
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             conta = validar_conta_para_forma(
                 conn, forma_pagamento,
@@ -1544,6 +1643,16 @@ async def pagar_divida_fiado(
                 raise SessaoInvalida("valor_invalido", "Valor inválido.")
 
             hoje = date.today().isoformat()
+
+            try:
+                chave_tentativa = exigir_reserva(
+                    conn, idempotencia=idempotencia, operacao="fiado_pagar_divida",
+                    autor_id=atendente["id"], corpo=corpo_tentativa)
+            except TentativaRecusada as e:
+                return RedirectResponse(url=_erro_divida(e.chave_erro), status_code=303)
+            except TentativaJaRegistrada as e:
+                return RedirectResponse(url=e.destino or "/caixa/fiados",
+                                        status_code=303)
 
             if valor_dec >= total_divida:
                 conn.execute(
@@ -1599,17 +1708,20 @@ async def pagar_divida_fiado(
                 "SELECT nome_completo FROM trabalhadores WHERE id = %s", (trabalhador_id,)
             ).fetchone()
             nome = trab["nome_completo"] if trab else f"#{trabalhador_id}"
-            contabilizar_recebimento(
+            fin_id = contabilizar_recebimento(
                 conn, tipo="recebimento_fiado",
                 valor=Decimal(str(valor_dec)),
                 categoria="recebimento_fiado",
                 descricao=f"Recebimento fiado — {nome}",
                 forma=forma_pagamento, conta_id=conta, sessao=sessao,
                 atendente_id=atendente["id"])
+            destino = (f"/caixa/fiados?pago_ok={trabalhador_id}"
+                       f"&valor={valor_efetivo:.2f}")
+            confirmar(conn, chave=chave_tentativa, documento=fin_id, destino=destino)
     except SessaoInvalida as e:
         return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
 
-    return RedirectResponse(url=f"/caixa/fiados?pago_ok={trabalhador_id}&valor={valor_efetivo:.2f}", status_code=303)
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.post("/fiados/{venda_id}/cancelar")
@@ -1661,6 +1773,7 @@ async def adicionar_credito_fiado(
     forma_pagamento: str = Form("especie"),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    idempotencia: str = Form(""),
 ):
     """Crédito antecipado (TASK_008 / FIN-03): o dinheiro entregue AGORA
     ganha entrada no financeiro com destino explícito — espécie na sessão
@@ -1685,8 +1798,21 @@ async def adicionar_credito_fiado(
         return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
 
     desc = descricao.strip() or "Adição de crédito antecipado"
+    corpo_tentativa = {"trabalhador_id": trabalhador_id, "valor": str(valor_dec),
+                       "descricao": desc, "forma": forma_pagamento,
+                       "sessao_id": sessao_id, "conta_pix_id": conta_pix_id or None}
+
+    def _erro_credito(chave_erro: str) -> str:
+        return f"/caixa/fiados?erro={chave_erro}"
+
     try:
         with conectar() as conn:
+            respondida = resposta_de_tentativa(
+                conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+                erro_para=_erro_credito, destino_padrao="/caixa/fiados")
+            if respondida:
+                return respondida
+
             sessao = sessao_para_recebimento(conn, sessao_id, forma_pagamento)
             conta = validar_conta_para_forma(
                 conn, forma_pagamento,
@@ -1696,6 +1822,18 @@ async def adicionar_credito_fiado(
                                 (trabalhador_id,)).fetchone():
                 raise SessaoInvalida("trabalhador_nao_encontrado",
                                      "Trabalhador não encontrado.")
+
+            try:
+                chave_tentativa = exigir_reserva(
+                    conn, idempotencia=idempotencia,
+                    operacao="credito_anticipado", autor_id=atendente["id"],
+                    corpo=corpo_tentativa)
+            except TentativaRecusada as e:
+                return RedirectResponse(url=_erro_credito(e.chave_erro), status_code=303)
+            except TentativaJaRegistrada as e:
+                return RedirectResponse(url=e.destino or "/caixa/fiados",
+                                        status_code=303)
+
             conn.execute(
                 "UPDATE trabalhadores SET fiado_credito = fiado_credito + %s WHERE id = %s",
                 (valor_dec, trabalhador_id)
@@ -1711,10 +1849,13 @@ async def adicionar_credito_fiado(
                 categoria="credito_anticipado", descricao=desc,
                 forma=forma_pagamento, conta_id=conta, sessao=sessao,
                 identidade=f"credito:{cred_id}", atendente_id=atendente["id"])
+            destino = f"/caixa/fiados?credito_ok={trabalhador_id}"
+            confirmar(conn, chave=chave_tentativa, documento=cred_id,
+                      destino=destino)
     except SessaoInvalida as e:
         return RedirectResponse(url=f"/caixa/fiados?erro={e.chave}", status_code=303)
 
-    return RedirectResponse(url=f"/caixa/fiados?credito_ok={trabalhador_id}", status_code=303)
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.get("/fiados/credito/{trabalhador_id}/mov", response_class=JSONResponse)
@@ -1836,6 +1977,7 @@ async def salvar_sangria(
     motivo: str = Form(""),
     recebedor_nome: str = Form(""),
     conta_destino_id: int = Form(0),
+    idempotencia: str = Form(""),
 ):
     """Sangria (TASK_008): só existe com DESTINO IDENTIFICADO. O dinheiro
     físico sai da gaveta e entra na conta escolhida como transferência
@@ -1859,8 +2001,21 @@ async def salvar_sangria(
     except SessaoInvalida as e:
         return RedirectResponse(url=erro_base + e.chave, status_code=303)
 
+    corpo_tentativa = {"sessao_id": caixa_movimento_id, "valor": str(valor_dec),
+                       "motivo": motivo.strip(),
+                       "recebedor_nome": recebedor_nome.strip(),
+                       "conta_destino_id": conta_destino_id}
+
     try:
         with conectar() as conn:
+            respondida = resposta_de_tentativa(
+                conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+                erro_para=lambda ce: erro_base + ce,
+                destino_padrao=(f"/caixa/sangria"
+                                f"?caixa_movimento_id={caixa_movimento_id}"))
+            if respondida:
+                return respondida
+
             mov = conn.execute(
                 """SELECT * FROM caixa_movimentos
                    WHERE id = %s AND status = 'aberto' FOR UPDATE""",
@@ -1874,18 +2029,30 @@ async def salvar_sangria(
                 raise SessaoInvalida(
                     "destino_obrigatorio",
                     "Sangria exige destino: escolha a conta que receberá o valor.")
-            destino = conn.execute(
+            conta_destino = conn.execute(
                 "SELECT id, nome, tipo FROM contas_financeiras WHERE id = %s AND ativo = 1",
                 (conta_destino_id,)).fetchone()
-            if not destino:
+            if not conta_destino:
                 raise SessaoInvalida("destino_invalido",
                                      "A conta de destino não é uma conta ativa.")
             conta_saida = validar_conta_para_forma(conn, "especie", None)
-            if destino["id"] == conta_saida:
+            if conta_destino["id"] == conta_saida:
                 raise SessaoInvalida(
                     "destino_invalido",
                     "O destino precisa ser uma conta diferente da conta espécie "
                     "da gaveta.")
+
+            try:
+                chave_tentativa = exigir_reserva(
+                    conn, idempotencia=idempotencia, operacao="sangria",
+                    autor_id=atendente["id"], corpo=corpo_tentativa)
+            except TentativaRecusada as e:
+                return RedirectResponse(url=erro_base + e.chave_erro, status_code=303)
+            except TentativaJaRegistrada as e:
+                return RedirectResponse(
+                    url=e.destino or f"/caixa/sangria"
+                                      f"?caixa_movimento_id={caixa_movimento_id}",
+                    status_code=303)
 
             cur = conn.execute(
                 """INSERT INTO caixa_sangrias
@@ -1912,7 +2079,7 @@ async def salvar_sangria(
                     sangria_id, status)
                    VALUES ('entrada', 'transferencia', %s, %s, NULL, %s, %s, 'pago')""",
                 (valor_dec, f"Transferência interna da sangria — {desc}",
-                 destino["id"], sangria_id)
+                 conta_destino["id"], sangria_id)
             )
 
             if mov["versao"] == VERSAO_EVENTOS:
@@ -1922,17 +2089,20 @@ async def salvar_sangria(
                     origem_tipo="caixa_sangrias", origem_id=sangria_id,
                     financeiro_id=fin_saida_id,
                     forma="especie", sentido="saida", valor=valor_dec,
-                    efeito_fisico=-valor_dec, conta_id=destino["id"],
+                    efeito_fisico=-valor_dec, conta_id=conta_destino["id"],
                     atendente_id=atendente["id"], observacao=desc)
             else:
                 conn.execute(
                     "UPDATE caixa_movimentos SET total_sangrias = total_sangrias + %s WHERE id = %s",
                     (valor_dec, mov["id"])
                 )
+            destino = f"/caixa/sangria/{sangria_id}/comprovante"
+            confirmar(conn, chave=chave_tentativa, documento=sangria_id,
+                      destino=destino)
     except SessaoInvalida as e:
         return RedirectResponse(url=erro_base + e.chave, status_code=303)
 
-    return RedirectResponse(url=f"/caixa/sangria/{sangria_id}/comprovante", status_code=303)
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.get("/sangria/{sangria_id}/comprovante", response_class=HTMLResponse)

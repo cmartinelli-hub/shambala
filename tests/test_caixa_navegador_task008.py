@@ -29,6 +29,7 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import http.cookiejar
+import secrets
 from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -96,7 +97,17 @@ def novo_opener():
 opener = novo_opener()
 
 
+def _com_tentativa(data):
+    """TASK_012 §2: as rotas de dinheiro exigem identidade de tentativa. O
+    harness desta suíte envia uma tentativa NOVA a cada chamada — os contratos
+    de reenvio/concorrência são provados pela suíte própria (task012)."""
+    if isinstance(data, dict) and "idempotencia" not in data:
+        return {**data, "idempotencia": secrets.token_hex(16)}
+    return data
+
+
 def req(method, path, data=None):
+    data = _com_tentativa(data)
     body = urllib.parse.urlencode(data).encode() if data is not None else None
     r = urllib.request.Request(BASE + path, data=body, method=method)
     try:
@@ -312,7 +323,8 @@ def c1():
             f"{BASE}/caixa/pdv/finalizar",
             form={"caixa_id": str(FIX["cx_a"]), "caixa_movimento_id": "0",
                   "forma_pagamento": "especie", "valor_recebido": "20.00",
-                  "itens_json": _cesta([(FIX["p_cafe"], 1)]), "imprimir": "0"})
+                  "itens_json": _cesta([(FIX["p_cafe"], 1)]), "imprimir": "0",
+                  "idempotencia": secrets.token_hex(16)})
         verificar("C1 espécie sem sessão é recusada na rota (sessao_necessaria)",
                   "sessao_necessaria" in resp.url, resp.url)
         verificar("C1 nada foi gravado",
@@ -628,7 +640,8 @@ def c11():
             f"{BASE}/caixa/pdv/finalizar",
             form={"caixa_id": str(FIX["cx_pix"]), "caixa_movimento_id": "0",
                   "forma_pagamento": "especie", "valor_recebido": "10.00",
-                  "itens_json": _cesta([(FIX["p_refri"], 1)]), "imprimir": "0"})
+                  "itens_json": _cesta([(FIX["p_refri"], 1)]), "imprimir": "0",
+                  "idempotencia": secrets.token_hex(16)})
         verificar("C11 espécie sem sessão é recusada (sessao_necessaria)",
                   "sessao_necessaria" in resp.url, resp.url)
         verificar("C11 a recusa de espécie não criou nada",

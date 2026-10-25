@@ -374,6 +374,7 @@ async def vender_livro(
     id: int,
     quantidade: str = Form("1"),
     pessoa_id: str = Form(""),
+    idempotencia: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -381,10 +382,38 @@ async def vender_livro(
 
     qtd = int(quantidade or 1)
 
+    # TASK_012 §2: entrada de dinheiro (estoque + venda + lançamento) — um
+    # reenvio do mesmo envio não pode baixar duas vezes.
+    corpo_tentativa = {"livro_id": id, "quantidade": qtd,
+                       "pessoa_id": pessoa_id or None}
+    destino_sucesso = "/biblioteca"
+
+    from servico_idempotencia import (
+        TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
+    )
+    from rotas.tentativa import resposta_de_tentativa
+
     with conectar() as conn:
+        respondida = resposta_de_tentativa(
+            conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+            erro_para=lambda ce: f"/biblioteca?erro={ce}",
+            destino_padrao=destino_sucesso)
+        if respondida:
+            return respondida
+
         livro = conn.execute("SELECT * FROM livros WHERE id = %s", (id,)).fetchone()
         if not livro or livro["quantidade"] < qtd:
             return RedirectResponse(url="/biblioteca", status_code=303)
+
+        try:
+            chave_tentativa = exigir_reserva(
+                conn, idempotencia=idempotencia, operacao="biblioteca_venda",
+                autor_id=atendente["id"], corpo=corpo_tentativa)
+        except TentativaRecusada as e:
+            return RedirectResponse(url=f"/biblioteca?erro={e.chave_erro}",
+                                    status_code=303)
+        except TentativaJaRegistrada as e:
+            return RedirectResponse(url=e.destino or destino_sucesso, status_code=303)
 
         # Baixa no estoque
         conn.execute(
@@ -409,8 +438,10 @@ async def vender_livro(
                VALUES ('entrada', 'livro', %s, %s, %s, 'pago')""",
             (valor_total, f"Venda: {titulo}", int(pessoa_id) if pessoa_id else None),
         )
+        confirmar(conn, chave=chave_tentativa, documento=row["id"],
+                  destino=destino_sucesso)
 
-    return RedirectResponse(url="/biblioteca", status_code=303)
+    return RedirectResponse(url=destino_sucesso, status_code=303)
 
 
 # ── Histórico de empréstimos da pessoa ────────────────────────────────────────

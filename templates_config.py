@@ -75,6 +75,22 @@ templates.env.filters["moeda"] = _moeda
 templates.env.globals["asset_url"] = _asset_url
 
 
+def _campo_idempotencia():
+    """Hidden com a chave da TENTATIVA, gerada quando a tela é renderizada —
+    nunca de um id criado depois do INSERT. Reenvios desta mesma tela mantêm a
+    chave; uma operação nova abre tela nova, com chave nova (TASK_012 §2)."""
+    from markupsafe import Markup
+    from servico_idempotencia import nova_chave
+    return Markup(f'<input type="hidden" name="idempotencia" value="{nova_chave()}">')
+
+
+templates.env.globals["campo_idempotencia"] = _campo_idempotencia
+
+from servico_idempotencia import MENSAGENS_TENTATIVA  # noqa: E402
+
+templates.env.globals["mensagens_tentativa"] = MENSAGENS_TENTATIVA
+
+
 def _obter_config_centro() -> dict:
     """Retorna configurações do centro (nome e logo) do banco."""
     try:

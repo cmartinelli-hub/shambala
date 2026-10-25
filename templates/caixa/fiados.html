@@ -121,6 +121,9 @@
     'valor_invalido': '⛔ Valor inválido.',
     'venda_nao_encontrada': '⛔ Venda de fiado não encontrada.',
     'trabalhador_nao_encontrado': '⛔ Trabalhador não encontrado.',
+    'tentativa_sem_chave': mensagens_tentativa['tentativa_sem_chave'],
+    'tentativa_conflito': mensagens_tentativa['tentativa_conflito'],
+    'tentativa_em_andamento': mensagens_tentativa['tentativa_em_andamento'],
 } %}
 {% if _erro in _msgs %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
@@ -211,6 +214,7 @@
         <div class="pagar-panel">
             <form method="post" action="/caixa/fiados/{{ tid }}/pagar-divida"
                   onsubmit="return handlePagarDivida(event, this, {{ grupo.total }})">
+                {{ campo_idempotencia() }}
                 <div style="font-weight:700;margin-bottom:.6rem;font-size:.95rem">
                     💰 Receber pagamento de {{ grupo.trabalhador_nome }}
                 </div>
@@ -242,6 +246,7 @@
     <div class="credito-form" id="credito-form-{{ tid }}">
         <form method="post" action="/caixa/fiados/credito/{{ tid }}" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap"
               onsubmit="return handleCredito(event, this)">
+            {{ campo_idempotencia() }}
             <label style="font-size:.8rem;font-weight:600">Forma</label>
             <select name="forma_pagamento" style="padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
                 <option value="especie">Espécie</option>
@@ -284,7 +289,8 @@
                     <td style="font-weight:700;color:#c0392b">R$ {{ "%.2f"|format(_devido) }}</td>
                     <td>{{ v.caixa_nome }}</td>
                     <td style="display:flex;gap:.4rem;flex-wrap:wrap">
-                        <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return handleQuitarEsta(event, this, {{ v.id }}, {{ "%.2f"|format(_devido) }})">
+                        <form method="post" action="/caixa/fiados/{{ v.id }}/pagar" style="display:inline" onsubmit="return handleQuitarEsta(event, this, {{ v.id }}, {{ "%.2f"|format(_devido) }}">
+                            {{ campo_idempotencia() }}
                             <select name="forma_pagamento" style="padding:.1rem .3rem;font-size:.75rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
                                 <option value="especie">Espécie</option>
                                 <option value="pix">PIX</option>

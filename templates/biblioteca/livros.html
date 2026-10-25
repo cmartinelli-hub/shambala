@@ -11,6 +11,14 @@
     </div>
 </div>
 
+{% set _erro = request.query_params.get('erro') %}
+{% if _erro and _erro in mensagens_tentativa %}
+<div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
+     padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
+    {{ mensagens_tentativa[_erro] }}
+</div>
+{% endif %}
+
 <!-- Busca -->
 <form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:center">
     <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar por título, autor ou ISBN..."
@@ -52,6 +60,7 @@
             </td>
             <td style="display:flex; gap:0.3rem">
                 <form method="post" action="/biblioteca/livro/{{ lv.id }}/vender" style="display:inline">
+                    {{ campo_idempotencia() }}
                     <input type="hidden" name="quantidade" value="1">
                     <input type="hidden" name="pessoa_id" value="">
                     <button type="submit" class="btn btn-primario" style="padding:0.2rem 0.5rem; font-size:0.8rem"

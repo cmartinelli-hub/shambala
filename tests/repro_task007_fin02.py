@@ -13,6 +13,7 @@ Configuração ausente ou divergente aborta o processo sem gravar nada.
 """
 import json
 import os
+import secrets
 import re
 import sys
 import urllib.error
@@ -90,7 +91,19 @@ jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(SemRedirect, urllib.request.HTTPCookieProcessor(jar))
 
 
+def _com_tentativa(data):
+    """Cada POST de teste é uma tentativa NOVA e legítima (TASK_012 §2).
+
+    As rotas financeiras exigem o identificador da tentativa; quem quiser
+    provar reenvio/duplicidade passa `idempotencia` explicitamente.
+    """
+    if isinstance(data, dict) and "idempotencia" not in data:
+        return {**data, "idempotencia": secrets.token_hex(16)}
+    return data
+
+
 def req(method, path, data=None):
+    data = _com_tentativa(data)
     body = urllib.parse.urlencode(data).encode() if data is not None else None
     r = urllib.request.Request(BASE + path, data=body, method=method)
     try:

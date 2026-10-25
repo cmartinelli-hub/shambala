@@ -43,6 +43,7 @@
 
     <!-- Formulário dinheiro -->
     <form id="form-especie" method="post" action="/caixa/doacao">
+        {{ campo_idempotencia() }}
         <input type="hidden" name="forma" value="especie">
         <div class="campo">
             <label>Dinheiro físico entra em qual sessão aberta?</label>
@@ -126,6 +127,7 @@
         </div>
 
         <form id="form-pix-submit" method="post" action="/caixa/doacao" style="display:none">
+            {{ campo_idempotencia() }}
             <input type="hidden" name="forma" value="pix">
             <input type="hidden" name="valor" id="f-val-pix">
             <input type="hidden" name="descricao" id="f-desc-pix">

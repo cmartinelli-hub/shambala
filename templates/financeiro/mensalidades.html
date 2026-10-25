@@ -91,6 +91,9 @@
     'sessao_invalida': 'A sessão escolhida não está aberta agora — nada foi registrado.',
     'conta_invalida': 'Escolha uma conta de destino válida para a forma escolhida.',
     'valor_invalido': 'Valor inválido.',
+    'tentativa_sem_chave': mensagens_tentativa['tentativa_sem_chave'],
+    'tentativa_conflito': mensagens_tentativa['tentativa_conflito'],
+    'tentativa_em_andamento': mensagens_tentativa['tentativa_em_andamento'],
 } %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
@@ -108,6 +111,7 @@
 
 {% if trabalhador %}
 <form method="post" action="/financeiro/mensalidades/receber" id="form-receber" style="margin-top:1.5rem">
+{{ campo_idempotencia() }}
 <input type="hidden" name="trabalhador_id" value="{{ trabalhador.id }}">
 <input type="hidden" name="pix_copiadecola" id="pix-copiadecola" value="">
 

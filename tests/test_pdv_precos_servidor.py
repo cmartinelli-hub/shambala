@@ -35,6 +35,7 @@ Uso direto (app de teste já no ar, banco descartável):
 import http.cookiejar
 import json
 import os
+import secrets
 import re
 import sys
 import threading
@@ -110,7 +111,19 @@ def _jar(novo=False):
     return tp._sessao()
 
 
+def _com_tentativa(data):
+    """Cada POST de teste é uma tentativa NOVA e legítima (TASK_012 §2).
+
+    As rotas financeiras exigem o identificador da tentativa; quem quiser
+    provar reenvio/duplicidade passa `idempotencia` explicitamente.
+    """
+    if isinstance(data, dict) and "idempotencia" not in data:
+        return {**data, "idempotencia": secrets.token_hex(16)}
+    return data
+
+
 def _req(opener, method, path, data=None):
+    data = _com_tentativa(data)
     body = urllib.parse.urlencode(data).encode() if data else None
     req = urllib.request.Request(BASE + path, data=body, method=method)
     try:
@@ -628,7 +641,11 @@ def _rodar_rota_sem_http(p, itens, sessao=None, valor_recebido="50"):
             None, caixa_id=p.catalogo, caixa_movimento_id=sessao or 0,
             forma_pagamento="especie", valor_recebido=valor_recebido,
             itens_json=json.dumps(itens), trabalhador_id=0, imprimir="0",
-            doacao_valor="0"))
+            doacao_valor="0",
+            # TASK_012 §2: a rota exige identidade de tentativa; cada chamada
+            # deste harness é uma tentativa nova (a prova continua sendo a
+            # falha injetada e o rollback integral).
+            idempotencia=secrets.token_hex(16)))
     finally:
         rc._guard = original
 

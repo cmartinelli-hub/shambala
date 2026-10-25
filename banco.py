@@ -1032,6 +1032,32 @@ def criar_tabelas():
             )
         """)
 
+        # ── Idempotência das operações financeiras (TASK_012 / §2) ──
+        # A chave representa a TENTATIVA do operador (gerada antes do envio e
+        # mantida durante reenvios), nunca o documento. Reserva e confirmação
+        # acontecem na MESMA transação dos efeitos: falha intermediária não
+        # deixa chave consumida sem documento, e reenvio/concorrência da mesma
+        # tentativa não produz dinheiro novo. `destino` é a URL de sucesso já
+        # calculada — o reenvio recebe a mesma resposta, sem novo efeito.
+        # Retenção: as linhas não são apagadas automaticamente (nem por rotina
+        # nem por limpeza); apagar chaves recentes reabriria a duplicação.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS operacao_idempotencia (
+                id               SERIAL PRIMARY KEY,
+                chave            TEXT NOT NULL UNIQUE,
+                operacao         TEXT NOT NULL,
+                corpo_hash       TEXT NOT NULL,
+                status           TEXT NOT NULL DEFAULT 'em_andamento'
+                                 CHECK (status IN ('em_andamento','concluida')),
+                autor_id         INTEGER REFERENCES atendentes(id),
+                documento        TEXT,
+                destino          TEXT,
+                criado_em        TEXT NOT NULL DEFAULT
+                                 (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp(0)::text,
+                concluido_em     TEXT
+            )
+        """)
+
         # ── Doações de cestas ──
         conn.execute("""
             CREATE TABLE IF NOT EXISTS doacoes_cestas (

@@ -86,6 +86,11 @@ MENSAGENS_ERRO = {
     "venda_nao_encontrada": "Venda não encontrada.",
 }
 
+# Recusas de tentativa (TASK_012 §2) entram no mesmo vocabulário das telas.
+from servico_idempotencia import MENSAGENS_TENTATIVA  # noqa: E402
+
+MENSAGENS_ERRO.update(MENSAGENS_TENTATIVA)
+
 
 TETO_MOEDA = Decimal("9999999999.99")  # teto do NUMERIC(12,2) usado no schema
 

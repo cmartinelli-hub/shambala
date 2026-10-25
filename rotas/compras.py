@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Lançamento de compras — despesa no financeiro com nota fiscal (foto obrigatória)."""
+import hashlib
 import os
 import uuid
 from datetime import date
@@ -42,7 +43,14 @@ async def form_compras(request: Request):
     return templates.TemplateResponse("compras/form.html", {
         "request": request,
         "atendente": atendente,
+        "erro": _mensagem_erro(request.query_params.get("erro")),
     })
+
+
+def _mensagem_erro(cod: str | None) -> str | None:
+    """Recusas de tentativa explicadas em linguagem de operador (TASK_012 §2)."""
+    from servico_idempotencia import MENSAGENS_TENTATIVA
+    return MENSAGENS_TENTATIVA.get(cod or "")
 
 
 @router.post("", response_class=HTMLResponse)
@@ -52,6 +60,7 @@ async def salvar_compra(
     descricao: str = Form(""),
     forma_pagamento: str = Form("especie"),
     foto: UploadFile = File(None),
+    idempotencia: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -101,12 +110,43 @@ async def salvar_compra(
                      valor=valor, descricao=desc, forma=forma_pagamento)
 
     hoje = date.today().isoformat()
+    destino_sucesso = (f"/financeiro/compras?ok=1&valor={valor_dec:.2f}"
+                       f"&forma={forma_pagamento}")
+
+    # Conteúdo da tentativa: o que foi enviado + a nota em si. Reenviar o
+    # mesmo arquivo com os mesmos dados é a MESMA tentativa; outra foto na
+    # mesma tentativa é conteúdo divergente.
+    corpo_tentativa = {"valor": str(valor_dec), "descricao": desc,
+                       "forma": forma_pagamento, "hoje": hoje,
+                       "nota": hashlib.sha256(conteudo).hexdigest()}
+
+    from servico_idempotencia import (
+        TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
+    )
+    from rotas.tentativa import resposta_de_tentativa
 
     with conectar() as conn:
+        respondida = resposta_de_tentativa(
+            conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+            erro_para=lambda ce: f"/financeiro/compras?erro={ce}",
+            destino_padrao=destino_sucesso)
+        if respondida:
+            return respondida
+
         conta_id = conta_id_por_tipo(conn, forma_pagamento)
         if conta_id is None:
             return _erro("Conta financeira não encontrada. Contate o administrador.",
                          valor=valor, descricao=desc, forma=forma_pagamento)
+
+        try:
+            chave_tentativa = exigir_reserva(
+                conn, idempotencia=idempotencia, operacao="compra",
+                autor_id=atendente["id"], corpo=corpo_tentativa)
+        except TentativaRecusada as e:
+            return RedirectResponse(url=f"/financeiro/compras?erro={e.chave_erro}",
+                                    status_code=303)
+        except TentativaJaRegistrada as e:
+            return RedirectResponse(url=e.destino or destino_sucesso, status_code=303)
 
         cur = conn.execute(
             """INSERT INTO financeiro_movimentacoes
@@ -123,8 +163,7 @@ async def salvar_compra(
             "UPDATE financeiro_movimentacoes SET nota_fiscal_foto = %s WHERE id = %s",
             (nome_arquivo, mov_id),
         )
+        confirmar(conn, chave=chave_tentativa, documento=mov_id,
+                  destino=destino_sucesso)
 
-    return RedirectResponse(
-        url=f"/financeiro/compras?ok=1&valor={valor_dec:.2f}&forma={forma_pagamento}",
-        status_code=303,
-    )
+    return RedirectResponse(url=destino_sucesso, status_code=303)

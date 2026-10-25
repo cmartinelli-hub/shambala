@@ -301,6 +301,9 @@
     'sessao_necessaria': 'Venda em espécie exige uma sessão de caixa aberta — abra o caixa antes de receber dinheiro.',
     'recebido_insuficiente': 'O valor recebido não cobre o total mais a doação — a doação sai do troco, aumente o recebido ou reduza a doação.',
     'sessao_ja_aberta': 'Este caixa já tem uma sessão aberta — não é preciso abrir outra.',
+    'tentativa_sem_chave': mensagens_tentativa['tentativa_sem_chave'],
+    'tentativa_conflito': mensagens_tentativa['tentativa_conflito'],
+    'tentativa_em_andamento': mensagens_tentativa['tentativa_em_andamento'],
 } %}
 {% if _erro in _msgs_erro %}
 <div class="pdv-ok" style="background:#f8d7da;border-color:#c0392b;color:#721c24">
@@ -493,6 +496,7 @@
 
 {# Formulário oculto para submissão #}
 <form id="form-finalizar" method="post" action="/caixa/pdv/finalizar" style="display:none">
+    {{ campo_idempotencia() }}
     <input type="hidden" name="caixa_id" value="{{ caixa_sel.id }}">
     <input type="hidden" name="forma_pagamento" id="f-pagamento">
     <input type="hidden" name="valor_recebido" id="f-valor-recebido">

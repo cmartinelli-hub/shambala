@@ -515,25 +515,47 @@ async def salvar_nova(
     status: str = Form("pago"),
     pix_copiadecola: str = Form(""),
     conta_id: str = Form(""),
+    idempotencia: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
+    from servico_idempotencia import (
+        TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
+    )
+
     data_ref = data_movimentacao.strip() or date.today().isoformat()
 
     with conectar() as conn:
-        conn.execute(
+        try:
+            chave_tentativa = exigir_reserva(
+                conn, idempotencia=idempotencia, operacao="lancamento_novo",
+                autor_id=atendente["id"],
+                corpo={"tipo": tipo, "categoria": categoria, "valor": valor,
+                       "data": data_ref, "descricao": descricao.strip(),
+                       "trabalhador_id": trabalhador_id or None,
+                       "pessoa_id": pessoa_id or None, "status": status,
+                       "conta_id": conta_id or None})
+        except TentativaRecusada as e:
+            return RedirectResponse(url=f"/financeiro/nova?erro={e.chave_erro}",
+                                    status_code=303)
+        except TentativaJaRegistrada as e:
+            return RedirectResponse(url=e.destino or "/financeiro", status_code=303)
+
+        cur = conn.execute(
             """INSERT INTO financeiro_movimentacoes
                (tipo, categoria, valor, data_movimentacao, descricao,
                 trabalhador_id, pessoa_id, status, pix_copiadecola, conta_id)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (tipo, categoria, float(valor or 0), data_ref, descricao.strip(),
              int(trabalhador_id) if trabalhador_id else None,
              int(pessoa_id) if pessoa_id else None,
              status, pix_copiadecola.strip(),
              int(conta_id) if conta_id else None),
         )
+        confirmar(conn, chave=chave_tentativa, documento=cur.fetchone()["id"],
+                  destino="/financeiro")
 
     return RedirectResponse(url="/financeiro", status_code=303)
 
@@ -675,6 +697,7 @@ async def receber_mensalidades(
     pix_copiadecola: str = Form(""),
     sessao_id: int = Form(0),
     conta_pix_id: int = Form(0),
+    idempotencia: str = Form(""),
 ):
     """Recebimento de mensalidades (TASK_008): destino explícito, sem
     depósito implícito no caixa 2.
@@ -707,8 +730,28 @@ async def receber_mensalidades(
             status_code=303,
         )
 
+    def _ids_selecionados(txt: str):
+        return sorted(int(s) for s in (txt or "").split(",") if s.strip().isdigit())
+
+    corpo_tentativa = {"trabalhador_id": trabalhador_id,
+                       "mov_ids": _ids_selecionados(mov_ids),
+                       "forma": forma_pagamento, "sessao_id": sessao_id,
+                       "conta_pix_id": conta_pix_id or None}
+
+    from servico_idempotencia import (
+        TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
+    )
+    from rotas.tentativa import resposta_de_tentativa
+
     try:
         with conectar() as conn:
+            respondida = resposta_de_tentativa(
+                conn, idempotencia=idempotencia, corpo=corpo_tentativa,
+                erro_para=_erro,
+                destino_padrao=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}")
+            if respondida:
+                return respondida
+
             trab = conn.execute(
                 "SELECT * FROM trabalhadores WHERE id = %s", (trabalhador_id,)
             ).fetchone()
@@ -725,26 +768,32 @@ async def receber_mensalidades(
 
             # Pendentes selecionadas (só as que ainda estão pendentes e do mesmo trabalhador)
             a_pagar = []
-            vistos = set()
-            for sid in mov_ids.split(","):
-                sid = sid.strip()
-                if not sid.isdigit():
-                    continue
+            for sid in _ids_selecionados(mov_ids):
                 mov = conn.execute(
                     """SELECT id, valor FROM financeiro_movimentacoes
                        WHERE id = %s AND categoria = 'mensalidade'
                          AND trabalhador_id = %s AND status = 'pendente'
                        FOR UPDATE""",
-                    (int(sid), trabalhador_id),
+                    (sid, trabalhador_id),
                 ).fetchone()
-                if mov and mov["id"] not in vistos:
-                    vistos.add(mov["id"])
+                if mov:
                     a_pagar.append(mov)
 
             if not a_pagar:
                 return _erro("sem_itens")
 
             total = sum((Decimal(str(m["valor"])) for m in a_pagar), Decimal("0.00"))
+
+            try:
+                chave_tentativa = exigir_reserva(
+                    conn, idempotencia=idempotencia, operacao="mensalidade_receber",
+                    autor_id=atendente["id"], corpo=corpo_tentativa)
+            except TentativaRecusada as e:
+                return _erro(e.chave_erro)
+            except TentativaJaRegistrada as e:
+                return RedirectResponse(
+                    url=e.destino or f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}",
+                    status_code=303)
 
             for m in a_pagar:
                 conn.execute(
@@ -767,15 +816,17 @@ async def receber_mensalidades(
                         if forma_pagamento == "especie" else Decimal("0.00"),
                         conta_id=cid, atendente_id=atendente["id"])
 
-        ids_str = ",".join(str(i) for i in vistos)
+            ids_pagas = [m["id"] for m in a_pagar]
+            destino = (f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}"
+                       f"&pago={','.join(str(i) for i in ids_pagas)}"
+                       f"&total={total:.2f}")
+            confirmar(conn, chave=chave_tentativa,
+                      documento=ids_pagas, destino=destino)
     except SessaoInvalida as e:
         # exceção vazou do with → nenhuma pendência baixada, nenhum evento
         return _erro(e.chave)
 
-    return RedirectResponse(
-        url=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}&pago={ids_str}&total={total:.2f}",
-        status_code=303,
-    )
+    return RedirectResponse(url=destino, status_code=303)
 
 
 @router.post("/mensalidades/{mov_id}/cancelar")
@@ -1206,15 +1257,22 @@ async def salvar_transferencia(
     conta_destino: int = Form(...),
     valor: str = Form("0"),
     descricao: str = Form(""),
+    idempotencia: str = Form(""),
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
+    from decimal import Decimal, InvalidOperation
+    from servico_idempotencia import (
+        TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
+    )
+
     try:
-        valor_dec = round(float(valor.strip().replace(",", ".")), 2)
-    except (ValueError, AttributeError):
-        valor_dec = 0.0
+        valor_dec = Decimal(valor.strip().replace(",", ".")).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError, AttributeError):
+        return RedirectResponse(url="/financeiro/transferir?erro=valor_invalido",
+                                status_code=303)
 
     if valor_dec <= 0:
         return RedirectResponse(url="/financeiro/transferir?erro=valor_invalido", status_code=303)
@@ -1226,13 +1284,27 @@ async def salvar_transferencia(
     hoje = date.today().isoformat()
 
     with conectar() as conn:
+        try:
+            chave_tentativa = exigir_reserva(
+                conn, idempotencia=idempotencia, operacao="transferencia",
+                autor_id=atendente["id"],
+                corpo={"origem": conta_origem, "destino_conta": conta_destino,
+                       "valor": str(valor_dec), "descricao": desc})
+        except TentativaRecusada as e:
+            return RedirectResponse(url=f"/financeiro/transferir?erro={e.chave_erro}",
+                                    status_code=303)
+        except TentativaJaRegistrada as e:
+            return RedirectResponse(url=e.destino or "/financeiro", status_code=303)
+
         # Saída da origem
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO financeiro_movimentacoes
                (tipo, categoria, valor, data_movimentacao, descricao, conta_id, status)
-               VALUES ('saida', 'transferencia', %s, %s, %s, %s, 'pago')""",
+               VALUES ('saida', 'transferencia', %s, %s, %s, %s, 'pago')
+               RETURNING id""",
             (valor_dec, hoje, f"{desc} (origem)", conta_origem)
         )
+        saida_id = cur.fetchone()["id"]
         # Entrada no destino
         conn.execute(
             """INSERT INTO financeiro_movimentacoes
@@ -1240,5 +1312,7 @@ async def salvar_transferencia(
                VALUES ('entrada', 'transferencia', %s, %s, %s, %s, 'pago')""",
             (valor_dec, hoje, f"{desc} (destino)", conta_destino)
         )
+        confirmar(conn, chave=chave_tentativa, documento=saida_id,
+                  destino="/financeiro?transferencia_ok=1")
 
     return RedirectResponse(url="/financeiro?transferencia_ok=1", status_code=303)
