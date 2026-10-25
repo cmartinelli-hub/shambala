@@ -1,0 +1,11 @@
+# TASK_014 §5 — DEV: comparação antes × depois do reinício
+
+## dev_geral_antes.txt × dev_geral_depois.txt
+   IDÊNTICO — 0 linhas de diferença (20 linhas)
+
+## dev_financeiro_antes.txt × dev_financeiro_depois.txt
+   IDÊNTICO — 0 linhas de diferença (12 linhas)
+
+## Compras no DEV (o recuperador não tocou nada)
+docs/tasks/evidencias/TASK_014/dev_financeiro_antes.txt:compra: 12 | 528.64
+docs/tasks/evidencias/TASK_014/dev_financeiro_depois.txt:compra: 12 | 528.64
