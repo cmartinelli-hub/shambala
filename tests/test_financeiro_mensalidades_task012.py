@@ -315,6 +315,80 @@ def prova_concorrencia_geracao():
               "")
 
 
+def prova_concorrencia_sem_indice():
+    """O buraco que o dono mandou provar: SEM o índice, a checagem sozinha não
+    impede duas inserções simultâneas.
+
+    O índice único é criado no startup, mas o startup **se recusa** a criá-lo
+    quando encontra duplicidade histórica — e nesse estado (real, documentado na
+    §3) o serviço continua gerando. `_existe_mes` é leitura: duas gerações
+    simultâneas leem "não existe" e as duas inserem. A proteção agora é a trava
+    `pg_advisory_xact_lock` por trabalhador (`_travar_geracao`).
+
+    A prova roda o caminho REAL do serviço com o índice derrubado e duas conexões
+    independentes atrás de uma barreira — sem índice, sem corrida casual.
+    """
+    from decimal import Decimal
+    from rotas import financeiro_mensalidades as M
+    from banco import conta_id_por_tipo
+
+    tid = novo_trabalhador("Sem índice")
+    competencia = "2027-08"
+    with conectar() as conn:
+        cid = conta_id_por_tipo(conn, "areceber")
+
+    # 1) confirma o cenário (o índice realmente não existe)
+    with conectar() as conn:
+        conn.execute("DROP INDEX IF EXISTS uq_mensalidade_por_competencia")
+    with conectar() as conn:
+        indice_fora = not M._indice_ativo(conn)
+    verificar("sem índice: o cenário da prova é o estado real (guarda do banco ausente)",
+              indice_fora, "o índice continuou ativo")
+
+    barreira = threading.Barrier(2)
+    resultado = {}
+
+    def gerar(nome):
+        try:
+            with conectar() as conn:
+                barreira.wait(timeout=20)      # as duas entram juntas
+                M._travar_geracao(conn, tid)   # a proteção sob teste
+                if M._existe_mes(conn, tid, competencia):
+                    resultado[nome] = "já existia"
+                    return
+                novo = M.inserir_mensalidade(
+                    conn, trabalhador_id=tid, competencia=competencia,
+                    vencimento=f"{competencia}-10", valor=Decimal("60.00"),
+                    descricao=f"{PREFIXO} conc sem indice", conta_id=cid)
+                resultado[nome] = "criei" if novo else "sem retorno"
+        except Exception as e:  # noqa: BLE001
+            resultado[nome] = f"erro: {type(e).__name__}: {e}"
+
+    ts = [threading.Thread(target=gerar, args=(n,)) for n in ("A", "B")]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(40)
+
+    linhas = escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                     "WHERE trabalhador_id=%s AND competencia=%s",
+                     (tid, competencia))
+    verificar("sem índice: duas gerações simultâneas criam UMA obrigação, não duas "
+              "(trava pg_advisory_xact_lock por trabalhador)",
+              linhas == 1 and sorted(resultado.values()) == ["criei", "já existia"],
+              f"linhas={linhas} resultado={resultado}")
+
+    # 2) o índice volta para o banco desta execução (as outras provas usam)
+    with conectar() as conn:
+        conn.execute(
+            f"""CREATE UNIQUE INDEX IF NOT EXISTS {M.UQ_MENSALIDADE_COMPETENCIA}
+                ON financeiro_movimentacoes (trabalhador_id, competencia)
+                WHERE {M.PREDICADO_MENSALIDADE}""")
+    with conectar() as conn:
+        verificar("sem índice: a guarda do banco é restabelecida ao fim da prova",
+                  M._indice_ativo(conn), "índice não voltou")
+
+
 def prova_dois_trabalhadores_mesmo_mes():
     a = novo_trabalhador("Par A")
     b = novo_trabalhador("Par B")
@@ -744,6 +818,7 @@ def prova_lancamento_manual():
 
 FUNCOES = [
     prova_chave_do_banco, prova_geracao_idempotente, prova_concorrencia_geracao,
+    prova_concorrencia_sem_indice,
     prova_dois_trabalhadores_mesmo_mes, prova_limites_ano_mes,
     prova_elegibilidade, prova_leitura_geracao_manual,
     prova_recebimento_preserva_competencia, prova_lote_sem_baixa_parcial,

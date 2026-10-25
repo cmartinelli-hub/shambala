@@ -102,6 +102,29 @@ def inserir_mensalidade(conn, *, trabalhador_id: int, competencia: str,
     return row["id"] if row else None
 
 
+def _travar_geracao(conn, trabalhador_id: int) -> bool:
+    """Trava a geração de mensalidades de UM trabalhador pelo tempo da transação.
+
+    Por que existe (TASK_012 §3, medido): sem o índice único — o estado que o
+    startup deixa quando encontra duplicidade histórica e se recusa a criar a
+    guarda —, `_existe_mes` é uma LEITURA e não trava nada. Duas gerações
+    simultâneas leem "não existe" e as duas inserem: **duas cobranças do mesmo
+    mês**. Prova em `tests/test_financeiro_mensalidades_task012.py`
+    (`concorrência sem o índice`), que roda este caminho com duas conexões e
+    barreira.
+
+    A trava é `pg_advisory_xact_lock` com chave derivada do trabalhador: serializa
+    só a geração daquele trabalhador (dois trabalhadores diferentes não esperam um
+    pelo outro), é liberada automaticamente no commit/rollback e não depende de
+    existir o índice, de tabela de controle ou de coluna nova. Com o índice
+    presente a garantia continua sendo do banco; esta trava é o que cobre o
+    estado SEM índice.
+    """
+    conn.execute("SELECT pg_advisory_xact_lock(hashtext('mensalidade_geracao'), %s)",
+                 (int(trabalhador_id),))
+    return True
+
+
 def sincronizar_mensalidades(conn, trab: dict) -> int:
     """Idempotente: garante mês corrente + 12 futuros pendentes.
     Não faz nada se inativo ou valor_mensalidade <= 0.
@@ -114,6 +137,9 @@ def sincronizar_mensalidades(conn, trab: dict) -> int:
     cid_areceber = conta_id_por_tipo(conn, "areceber")
     hoje = date.today()
     criadas = 0
+    # Serializa a geração DESTE trabalhador antes de olhar o que existe: sem
+    # isso, a checagem e o INSERT são duas operações sem nada entre elas.
+    _travar_geracao(conn, trab["id"])
     for i in range(0, MESES_A_FRENTE + 1):
         a, m = _adicionar_meses(hoje.year, hoje.month, i)
         competencia = competencial_de(a, m)
