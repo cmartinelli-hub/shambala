@@ -2,6 +2,7 @@
 """Lançamento de compras — despesa no financeiro com nota fiscal (foto obrigatória)."""
 import hashlib
 import os
+import time
 import uuid
 from datetime import date
 
@@ -26,7 +27,7 @@ FORMAS_PERMITIDAS = {"especie", "pix"}
 # execução. O envio só é lido quando o ambiente é comprovadamente descartável —
 # em DEV/produção o código é inerte e nunca dispara.
 FALHA_DE_DISCO_ENV = "SHAMBALA_FALHA_DISCO_COMPRA"
-_FALHAS_DE_DISCO = ("preparar", "promover", "morrer", "compensar")
+_FALHAS_DE_DISCO = ("preparar", "promover", "morrer", "compensar", "pausar")
 
 
 def _guard(request: Request):
@@ -116,6 +117,20 @@ def _promover_nota(temporario: str, nome_arquivo: str, request=None) -> str:
     _falha_de_disco_injetada("promover", request)
     os.replace(temporario, _caminho_da_nota(nome_arquivo))
     return nome_arquivo
+
+
+def _falha_de_disco_pedida(etapa: str, request=None) -> bool:
+    """O ambiente descartável pediu esta etapa? (mesma guarda de `_falha_de_disco_injetada`)"""
+    habilitado = (os.environ.get(FALHA_DE_DISCO_ENV) or "").strip().lower()
+    if not habilitado:
+        return False
+    if request is not None:
+        pedidas = {p.strip() for p in
+                   (request.headers.get("x-tentativa-falha-disco") or "")
+                   .strip().lower().split(",") if p.strip()}
+    else:
+        pedidas = {p.strip() for p in habilitado.split(",") if p.strip()}
+    return etapa in pedidas and os.environ.get("SHAMBALA_MODO_TESTE") == "1"
 
 
 def _falha_de_processo_injetada(etapa: str, request=None) -> None:
@@ -639,6 +654,18 @@ async def salvar_compra(
             # `recuperar_compras_sem_nota` fecha, porque a trava desta compra
             # morre junto com o processo. A injeção abaixo reproduz essa morte.
             _falha_de_processo_injetada("morrer", request)
+            # "pausar": mantém a requisição VIVA dentro da janela (depois do
+            # commit, antes da promoção) por alguns segundos, para a prova matar
+            # o processo com SIGKILL nesse ponto exato — morte REAL, não
+            # simulação por exceção. Mesma guarda das outras injeções.
+            if _falha_de_disco_pedida("pausar", request):
+                # Sentinela num caminho previsível pela suíte; o `sleep` mantém a
+                # requisição viva na janela para a prova matar o processo.
+                caminho = os.environ.get("SHAMBALA_JANELA_SENTINELA",
+                                         "/tmp/t014_na_janela")
+                with open(caminho, "w") as _f:
+                    _f.write(str(mov_id))
+                time.sleep(10)
             try:
                 _promover_nota(temporario, nome_tentativa, request)
             except OSError:

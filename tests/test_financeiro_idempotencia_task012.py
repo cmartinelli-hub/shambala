@@ -18,6 +18,7 @@ mesma chave; autenticação/RBAC continuam exigidos (chave não é credencial).
 
 Uso: dentro de tests/rodar_testes.sh (app descartável + banco selado).
 """
+import contextlib
 import http.cookiejar
 import json
 import os
@@ -25,6 +26,7 @@ import re
 import secrets
 import sys
 import threading
+import time
 import traceback
 import urllib.error
 import urllib.parse
@@ -101,7 +103,7 @@ def POST(path, dados, o=None):
     return req("POST", path, dados, o)
 
 
-def POST_multipart(path, campos, arquivo, o=None, cabecalhos=None):
+def POST_multipart(path, campos, arquivo, o=None, cabecalhos=None, base=None):
     """multipart/form-data com um arquivo (rota de compra com foto da nota)."""
     borda = "----t12" + secrets.token_hex(8)
     partes = [
@@ -114,7 +116,7 @@ def POST_multipart(path, campos, arquivo, o=None, cabecalhos=None):
         + conteudo + b"\r\n")
     partes.append(f"--{borda}--\r\n".encode())
     r = urllib.request.Request(
-        BASE + path, data=b"".join(partes), method="POST",
+        (base or BASE) + path, data=b"".join(partes), method="POST",
         headers={"Content-Type": f"multipart/form-data; boundary={borda}",
                  **(cabecalhos or {})})
     try:
@@ -1438,6 +1440,18 @@ def prova_nota_fora_da_transacao():
         except OSError:
             pass
 
+    # ── 11) MORTE REAL DO PROCESSO ─────────────────────────────────────────
+    #
+    # Nível diferente das provas acima (aquelas exercitam o caminho com o
+    # servidor VIVO). Aqui um processo do app sobe à parte, a requisição é
+    # congelada DENTRO da janela (etapa "pausar") e o processo é morto com
+    # SIGKILL — sem rollback, sem `finally`, sem compensação. O que se lê depois
+    # é o estado que a morte deixou, e a recuperação roda no startup seguinte,
+    # também de um processo de verdade.
+    #
+    # Vive em suíte própria (`test_financeiro_morte_processo_task014.py`): ela
+    # sobe e mata um servidor, o que não pode contaminar o operador/opener desta
+    # suíte nem o app do runner. Referência cruzada aqui para quem lê o FIN-09.
     # ── limpeza do rastro desta prova (só o que ela criou) ──────────────────
     if nome:
         try:

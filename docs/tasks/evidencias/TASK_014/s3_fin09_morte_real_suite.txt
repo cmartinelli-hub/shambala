@@ -1,0 +1,72 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025125647-821769 (identifica ESTA execução nas provas)
+  árvore ..: 2db1e65ce670803431c0a879fca633bfc41d8121-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025125647-821769
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025125647-821769'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_financeiro_morte_processo_task014.py
+Exception in thread Thread-1 (disparar):
+Traceback (most recent call last):
+  File "/usr/lib/python3.13/threading.py", line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/usr/lib/python3.13/threading.py", line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/tests/test_financeiro_morte_processo_task014.py", line 187, in disparar
+    caixa["r"] = enviar_compra(op, desc, k,
+                 ~~~~~~~~~~~~~^^^^^^^^^^^^^
+                               {"X-Tentativa-Falha-Disco": "pausar"})
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nc/projetos/shambala/tests/test_financeiro_morte_processo_task014.py", line 145, in enviar_compra
+    with op.open(req, timeout=3) as resp:
+         ~~~~~~~^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/urllib/request.py", line 489, in open
+    response = self._open(req, data)
+  File "/usr/lib/python3.13/urllib/request.py", line 506, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib/python3.13/urllib/request.py", line 466, in _call_chain
+    result = func(*args)
+  File "/usr/lib/python3.13/urllib/request.py", line 1348, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/urllib/request.py", line 1323, in do_open
+    r = h.getresponse()
+  File "/usr/lib/python3.13/http/client.py", line 1459, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.13/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.13/http/client.py", line 305, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+                             " response")
+http.client.RemoteDisconnected: Remote end closed connection without response
+[ok] conexão do script: banco=shambala_test_passes usuario=shambala
+  PASS  a requisição foi congelada DENTRO da janela (depois do commit, antes da promoção)
+  PASS  o estado que a morte deixa é o previsto: compra 'pago', arquivo AUSENTE e temporário no disco
+  PASS  a tentativa ficou 'concluida' apontando para o documento (é por isso que status de tentativa não distingue a janela)
+  PASS  o startup seguinte cancela a compra, ANULA a chave e remove o temporário — sem chamada manual
+  PASS  reenviar a mesma chave depois da recuperação NÃO informa sucesso — recebe a recusa legível
+  PASS  o reenvio não cria segundo lançamento
+
+6/6 verificações aprovadas (TASK_014 §3 — morte real do processo)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_financeiro_morte_processo_task014.py: rc=0
+tests/rodar_testes.sh, linha 89: 821808 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok

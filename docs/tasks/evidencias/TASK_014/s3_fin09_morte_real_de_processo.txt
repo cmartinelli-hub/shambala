@@ -1,0 +1,21 @@
+app no ar, pid 796485
+MATANDO o processo com SIGKILL (morte real, sem cleanup)
+requisição interrompida: RemoteDisconnected
+app morto. Estado deixado:
+  linha: {'id': 22, 'status': 'pago', 'nota_fiscal_foto': 'nota_22_b887b147.jpg'}
+  tentativa: {'status': 'concluida', 'documento': '22'}
+  arquivo definitivo existe? False
+  temporários: ['nota_22_b887b147.jpg.tmp-6b4ec86a']
+ANTES do startup: {'id': 22, 'status': 'pago', 'nota_fiscal_foto': 'nota_22_b887b147.jpg'}
+
+--- log do startup ---
+INFO:     Started server process [796597]
+INFO:     Waiting for application startup.
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': None}
+[startup] 1 compra(s) de tentativa interrompida foram canceladas e suas chaves anuladas (1 temporário(s) removido(s)).
+[startup] 1 compra(s) paga(s) sem arquivo foram PRESERVADAS: não há prova de tentativa interrompida (arquivo pode estar em volume não montado).
+INFO:     Application startup co
+
+DEPOIS do startup: {'id': 22, 'status': 'cancelado', 'nota_fiscal_foto': 'nota_22_b887b147.jpg'}
+tentativa: None
+arquivo: False | temporários: []
