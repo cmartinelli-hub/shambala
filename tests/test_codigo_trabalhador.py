@@ -1064,8 +1064,14 @@ def k16(ctx):
     assert_eq(st, 200, "lote de 70")
 
     os.makedirs(PASTA_PDF, exist_ok=True)
+    # A pasta é só desta prova (temporária): limpa arquivos E o perfil do
+    # Chromium, que é diretório. `ignore_errors` porque um arquivo já removido
+    # não pode derrubar a prova. (`shutil` já vem do topo do módulo — importar
+    # de novo AQUI o tornaria local e quebraria o `shutil.which` acima.)
     for resto in os.listdir(PASTA_PDF):
-        os.remove(os.path.join(PASTA_PDF, resto))
+        alvo = os.path.join(PASTA_PDF, resto)
+        shutil.rmtree(alvo, ignore_errors=True) if os.path.isdir(alvo) \
+            else os.remove(alvo)
     pagina = re.sub(r'(src|href)="/', lambda m: f'{m.group(1)}="{BASE}/', html)
     caminho_html = os.path.join(PASTA_PDF, "carteirinhas.html")
     caminho_pdf = os.path.join(PASTA_PDF, "carteirinhas.pdf")
@@ -1074,8 +1080,16 @@ def k16(ctx):
     if os.path.exists(caminho_pdf):
         os.remove(caminho_pdf)
 
+    # O Chromium headless precisa de um diretório de perfil GRAVÁVEL: sem
+    # `--user-data-dir` ele tenta o perfil padrão do usuário e, se esse caminho
+    # for somente leitura (sandbox, home restrito), aborta com "Failed to create
+    # a unique user data directory for headless". O perfil é desta execução e
+    # fica junto dos PDFs, que já são temporários.
+    perfil = os.path.join(PASTA_PDF, "perfil-chromium")
+    os.makedirs(perfil, exist_ok=True)
     r = subprocess.run(
         ["chromium", "--headless", "--disable-gpu", "--no-sandbox",
+         f"--user-data-dir={perfil}",
          "--no-pdf-header-footer", f"--print-to-pdf={caminho_pdf}",
          "file://" + caminho_html],
         capture_output=True, text=True, timeout=180,

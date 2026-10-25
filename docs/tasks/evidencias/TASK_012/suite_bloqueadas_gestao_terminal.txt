@@ -1,0 +1,101 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025095656-126420 (identifica ESTA execução nas provas)
+  árvore ..: a9e13070283f7a76d851f130fb7bfad5c80cbd36-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025095656-126420
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025095656-126420'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_gestao_correcoes_navegador.py
+  PASS  N1 gestão aberta sem dia de atendimento: origem, contador e cards corretos
+  PASS  N2 dia passado: consulta somente leitura, inativo com fato visível
+  PASS  N3 busca e filtros server-side preservados na navegação
+  PASS  N4 atualização parcial: muda sem recarregar; rede caída avisa e preserva
+  PASS  N5 fluxo de correção pela tela: corrigir horário, confirmar, histórico
+  PASS  N6 conflito: fato mudou depois de abrir o formulário — nada é sobrescrito
+  PASS  N7 recusas na tela: motivo vazio não sai do navegador; hora errada é recusada
+  PASS  N8 ficha: selo ajustado, origem por registro e histórico de alterações
+  PASS  N9 relatório geral: nota limpa, seletor só aceita cadastro da lista; impressão
+  PASS  N10 relatório individual: dia da semana em PT, origem, deep link e impressão
+  PASS  N11 medidas reais: gestão do dia e correção utilizáveis no smartphone
+
+11/11 testes passaram (TASK_004 — gestão e correções no navegador)
+  evidências: /home/claudio/Documentos/evidencias-task004-gestao-correcoes
+-- test_terminal_leitor.py
+  PASS  L1 QR real da carteirinha, com zero inicial, é decodificado e registra
+  PASS  L2 carteirinha mantida no enquadro: um envio só, sem som incessante
+  PASS  L3 duas carteirinhas consecutivas: a segunda é atendida na hora
+  PASS  L4 repetição: mantém o primeiro horário e diz que já estava registrada
+  PASS  L5 QR de outra coisa (URL): recusado, sem abrir link e sem envio
+  PASS  L6 código inexistente: 'Código não encontrado' e nada gravado
+  PASS  L7 carteirinha substituída: aviso próprio, sem revelar o nome
+  PASS  L8 cadastro inativo lido por câmera: 'Cadastro inativo; procure a recepção'
+  PASS  L9 foto do cadastro aparece na confirmação (referência local, sem CDN)
+  PASS  L10 teclado: quatro posições, apagar, limpar, teclado físico, zeros preservados
+  PASS  L11 entrada incompleta não é completada: confirmar pede os quatro números
+  PASS  L12 teclado com 0000: os quatro caracteres chegam intactos ao servidor
+  PASS  L13 envio em andamento pausa as duas entradas; sem resposta, a tela não trava
+  PASS  L14 sem resposta do servidor: 'Não foi possível confirmar', sem falso sucesso
+  PASS  L15 HTML de login no lugar do JSON: pede reativação, sem carregar para sempre
+  PASS  L16 servidor 500: mensagem clara, interface liberada, teclado como alternativa
+  PASS  L17 permissão negada pelo navegador: aviso e teclado disponível
+  PASS  L18 nenhuma câmera no aparelho: avisa e segue operando pelo teclado
+  PASS  L19 câmera ocupada: diz para liberar e Reiniciar câmera resolve
+  PASS  L20 alternar câmera, teclado e aba: sem trilha nem laço duplicado
+  PASS  L21 quem ativou perde o acesso: o aparelho para e pede nova ativação
+  PASS  L22 retrato e paisagem, smartphone e tablet: nada cortado, nada escondido
+  PASS  L23 a tela não tem navegação geral nem dado de cadastro
+  PASS  L24 endereço HTTP da LAN (o do DEV): câmera barrada pelo navegador, teclado registra
+
+24/24 testes passaram (TASK_003 terminal — leitor no navegador)
+  evidências: /home/claudio/Documentos/evidencias-task003-terminal
+-- test_codigo_trabalhador.py
+Traceback (most recent call last):
+  File "/nc/projetos/shambala/tests/test_codigo_trabalhador.py", line 1246, in main
+    fn(Ctx(conn))
+    ~~^^^^^^^^^^^
+  File "/nc/projetos/shambala/tests/test_codigo_trabalhador.py", line 1083, in k16
+    assert os.path.exists(caminho_pdf), f"chromium não gerou PDF: {r.stderr[-500:]}"
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+AssertionError: chromium não gerou PDF: [1025/095908.680632:ERROR:chrome/app/chrome_main.cc:207] Failed to create a unique user data directory for headless.
+
+  PASS  K1 startup cria o schema e não emite nenhum código (mesmo com ativos)
+  PASS  K2 preparar duas vezes: gera N, depois zero e nada muda nos já emitidos
+  PASS  K3 cadastro de ativo e reativação ganham código; inativação reserva o código
+  PASS  K4 edição, reimpressão e reativação preservam exatamente o mesmo código
+  PASS  K5 0047: zeros iniciais sobrevivem ao banco, à tela, ao QR e à resolução
+  PASS  K6 oito emissões concorrentes: códigos distintos, um ativo por pessoa
+  PASS  K6b dois cliques na mesma pessoa resultam em UM único código (ambos preservam)
+  PASS  K6c duzentas emissões em lote: nenhum código repetido, todos no formato
+  PASS  K7 troca exige confirmação e é atômica: novo resolve, antigo fica retirado
+  PASS  K8/K9/K10 espaço esgotado: retirado nunca volta, troca que falha mantém o atual
+  PASS  K11 GETs repetidos de carteirinha, lote e lista não escrevem nada
+  PASS  K12 RBAC: leitura não escreve, sem módulo é 403 e a recepção não vira cadastro
+  PASS  K13 cartão traz nome/código/QR da mesma pessoa e nenhum dado financeiro ou documento
+  PASS  K14 QR da carteirinha decodifica exatamente os quatro dígitos do trabalhador
+  PASS  K15 lote A4 divide em folhas de 10, avisa bloqueados e não imprime inativos
+  FALHOU K16 PDF de 70 carteirinhas: sete folhas e todos os QRs decodificados do papel
+        AssertionError: chromium não gerou PDF: [1025/095908.680632:ERROR:chrome/app/chrome_main.cc:207] Failed to create a unique user data directory for headless.
+
+  PASS  K18 FK de códigos nasce RESTRICT e a migração corrige CASCADE sem tocar nos dados
+  PASS  K19 RESTRICT: excluir quem tem código é recusado; inativar/reativar segue funcionando
+
+17/18 testes passaram (TASK_002 códigos e carteirinhas)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_gestao_correcoes_navegador.py: rc=0
+test_terminal_leitor.py: rc=0
+test_codigo_trabalhador.py: rc=1
+tests/rodar_testes.sh, linha 89: 126507 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok

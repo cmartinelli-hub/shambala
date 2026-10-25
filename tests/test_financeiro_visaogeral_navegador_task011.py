@@ -299,8 +299,13 @@ def n1():
         verificar("N1 cartão Pagamentos = − R$ 30,00", "− R$ 30,00" in corpo)
         verificar("N1 cartão Resultado = R$ 1.234.715,89", "R$ 1.234.715,89" in corpo)
         verificar("N1 cartão A receber = R$ 60,00", "R$ 60,00" in corpo)
+        # TASK_012 §5 acrescentou explicações em cada cartão de conta ("Σ" do
+        # acumulado) — contar `.fin-def` por texto passou a achar 4. A asserção
+        # segue o contrato: a explicação do cartão RESULTADO diz "não é saldo
+        # disponível", e é única (marca própria `fin-def-resultado`).
         verificar("N1 resultado declara 'Não é saldo disponível'",
-                  pagina.locator(".fin-def", has_text="Não é saldo").count() == 1)
+                  pagina.locator(".fin-def-resultado", has_text="Não é saldo").count() == 1
+                  and "Não é saldo conferido com o banco" not in corpo)
         verificar("N1 aba Movimentações traz a contagem do recorte (38)",
                   "Movimentações (38)" in corpo)
         verificar("N1 primeira linha já rotula o registro histórico a conferir",

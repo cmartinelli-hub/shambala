@@ -46,7 +46,7 @@
     <div class="card-stat">
         <div class="stat-valor">{{ resultado|moeda }}</div>
         <div class="stat-label">Resultado do período</div>
-        <details class="fin-def"><summary>O que conta</summary>
+        <details class="fin-def fin-def-resultado"><summary>O que conta</summary>
             <p>Recebimentos − Pagamentos registrados. <strong>Não é saldo
             disponível</strong>: não considera transferências internas, sangrias
             nem obrigações pendentes.</p>
@@ -251,8 +251,8 @@ de destino/origem com natureza “Transferência”.</p>
         </div>
         <details class="fin-def"><summary>Acumulado</summary>
             <p>{{ cm.acumulado|moeda }} é a soma de todos os lançamentos pagos
-            desta conta até {{ ate_uso|data_br }} — não só o período exibido. Não
-            é saldo conferido com o banco.</p>
+            desta conta até {{ ate_uso|data_br }} — não só o período exibido.
+            Não substitui extrato bancário nem confere a gaveta.</p>
         </details>
     </div>
     {% endfor %}

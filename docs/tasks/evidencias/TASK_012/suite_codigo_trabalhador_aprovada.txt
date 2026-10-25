@@ -1,0 +1,45 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025100000-144928 (identifica ESTA execução nas provas)
+  árvore ..: a9e13070283f7a76d851f130fb7bfad5c80cbd36-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025100000-144928
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025100000-144928'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_codigo_trabalhador.py
+  PASS  K1 startup cria o schema e não emite nenhum código (mesmo com ativos)
+  PASS  K2 preparar duas vezes: gera N, depois zero e nada muda nos já emitidos
+  PASS  K3 cadastro de ativo e reativação ganham código; inativação reserva o código
+  PASS  K4 edição, reimpressão e reativação preservam exatamente o mesmo código
+  PASS  K5 0047: zeros iniciais sobrevivem ao banco, à tela, ao QR e à resolução
+  PASS  K6 oito emissões concorrentes: códigos distintos, um ativo por pessoa
+  PASS  K6b dois cliques na mesma pessoa resultam em UM único código (ambos preservam)
+  PASS  K6c duzentas emissões em lote: nenhum código repetido, todos no formato
+  PASS  K7 troca exige confirmação e é atômica: novo resolve, antigo fica retirado
+  PASS  K8/K9/K10 espaço esgotado: retirado nunca volta, troca que falha mantém o atual
+  PASS  K11 GETs repetidos de carteirinha, lote e lista não escrevem nada
+  PASS  K12 RBAC: leitura não escreve, sem módulo é 403 e a recepção não vira cadastro
+  PASS  K13 cartão traz nome/código/QR da mesma pessoa e nenhum dado financeiro ou documento
+  PASS  K14 QR da carteirinha decodifica exatamente os quatro dígitos do trabalhador
+  PASS  K15 lote A4 divide em folhas de 10, avisa bloqueados e não imprime inativos
+  PASS  K16 PDF de 70 carteirinhas: sete folhas e todos os QRs decodificados do papel
+  PASS  K18 FK de códigos nasce RESTRICT e a migração corrige CASCADE sem tocar nos dados
+  PASS  K19 RESTRICT: excluir quem tem código é recusado; inativar/reativar segue funcionando
+
+18/18 testes passaram (TASK_002 códigos e carteirinhas)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_codigo_trabalhador.py: rc=0
+tests/rodar_testes.sh, linha 89: 144998 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok
