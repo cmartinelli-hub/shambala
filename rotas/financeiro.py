@@ -3,6 +3,7 @@ import qrcode
 import base64
 import io
 from datetime import date, datetime
+from urllib.parse import quote_plus
 from fastapi import APIRouter, Request, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -19,85 +20,460 @@ def _guard(request: Request):
     return guarda_modulo(request, "financeiro")
 
 
-# ── Dashboard / Resumo ────────────────────────────────────────────────────────
+# ── Visão Geral (TASK_011) ───────────────────────────────────────────────────
+#
+# Contrato de leitura desta tela (encontrado vs final documentado na ordem):
+#  - O livro-caixa é `financeiro_movimentacoes`. Eventos da sessão de caixa
+#    NUNCA são somados por cima — servem apenas como proveniência no detalhe
+#    (evento.financeiro_id), nunca como total.
+#  - "Recebimentos/Pagamentos registrados" excluem transferências internas e
+#    sangrias PELO VALOR ARMAZENADO em `categoria` (nunca por coincidência de
+#    valor/data/descrição) e linhas lançadas em contas de obrigação
+#    (tipo 'areceber'). Cancelados não contam, mas continuam listados.
+#  - "A receber/A pagar" são obrigações PENDENTES por vencimento
+#    (`data_movimentacao`) dentro da janela exibida — não é dinheiro.
+#  - Fiado em aberto vive em `vendas_pdv` (sem vencimento registrado): grupo
+#    próprio na aba de pendências, explicitamente fora do indicador A receber.
+#  - Nada aqui corrige histórico: registros ambíguos permanecem no banco e são
+#    ROTULADOS na tela ("Registro histórico — conferir origem").
+#  - GETs não escrevem: nenhuma consulta desta tela sincroniza ou gera fatos.
+
+import calendar
+
+ROTULOS_CATEGORIA = {
+    "venda_pdv": "Venda (PDV)",
+    "doacao": "Doação",
+    "mensalidade": "Mensalidade",
+    "recebimento_fiado": "Recebimento de fiado",
+    "credito_anticipado": "Adiantamento de crédito",
+    "livro": "Livro (biblioteca)",
+    "compra": "Compra",
+    "transferencia": "Transferência",
+    "sangria": "Sangria de caixa",
+    "manutencao": "Manutenção",
+    "energia": "Energia",
+    "agua": "Água",
+    "aluguel": "Aluguel",
+    "alimentacao": "Alimentação",
+    "transporte": "Transporte",
+    "outros": "Outros",
+}
+ROTULOS_SITUACAO = {"pago": "Pago", "pendente": "Pendente", "cancelado": "Cancelado"}
+ROTULOS_TIPO_CONTA = {
+    "especie": "Dinheiro (espécie)",
+    "pix": "PIX",
+    "legado": "Conta Antiga (origem histórica)",
+    "areceber": "Valores a Receber (obrigações)",
+}
+
+# Condição (fixa, sem valores do usuário) que separa "dinheiro registrado" de
+# movimento interno/obrigação. Aplicada aos cartões de Recebimentos/Pagamentos.
+_SQL_DINHEIRO = (
+    "fm.status = 'pago' "
+    "AND fm.categoria NOT IN ('transferencia','sangria') "
+    "AND (fm.conta_id IS NULL OR NOT EXISTS ("
+    "SELECT 1 FROM contas_financeiras cc "
+    "WHERE cc.id = fm.conta_id AND cc.tipo = 'areceber'))"
+)
+
+_JOINS_MOV = (
+    "LEFT JOIN trabalhadores t ON t.id = fm.trabalhador_id "
+    "LEFT JOIN pessoas p ON p.id = fm.pessoa_id "
+    "LEFT JOIN contas_financeiras c ON c.id = fm.conta_id"
+)
+# Junções usadas quando a cláusula WHERE toca nome de trabalhador/pessoa (busca).
+_JOINS_BUSCA = (
+    "LEFT JOIN trabalhadores t ON t.id = fm.trabalhador_id "
+    "LEFT JOIN pessoas p ON p.id = fm.pessoa_id"
+)
+
+_MSGS_OK = {
+    "transferencia_ok": "Transferência registrada entre as contas.",
+}
+
+
+def _ultimo_dia(ano: int, mes: int) -> int:
+    return calendar.monthrange(ano, mes)[1]
+
+
+def _periodo_padrao() -> tuple[str, str]:
+    """Mês corrente no fuso do negócio (mesma referência dos relatórios)."""
+    from rotas.relatorios import _hoje_sp
+    hoje = _hoje_sp()
+    return (hoje.replace(day=1).isoformat(),
+            hoje.replace(day=_ultimo_dia(hoje.year, hoje.month)).isoformat())
+
+
+def _escapa_like(termo: str) -> str:
+    """Escapa curingas do LIKE — o valor entra sempre por placeholder, mas
+    `%`/`_` literais não podem alargar a busca."""
+    return termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _rotulo_natureza(linha: dict) -> str:
+    cat = linha.get("categoria") or ""
+    rotulo = ROTULOS_CATEGORIA.get(cat, "Outros")
+    if cat == "transferencia" and linha.get("sangria_id") is not None:
+        rotulo = "Transferência (contrapartida de sangria)"
+    return rotulo
+
+
+def _situacao_exibida(linha: dict) -> str:
+    """Dinheiro confirmado x obrigação x registro histórico ambíguo.
+
+    Uma linha paga lançada em conta de obrigação NÃO é promovida a
+    recebimento: recebe rótulo próprio, sem alterar o fato armazenado.
+    """
+    if (linha.get("status") == "pago"
+            and linha.get("conta_tipo") == "areceber"):
+        return "Registro histórico — conferir origem"
+    return ROTULOS_SITUACAO.get(linha.get("status"), linha.get("status") or "")
+
 
 @router.get("", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    mes: str = "",
+    aba: str = Query(""),
+    de: str = Query(""),
+    ate: str = Query(""),
+    mes: str = Query(""),
+    conta: str = Query(""),
+    nat: str = Query(""),
+    sentido: str = Query(""),
+    sit: str = Query(""),
+    q: str = Query(""),
+    pagina: str = Query("1"),
+    por: str = Query("25"),
+    msg: str = Query(""),
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
-    hoje = date.today()
-    mes_ref = mes if mes else f"{hoje.year}-{hoje.month:02d}"
+    recusas: list[str] = []
+
+    if aba not in ("mov", "pend"):
+        if aba:
+            recusas.append(f"Aba “{aba}” não existe — mostrando Movimentações.")
+        aba = "mov"
+
+    # ── período: De/Até com alias legado ?mes=AAAA-MM e padrão mês atual ─────
+    de_bruto, ate_bruto = de.strip(), ate.strip()
+    if not de_bruto and not ate_bruto and mes.strip():
+        m = mes.strip()
+        try:
+            ano, mm = int(m[:4]), int(m[5:7])
+            de_bruto = f"{ano:04d}-{mm:02d}-01"
+            ate_bruto = f"{ano:04d}-{mm:02d}-{_ultimo_dia(ano, mm):02d}"
+        except (ValueError, IndexError):
+            recusas.append("Referência de mês inválida — use o formulário de período.")
+    pad_de, pad_ate = _periodo_padrao()
+    try:
+        d_de = date.fromisoformat(de_bruto) if de_bruto else date.fromisoformat(pad_de)
+    except ValueError:
+        recusas.append(f"Data inicial “{de_bruto}” inválida — a consulta usou o "
+                       "período padrão; corrija ou use Limpar.")
+        d_de = date.fromisoformat(pad_de)
+    try:
+        d_ate = date.fromisoformat(ate_bruto) if ate_bruto else date.fromisoformat(pad_ate)
+    except ValueError:
+        recusas.append(f"Data final “{ate_bruto}” inválida — a consulta usou o "
+                       "período padrão; corrija ou use Limpar.")
+        d_ate = date.fromisoformat(pad_ate)
+    if d_de > d_ate:
+        recusas.append("A data inicial é posterior à final — a consulta usou o "
+                       "período padrão; corrija ou use Limpar.")
+        d_de, d_ate = date.fromisoformat(pad_de), date.fromisoformat(pad_ate)
+    de_uso, ate_uso = d_de.isoformat(), d_ate.isoformat()
+
+    # ── demais filtros: whitelist/validação no servidor, valor preservado ───
+    conta_uso: int | None = None
+    if conta.strip():
+        if conta.strip().isdigit():
+            with conectar() as conn:
+                existe = conn.execute(
+                    "SELECT id FROM contas_financeiras WHERE id = %s AND ativo = 1",
+                    (int(conta),)).fetchone()
+            if existe:
+                conta_uso = int(conta)
+            else:
+                recusas.append(f"Conta “{conta}” não existe — o filtro não foi "
+                               "aplicado; o valor permanece no formulário.")
+        else:
+            recusas.append("Conta inválida — o filtro não foi aplicado.")
+    nat_uso = nat if nat in ROTULOS_CATEGORIA else ""
+    if nat and not nat_uso:
+        recusas.append(f"Natureza “{nat}” desconhecida — o filtro não foi aplicado.")
+    sentido_uso = sentido if sentido in ("", "entrada", "saida") else ""
+    if sentido and not sentido_uso:
+        recusas.append("Sentido fora dos valores permitidos — o filtro não foi aplicado.")
+    sit_uso = sit if sit in ("", "pago", "pendente", "cancelado") else ""
+    if sit and not sit_uso:
+        recusas.append("Situação fora dos valores permitidos — o filtro não foi aplicado.")
+    try:
+        por_uso = int(por)
+        if por_uso not in (25, 50, 100):
+            recusas.append(f"{por} itens por página não é uma opção — usei 25.")
+            por_uso = 25
+    except ValueError:
+        recusas.append("Itens por página inválido — usei 25.")
+        por_uso = 25
+    try:
+        pagina_uso = max(1, int(pagina))
+    except ValueError:
+        pagina_uso = 1
+
+    cond = ["fm.data_movimentacao >= %s", "fm.data_movimentacao <= %s"]
+    params: list = [de_uso, ate_uso]
+    if conta_uso is not None:
+        cond.append("fm.conta_id = %s")
+        params.append(conta_uso)
+    if nat_uso:
+        cond.append("fm.categoria = %s")
+        params.append(nat_uso)
+    if sentido_uso:
+        cond.append("fm.tipo = %s")
+        params.append(sentido_uso)
+    if sit_uso:
+        cond.append("fm.status = %s")
+        params.append(sit_uso)
+    termo = _normalizar(q.strip()) if q.strip() else ""
+    if termo:
+        like = f"%{_escapa_like(termo)}%"
+        cond.append("(norm(COALESCE(fm.descricao, '')) LIKE %s "
+                    "OR norm(COALESCE(t.nome_completo, '')) LIKE %s "
+                    "OR norm(COALESCE(p.nome_completo, '')) LIKE %s)")
+        params += [like, like, like]
+    where = "WHERE " + " AND ".join(cond)
+    filtros_ativos = bool(termo or conta_uso is not None or nat_uso
+                          or sentido_uso or sit_uso)
 
     with conectar() as conn:
-        # Resumo do mês
-        entradas = conn.execute(
-            """SELECT COALESCE(SUM(valor), 0) AS total
-               FROM financeiro_movimentacoes
-               WHERE tipo = 'entrada' AND data_movimentacao LIKE %s AND status = 'pago'""",
-            (f"{mes_ref}%",),
-        ).fetchone()["total"]
+        tot = conn.execute(
+            f"""SELECT COALESCE(SUM(CASE WHEN fm.tipo = 'entrada' THEN fm.valor END), 0) AS receb,
+                       COALESCE(SUM(CASE WHEN fm.tipo = 'saida' THEN fm.valor END), 0) AS pag
+                FROM financeiro_movimentacoes fm {_JOINS_MOV}
+                {where} AND {_SQL_DINHEIRO}""",
+            params).fetchone()
 
-        saidas = conn.execute(
-            """SELECT COALESCE(SUM(valor), 0) AS total
-               FROM financeiro_movimentacoes
-               WHERE tipo = 'saida' AND data_movimentacao LIKE %s AND status = 'pago'""",
-            (f"{mes_ref}%",),
-        ).fetchone()["total"]
-
-        pendentes = conn.execute(
-            """SELECT COALESCE(SUM(valor), 0) AS total
-               FROM financeiro_movimentacoes
-               WHERE status = 'pendente' AND data_movimentacao <= %s""",
-            (hoje.isoformat(),),
-        ).fetchone()["total"]
-
-        # Saldo por conta: pagas do mês (exceto "Valores a Receber", que soma
-        # todas as pendentes, de qualquer mês — é o total a receber do sistema)
-        saldos_contas = conn.execute(
-            """SELECT c.id, c.nome, c.tipo,
-                      COALESCE(SUM(CASE WHEN fm.tipo = 'entrada' THEN fm.valor ELSE 0 END), 0) AS total_entradas,
-                      COALESCE(SUM(CASE WHEN fm.tipo = 'saida' THEN fm.valor ELSE 0 END), 0) AS total_saidas
-               FROM contas_financeiras c
-               LEFT JOIN financeiro_movimentacoes fm ON fm.conta_id = c.id
-                   AND fm.status IN ('pago', 'pendente')
-                   AND ( (c.tipo = 'areceber' AND fm.status = 'pendente')
-                      OR (c.tipo <> 'areceber' AND fm.data_movimentacao LIKE %s) )
-               WHERE c.ativo = 1
-               GROUP BY c.id, c.nome, c.tipo
-               ORDER BY c.id""",
-            (f"{mes_ref}%",),
-        ).fetchall()
-
-        # Movimentações recentes
+        n_total = conn.execute(
+            f"SELECT COUNT(*) AS c FROM financeiro_movimentacoes fm {_JOINS_MOV} {where}",
+            params).fetchone()["c"]
+        paginas = max(1, -(-n_total // por_uso))
+        if pagina_uso > paginas:
+            pagina_uso = paginas
         movs = conn.execute(
-            """SELECT fm.*,
-                      t.nome_completo AS trabalhador_nome,
-                      p.nome_completo AS pessoa_nome,
-                      c.nome AS conta_nome
+            f"""SELECT fm.*, c.nome AS conta_nome, c.tipo AS conta_tipo,
+                       t.nome_completo AS trabalhador_nome,
+                       p.nome_completo AS pessoa_nome
+                FROM financeiro_movimentacoes fm {_JOINS_MOV}
+                {where}
+                ORDER BY fm.data_movimentacao DESC, fm.id DESC
+                LIMIT %s OFFSET %s""",
+            params + [por_uso, (pagina_uso - 1) * por_uso]).fetchall()
+
+        # Obrigações pendentes no recorte de vencimento (universo próprio do
+        # cartão "A receber/A pagar": só o período, nunca os demais filtros).
+        pend = conn.execute(
+            """SELECT COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN valor END), 0) AS a_receber,
+                      COALESCE(SUM(CASE WHEN tipo = 'saida' THEN valor END), 0) AS a_pagar
+               FROM financeiro_movimentacoes
+               WHERE status = 'pendente'
+                 AND data_movimentacao >= %s AND data_movimentacao <= %s""",
+            (de_uso, ate_uso)).fetchone()
+
+        # Movimento por conta no período (substitui o antigo "saldo por
+        # conta": transferências aparecem AQUI, nunca nos cartões globais).
+        joins_conta = _JOINS_BUSCA if termo else ""
+        contas_mov = conn.execute(
+            f"""SELECT c.id, c.nome, c.tipo,
+                       COALESCE(SUM(CASE WHEN fm.tipo = 'entrada' THEN fm.valor END), 0) AS entradas,
+                       COALESCE(SUM(CASE WHEN fm.tipo = 'saida' THEN fm.valor END), 0) AS saidas
+                FROM financeiro_movimentacoes fm
+                JOIN contas_financeiras c ON c.id = fm.conta_id
+                {joins_conta}
+                {where} AND fm.status = 'pago'
+                GROUP BY c.id, c.nome, c.tipo
+                ORDER BY c.id""",
+            params).fetchall()
+
+        historico_ambiguo = conn.execute(
+            """SELECT COUNT(*) AS c
                FROM financeiro_movimentacoes fm
-               LEFT JOIN trabalhadores t ON t.id = fm.trabalhador_id
-               LEFT JOIN pessoas p ON p.id = fm.pessoa_id
-               LEFT JOIN contas_financeiras c ON c.id = fm.conta_id
-               WHERE fm.data_movimentacao LIKE %s
-               ORDER BY fm.data_movimentacao DESC, fm.id DESC
-               LIMIT 50""",
-            (f"{mes_ref}%",),
+               JOIN contas_financeiras cc ON cc.id = fm.conta_id AND cc.tipo = 'areceber'
+               WHERE fm.status = 'pago'
+                 AND fm.data_movimentacao >= %s AND fm.data_movimentacao <= %s""",
+            (de_uso, ate_uso)).fetchone()["c"]
+
+        if aba == "pend":
+            n_pend = conn.execute(
+                """SELECT COUNT(*) AS c FROM financeiro_movimentacoes
+                   WHERE status = 'pendente'
+                     AND data_movimentacao >= %s AND data_movimentacao <= %s""",
+                (de_uso, ate_uso)).fetchone()["c"]
+            paginas_pend = max(1, -(-n_pend // por_uso))
+            if pagina_uso > paginas_pend:
+                pagina_uso = paginas_pend
+            pendentes = conn.execute(
+                f"""SELECT fm.*, c.nome AS conta_nome, c.tipo AS conta_tipo,
+                           t.nome_completo AS trabalhador_nome,
+                           p.nome_completo AS pessoa_nome
+                    FROM financeiro_movimentacoes fm {_JOINS_MOV}
+                    WHERE fm.status = 'pendente'
+                      AND fm.data_movimentacao >= %s AND fm.data_movimentacao <= %s
+                    ORDER BY fm.data_movimentacao ASC, fm.id ASC
+                    LIMIT %s OFFSET %s""",
+                [de_uso, ate_uso, por_uso, (pagina_uso - 1) * por_uso]).fetchall()
+
+            fiado_where = ("WHERE v.forma_pagamento = 'fiado' AND NOT v.fiado_pago "
+                           "AND v.status = 'concluida'")
+            fiado_params: list = []
+            if termo:
+                fiado_where += " AND norm(COALESCE(t.nome_completo, '')) LIKE %s"
+                fiado_params.append(like)
+            fiados = conn.execute(
+                f"""SELECT v.id, v.data_venda, v.total, t.nome_completo,
+                           v.fiado_trabalhador_id
+                    FROM vendas_pdv v
+                    LEFT JOIN trabalhadores t ON t.id = v.fiado_trabalhador_id
+                    {fiado_where}
+                    ORDER BY v.data_venda DESC, v.id DESC
+                    LIMIT 50""", fiado_params).fetchall()
+            fiado_tot = conn.execute(
+                f"""SELECT COUNT(*) AS n,
+                           COALESCE(SUM(v.total), 0) AS total
+                    FROM vendas_pdv v
+                    LEFT JOIN trabalhadores t ON t.id = v.fiado_trabalhador_id
+                    {fiado_where}""", fiado_params).fetchone()
+            n_pend_total = n_pend
+        else:
+            pendentes, fiados, fiado_tot = [], [], None
+            n_pend_total = 0
+
+    # URLs de estado: cada aba tem URL própria; trocar de aba preserva os
+    # filtros compatíveis (situação/sentido pertencem ao extrato).
+    def url_com(**mudancas) -> str:
+        base = {"aba": aba, "de": de_uso, "ate": ate_uso,
+                "conta": conta_uso or "", "nat": nat_uso,
+                "sentido": sentido_uso, "sit": sit_uso, "q": q.strip(),
+                "pagina": pagina_uso, "por": por_uso}
+        base.update(mudancas)
+        qs = "&".join(f"{k}={quote_plus(str(v))}" for k, v in base.items()
+                      if v not in ("", None))
+        return f"/financeiro?{qs}"
+
+    hoje_ref = date.fromisoformat(pad_de)
+    ano_ant, mes_ant = ((hoje_ref.year, hoje_ref.month - 1)
+                        if hoje_ref.month > 1 else (hoje_ref.year - 1, 12))
+    url_mes_atual = url_com(de=pad_de, ate=pad_ate, pagina=1,
+                            conta="", nat="", sentido="", sit="", q="")
+    url_mes_anterior = url_com(
+        de=f"{ano_ant:04d}-{mes_ant:02d}-01",
+        ate=f"{ano_ant:04d}-{mes_ant:02d}-{_ultimo_dia(ano_ant, mes_ant):02d}",
+        pagina=1, conta="", nat="", sentido="", sit="", q="")
+
+    from rotas.permissoes import usuario_pode
+    pode_escrever = usuario_pode(atendente["id"], "financeiro", "escrever")
+
+    with conectar() as conn:
+        contas_filtro = conn.execute(
+            "SELECT id, nome, tipo FROM contas_financeiras WHERE ativo = 1 ORDER BY id"
         ).fetchall()
 
-    return templates.TemplateResponse("financeiro/dashboard.html", {
+    def _linhas(rows):
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["natureza"] = _rotulo_natureza(d)
+            d["situacao"] = _situacao_exibida(d)
+            out.append(d)
+        return out
+
+    contexto = {
         "request": request,
         "atendente": atendente,
-        "entradas": float(entradas),
-        "saidas": float(saidas),
-        "pendentes": float(pendentes),
-        "saldos_contas": [dict(sc) for sc in saldos_contas],
-        "mes_ref": mes_ref,
-        "movs": [dict(m) for m in movs],
+        "pode_escrever": pode_escrever,
+        "aba": aba,
+        "de_bruto": de_bruto, "ate_bruto": ate_bruto,
+        "de_uso": de_uso, "ate_uso": ate_uso,
+        "conta_bruto": conta, "conta_uso": conta_uso or "",
+        "nat_bruto": nat, "sentido_bruto": sentido, "sit_bruto": sit,
+        "q": q, "por": por_uso, "pagina": pagina_uso, "paginas": paginas,
+        "recusas": recusas,
+        "msg_ok": _MSGS_OK.get(msg, ""),
+        "recebimentos": float(tot["receb"]),
+        "pagamentos": float(tot["pag"]),
+        "resultado": float(tot["receb"]) - float(tot["pag"]),
+        "a_receber": float(pend["a_receber"]),
+        "a_pagar": float(pend["a_pagar"]),
+        "filtros_ativos": filtros_ativos,
+        "n_total": n_total,
+        "inicio_exibido": (pagina_uso - 1) * por_uso + 1 if n_total else 0,
+        "fim_exibido": min(pagina_uso * por_uso, n_total),
+        "movs": _linhas(movs),
+        "contas_mov": [dict(cm) for cm in contas_mov],
+        "historico_ambiguo": historico_ambiguo,
+        "pendentes": _linhas(pendentes),
+        "n_pend_total": n_pend_total,
+        "fiados": [dict(f) for f in fiados],
+        "fiado_tot": dict(fiado_tot) if fiado_tot else None,
+        "rotulos_categoria": ROTULOS_CATEGORIA,
+        "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
+        "contas_filtro": [dict(c) for c in contas_filtro],
+        "url_com": url_com,
+        "url_mes_atual": url_mes_atual,
+        "url_mes_anterior": url_mes_anterior,
+        "url_limpar": url_com(de="", ate="", conta="", nat="", sentido="",
+                              sit="", q="", pagina=1),
+    }
+    return templates.TemplateResponse("financeiro/dashboard.html", contexto)
+
+
+# ── Detalhe somente-leitura de um lançamento ─────────────────────────────────
+
+@router.get("/lancamento/{mov_id}", response_class=HTMLResponse)
+async def detalhe_lancamento(request: Request, mov_id: int, volta: str = ""):
+    """Página de detalhe rastreável: apenas vínculos PROVADOS no banco
+    (FKs e eventos que apontam financeiro_id). Nada é reconstruído por
+    texto/valor/data. Link de volta validado para não virar open-redirect."""
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
+
+    if not volta.startswith("/financeiro?"):
+        volta = "/financeiro"
+
+    with conectar() as conn:
+        linha = conn.execute(
+            f"""SELECT fm.*, c.nome AS conta_nome, c.tipo AS conta_tipo,
+                       t.nome_completo AS trabalhador_nome,
+                       p.nome_completo AS pessoa_nome
+                FROM financeiro_movimentacoes fm {_JOINS_MOV}
+                WHERE fm.id = %s""",
+            (mov_id,)).fetchone()
+        if not linha:
+            return HTMLResponse(
+                status_code=404,
+                content=("<h1>Lançamento não encontrado</h1>"
+                         f"<p>O lançamento #{mov_id} não existe.</p>"
+                         '<p><a href="/financeiro">Voltar à Visão Geral</a></p>'))
+        eventos = conn.execute(
+            """SELECT id, identidade, tipo, natureza, sessao_id, venda_id, criado_em
+               FROM caixa_sessao_eventos WHERE financeiro_id = %s
+               ORDER BY id""",
+            (mov_id,)).fetchall()
+
+    d = dict(linha)
+    return templates.TemplateResponse("financeiro/detalhe.html", {
+        "request": request,
+        "atendente": atendente,
+        "linha": d,
+        "rotulo_natureza": _rotulo_natureza(d),
+        "situacao": _situacao_exibida(d),
+        "rotulo_conta": ROTULOS_TIPO_CONTA.get(d.get("conta_tipo"),
+                                               d.get("conta_tipo") or ""),
+        "eventos": [dict(e) for e in eventos],
+        "volta": volta,
     })
 
 
@@ -259,9 +635,11 @@ async def mensalidades(
 
 @router.get("/mensalidades/buscar", response_class=JSONResponse)
 async def buscar_mensalidade(request: Request, q: str = Query("")):
-    atendente = obter_atendente_logado(request)
-    if not atendente:
-        return JSONResponse([], status_code=401)
+    # TASK_011: a busca devolve CPF — exige a permissão de leitura do módulo
+    # como o resto do financeiro (antes qualquer sessão logada acessava).
+    atendente, redir = _guard(request)
+    if redir:
+        return redir
     if len(q.strip()) < 2:
         return JSONResponse([])
 

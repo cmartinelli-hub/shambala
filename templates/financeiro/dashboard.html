@@ -3,127 +3,369 @@
 
 {% block conteudo %}
 <a href="/menu" class="btn-voltar">← Menu</a>
-<div class="cabecalho-secao">
-    <h2>Financeiro — Visão Geral</h2>
-    <div style="display:flex; gap:0.5rem">
-        <a href="/financeiro/nova" class="btn btn-primario">+ Nova Movimentação</a>
-        <a href="/financeiro/mensalidades" class="btn btn-secundario">Mensalidades</a>
-        <a href="/financeiro/mensalidades/relatorio" class="btn btn-secundario">Relatório Mensalidades</a>
-        <a href="/financeiro/pix" class="btn btn-secundario">Gerar PIX</a>
-        <a href="/financeiro/relatorios" class="btn btn-secundario">Relatórios</a>
-        <a href="/financeiro/fiados" class="btn btn-secundario">Fiados</a>
-        <a href="/financeiro/transferir" class="btn btn-secundario">↔ Transferir</a>
+<div class="cabecalho-secao fin-cabecalho">
+    <div>
+        <h2>Financeiro</h2>
+        <p class="fin-periodo">Período: <strong>{{ de_uso|data_br }}</strong> a <strong>{{ ate_uso|data_br }}</strong></p>
+    </div>
+    <div class="fin-acoes">
+        <nav class="fin-nav" aria-label="Navegação do financeiro">
+            <a href="/financeiro/mensalidades">Mensalidades</a>
+            <a href="/financeiro/mensalidades/relatorio">Relatório de mensalidades</a>
+            <a href="/financeiro/fiados">Fiados</a>
+            <a href="/financeiro/relatorios">Relatórios</a>
+            <a href="/financeiro/transferir">Transferir</a>
+            <a href="/financeiro/pix">Gerar PIX</a>
+        </nav>
+        {% if pode_escrever %}
+        <a href="/financeiro/nova" class="btn btn-primario">+ Nova movimentação</a>
+        {% endif %}
     </div>
 </div>
 
-<!-- Filtro mês -->
-<form method="get" style="margin-bottom:1.5rem; display:flex; gap:0.5rem; align-items:center">
-    <label style="font-weight:600">Referência:</label>
-    <input type="month" name="mes" value="{{ mes_ref }}" style="padding:0.4rem; border:1px solid var(--cor-borda); border-radius:var(--raio)">
-    <button type="submit" class="btn btn-primario" style="padding:0.4rem 1rem">Filtrar</button>
-</form>
+{% if msg_ok %}<div class="fin-aviso fin-aviso-ok">{{ msg_ok }}</div>{% endif %}
+{% for r in recusas %}<div class="fin-aviso">{{ r }}</div>{% endfor %}
 
-<!-- Cards de resumo -->
-<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem; margin-bottom:1.5rem">
-    <div class="card-form" style="text-align:center; border-left: 4px solid #1da851">
-        <div style="font-size:0.85rem; color:var(--cor-texto-suale)">Entradas (mês)</div>
-        <div style="font-size:1.8rem; font-weight:700; color:#1da851">R$ {{ "%.2f"|format(entradas)|replace('.', ',') }}</div>
+<div class="grade-cards fin-cards">
+    <div class="card-stat">
+        <div class="stat-valor fin-entrada">+ {{ recebimentos|moeda }}</div>
+        <div class="stat-label">Recebimentos registrados</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Entradas pagas no período, pelo lançamento registrado. Não inclui
+            transferências entre contas, sangrias nem obrigações em Valores a Receber.</p>
+        </details>
     </div>
-    <div class="card-form" style="text-align:center; border-left: 4px solid #ff4444">
-        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Saídas (mês)</div>
-        <div style="font-size:1.8rem; font-weight:700; color:#ff4444">R$ {{ "%.2f"|format(saidas)|replace('.', ',') }}</div>
+    <div class="card-stat">
+        <div class="stat-valor fin-saida">− {{ pagamentos|moeda }}</div>
+        <div class="stat-label">Pagamentos registrados</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Saídas pagas no período, pelo lançamento registrado. Não inclui
+            transferências entre contas nem sangrias.</p>
+        </details>
     </div>
-    <div class="card-form" style="text-align:center; border-left: 4px solid #ffa400">
-        <div style="font-size:0.85rem; color:var(--cor-texto-suave)">Pendentes</div>
-        <div style="font-size:1.8rem; font-weight:700; color:#ffa400">R$ {{ "%.2f"|format(pendentes)|replace('.', ',') }}</div>
+    <div class="card-stat">
+        <div class="stat-valor">{{ resultado|moeda }}</div>
+        <div class="stat-label">Resultado do período</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Recebimentos − Pagamentos registrados. <strong>Não é saldo
+            disponível</strong>: não considera transferências internas, sangrias
+            nem obrigações pendentes.</p>
+        </details>
+    </div>
+    <div class="card-stat">
+        <div class="stat-valor fin-pendente">{{ a_receber|moeda }}</div>
+        <div class="stat-label">A receber (pendentes no período)</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Obrigações pendentes com vencimento entre {{ de_uso|data_br }} e
+            {{ ate_uso|data_br }}. Não é dinheiro recebido.
+            {% if a_pagar %} Há também {{ a_pagar|moeda }} a pagar no período.{% endif %}</p>
+        </details>
     </div>
 </div>
+{% if filtros_ativos %}
+<p class="fin-nota">Os cartões “A receber/A pagar” consideram apenas o período —
+não usam os demais filtros. Refine as pendências na aba “A receber / A pagar”.</p>
+{% endif %}
 
-<!-- Saldo por Conta -->
-{% if saldos_contas %}
-<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:0.8rem; margin-bottom:1.5rem">
-{% for sc in saldos_contas %}
-    {% set _saldo = sc.total_entradas - sc.total_saidas %}
-    <div class="card-form" style="text-align:center; border-left: 4px solid {{ '#1da851' if _saldo >= 0 else '#ff4444' }}; padding:0.8rem">
-        <div style="font-size:0.8rem; color:var(--cor-texto-suave)">{{ sc.nome }}</div>
-        <div style="font-size:1.3rem; font-weight:700; color:{{ '#1da851' if _saldo >= 0 else '#ff4444' }}">
-            R$ {{ "%.2f"|format(_saldo)|replace('.', ',') }}
+<div class="fin-tabs">
+    <a class="fin-tab{{ ' fin-tab-ativa' if aba == 'mov' }}"
+       href="{{ url_com(aba='mov', pagina=1) }}">Movimentações ({{ n_total }})</a>
+    <a class="fin-tab{{ ' fin-tab-ativa' if aba == 'pend' }}"
+       href="{{ url_com(aba='pend', pagina=1) }}">A receber / A pagar</a>
+</div>
+
+<form method="get" action="/financeiro" class="agenda-filtros">
+    <input type="hidden" name="aba" value="{{ aba }}">
+    <input type="hidden" name="por" value="{{ por }}">
+    <div class="filtro-grupo">
+        <div class="filtro-campo">
+            <label for="f-de">De</label>
+            <input type="date" id="f-de" name="de" value="{{ de_bruto or de_uso }}">
+        </div>
+        <div class="filtro-campo">
+            <label for="f-ate">Até</label>
+            <input type="date" id="f-ate" name="ate" value="{{ ate_bruto or ate_uso }}">
+        </div>
+        <div class="filtro-campo">
+            <label>Atalhos</label>
+            <span class="fin-atalhos">
+                <a href="{{ url_mes_anterior }}">Mês anterior</a>
+                ·
+                <a href="{{ url_mes_atual }}">Mês atual</a>
+            </span>
+        </div>
+        <div class="filtro-campo filtro-campo-grande">
+            <label for="f-q">Busca (descrição ou nome vinculado)</label>
+            <input type="text" id="f-q" name="q" value="{{ q }}" placeholder="ex.: mensalidade, Ana">
         </div>
     </div>
-{% endfor %}
+    <div class="filtro-grupo">
+        <div class="filtro-campo">
+            <label for="f-conta">Conta</label>
+            <select id="f-conta" name="conta">
+                <option value="">Todas</option>
+                {% for c in contas_filtro %}
+                <option value="{{ c.id }}"{{ ' selected' if conta_uso == c.id }}>{{ c.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filtro-campo">
+            <label for="f-nat">Natureza</label>
+            <select id="f-nat" name="nat">
+                <option value="">Todas</option>
+                {% for chave, rotulo in rotulos_categoria.items() %}
+                <option value="{{ chave }}"{{ ' selected' if nat_bruto == chave }}>{{ rotulo }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if aba == 'mov' %}
+        <div class="filtro-campo">
+            <label for="f-sentido">Entrada/Saída</label>
+            <select id="f-sentido" name="sentido">
+                <option value="">Ambos</option>
+                <option value="entrada"{{ ' selected' if sentido_bruto == 'entrada' }}>Entradas</option>
+                <option value="saida"{{ ' selected' if sentido_bruto == 'saida' }}>Saídas</option>
+            </select>
+        </div>
+        <div class="filtro-campo">
+            <label for="f-sit">Situação</label>
+            <select id="f-sit" name="sit">
+                <option value="">Todas</option>
+                <option value="pago"{{ ' selected' if sit_bruto == 'pago' }}>Pago</option>
+                <option value="pendente"{{ ' selected' if sit_bruto == 'pendente' }}>Pendente</option>
+                <option value="cancelado"{{ ' selected' if sit_bruto == 'cancelado' }}>Cancelado</option>
+            </select>
+        </div>
+        {% endif %}
+    </div>
+    <div class="filtro-grupo filtro-acoes">
+        <button type="submit" class="btn btn-primario">Filtrar</button>
+        <a class="btn btn-secundario" href="{{ url_limpar }}">Limpar</a>
+    </div>
+</form>
+
+{% if aba == 'mov' %}
+
+<p class="fin-legenda">Extrato dos lançamentos registrados no financeiro, por data do
+lançamento. Cancelados continuam aqui, identificados na coluna Situação. Transferências
+e sangrias aparecem no extrato da conta, mas <strong>não</strong> contam nos cartões de
+Recebimentos/Pagamentos.</p>
+{% if historico_ambiguo %}
+<p class="fin-nota">Há {{ historico_ambiguo }} registro(s) antigo(s) na conta de obrigações
+“Valores a Receber” marcado(s) como pago — rotulado(s) na lista como
+<em>Registro histórico — conferir origem</em> e excluído(s) dos totais de dinheiro.</p>
+{% endif %}
+
+{% if movs %}
+<table class="fin-tabela fin-somente-desktop">
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Descrição / Origem</th>
+            <th>Natureza</th>
+            <th>Conta</th>
+            <th class="fin-col-valor">Entrada</th>
+            <th class="fin-col-valor">Saída</th>
+            <th>Situação</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for m in movs %}
+        <tr>
+            <td class="fin-data">{{ m.data_movimentacao|data_br }}</td>
+            <td>
+                {{ m.descricao or '—' }}
+                {% if m.trabalhador_nome %}<span class="fin-vinculo">· {{ m.trabalhador_nome }}</span>{% endif %}
+                {% if m.pessoa_nome %}<span class="fin-vinculo">· {{ m.pessoa_nome }}</span>{% endif %}
+            </td>
+            <td>{{ m.natureza }}</td>
+            <td>{{ m.conta_nome or '—' }}</td>
+            <td class="fin-col-valor fin-entrada">{% if m.tipo == 'entrada' %}+ {{ m.valor|moeda }}{% endif %}</td>
+            <td class="fin-col-valor fin-saida">{% if m.tipo == 'saida' %}− {{ m.valor|moeda }}{% endif %}</td>
+            <td><span class="fin-sit{% if m.situacao.startswith('Registro histórico') %} fin-sit-historico{% endif %}">{{ m.situacao }}</span></td>
+            <td><a href="/financeiro/lancamento/{{ m.id }}?volta={{ url_com()|urlencode }}">Ver</a></td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<div class="fin-somente-mobile">
+    {% for m in movs %}
+    <details class="fin-linha">
+        <summary>
+            <span class="fin-data">{{ m.data_movimentacao|data_br }}</span>
+            <span class="fin-linha-desc">{{ m.descricao or '—' }}</span>
+            <span class="fin-col-valor {% if m.tipo == 'entrada' %}fin-entrada{% else %}fin-saida{% endif %}">
+                {% if m.tipo == 'entrada' %}+ {{ m.valor|moeda }}{% else %}− {{ m.valor|moeda }}{% endif %}
+            </span>
+        </summary>
+        <dl class="fin-linha-corpo">
+            <dt>Natureza</dt><dd>{{ m.natureza }}</dd>
+            <dt>Conta</dt><dd>{{ m.conta_nome or '—' }}</dd>
+            <dt>Situação</dt><dd>{{ m.situacao }}</dd>
+            {% if m.trabalhador_nome %}<dt>Trabalhador</dt><dd>{{ m.trabalhador_nome }}</dd>{% endif %}
+            {% if m.pessoa_nome %}<dt>Pessoa</dt><dd>{{ m.pessoa_nome }}</dd>{% endif %}
+        </dl>
+        <a href="/financeiro/lancamento/{{ m.id }}?volta={{ url_com()|urlencode }}">Ver detalhes</a>
+    </details>
+    {% endfor %}
+</div>
+
+<div class="fin-paginacao">
+    <span>Página <strong>{{ pagina }}</strong> de <strong>{{ paginas }}</strong>
+        · exibindo {{ inicio_exibido }}–{{ fim_exibido }} de {{ n_total }} registros</span>
+    <span class="fin-paginacao-botoes">
+        {% if pagina > 1 %}<a href="{{ url_com(pagina=pagina-1) }}">← Anterior</a>{% endif %}
+        {% if pagina < paginas %}<a href="{{ url_com(pagina=pagina+1) }}">Próxima →</a>{% endif %}
+        {% for p in [25, 50, 100] %}
+            {% if p != por %}<a href="{{ url_com(por=p, pagina=1) }}">{{ p }}/pág</a>
+            {% else %}<span>{{ p }}/pág</span>{% endif %}
+        {% endfor %}
+    </span>
+</div>
+{% else %}
+<div class="vazio">
+    <h3>Nenhuma movimentação neste recorte</h3>
+    <p>O período tem {{ de_uso|data_br }} a {{ ate_uso|data_br }}{% if filtros_ativos %} com os filtros aplicados{% endif %}.</p>
+    <p><a class="btn btn-secundario" href="{{ url_limpar }}">Limpar filtros</a></p>
 </div>
 {% endif %}
 
-<!-- Saldo -->
-<div class="card-form" style="margin-bottom:1.5rem; padding:1rem; background:{{ '1da85122' if entradas >= saidas else 'ff444422' }}; border: 1px solid {{ '#1da851' if entradas >= saidas else '#ff4444' }}; border-radius: var(--raio)">
-    <strong>Saldo do mês: R$ {{ "%.2f"|format((entradas - saidas)|abs)|replace('.', ',') }}</strong>
-    {% if entradas >= saidas %} (positivo){% else %} (negativo){% endif %}
+{% if contas_mov %}
+<h3 class="fin-subtitulo">Movimento por conta no período</h3>
+<p class="fin-legenda">Entradas e saídas <em>registradas</em> no período — não é saldo
+disponível nem conciliação bancária. Transferências internas aparecem na conta
+de destino/origem com natureza “Transferência”.</p>
+<div class="grade-cards">
+    {% for cm in contas_mov %}
+    <div class="card-stat{% if cm.tipo == 'areceber' %} fin-card-obrigacao{% endif %}">
+        <div class="stat-label">{{ cm.nome }}</div>
+        <div class="stat-valor fin-valor-menor">+ {{ cm.entradas|moeda }}</div>
+        <div class="stat-valor fin-valor-menor">− {{ cm.saidas|moeda }}</div>
+        <div class="stat-label">
+            {% if cm.tipo == 'areceber' %}conta de obrigações — valores registrados, não dinheiro
+            {% else %}{{ rotulos_tipo_conta.get(cm.tipo, cm.tipo) }}{% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% else %}{# ── aba pendências ── #}
+
+<p class="fin-legenda">Obrigações <strong>pendentes</strong> com vencimento entre
+{{ de_uso|data_br }} e {{ ate_uso|data_br }} — promessas, não dinheiro recebido.
+Para dar baixa, use as telas de Mensalidades e Fiados (nenhuma baixa acontece aqui).</p>
+
+{% if pendentes %}
+<h3 class="fin-subtitulo">A receber e a pagar ({{ n_pend_total }} registro(s) · A receber {{ a_receber|moeda }} · A pagar {{ a_pagar|moeda }})</h3>
+<table class="fin-tabela fin-somente-desktop">
+    <thead>
+        <tr>
+            <th>Vencimento</th>
+            <th>Descrição</th>
+            <th>Natureza</th>
+            <th>Conta de origem</th>
+            <th class="fin-col-valor">Valor</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for p in pendentes %}
+        <tr>
+            <td class="fin-data">{{ p.data_movimentacao|data_br }}</td>
+            <td>
+                {{ p.descricao or '—' }}
+                {% if p.trabalhador_nome %}<span class="fin-vinculo">· {{ p.trabalhador_nome }}</span>{% endif %}
+                {% if p.pessoa_nome %}<span class="fin-vinculo">· {{ p.pessoa_nome }}</span>{% endif %}
+            </td>
+            <td>{{ p.natureza }}</td>
+            <td>{{ p.conta_nome or '—' }}</td>
+            <td class="fin-col-valor {% if p.tipo == 'entrada' %}fin-entrada{% else %}fin-saida{% endif %}">
+                {% if p.tipo == 'entrada' %}a receber + {% else %}a pagar − {% endif %}{{ p.valor|moeda }}
+            </td>
+            <td>
+                <a href="/financeiro/lancamento/{{ p.id }}?volta={{ url_com()|urlencode }}">Ver</a>
+                {% if p.categoria == 'mensalidade' and p.trabalhador_id %}
+                · <a href="/financeiro/mensalidades?trabalhador_id={{ p.trabalhador_id }}">Mensalidades</a>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<div class="fin-somente-mobile">
+    {% for p in pendentes %}
+    <details class="fin-linha">
+        <summary>
+            <span class="fin-data">{{ p.data_movimentacao|data_br }}</span>
+            <span class="fin-linha-desc">{{ p.descricao or '—' }}</span>
+            <span class="fin-col-valor {% if p.tipo == 'entrada' %}fin-entrada{% else %}fin-saida{% endif %}">
+                {% if p.tipo == 'entrada' %}+ {{ p.valor|moeda }}{% else %}− {{ p.valor|moeda }}{% endif %}
+            </span>
+        </summary>
+        <dl class="fin-linha-corpo">
+            <dt>Natureza</dt><dd>{{ p.natureza }}</dd>
+            <dt>Conta</dt><dd>{{ p.conta_nome or '—' }}</dd>
+            <dt>Situação</dt><dd>Pendente (obrigação, não é dinheiro)</dd>
+        </dl>
+        <a href="/financeiro/lancamento/{{ p.id }}?volta={{ url_com()|urlencode }}">Ver detalhes</a>
+    </details>
+    {% endfor %}
 </div>
 
-<!-- Movimentações recentes -->
-<div class="card-form">
-    <h3 style="margin:0 0 1rem; font-size:1rem; color:var(--cor-primaria)">Movimentações do Mês</h3>
-    {% if movs %}
-    <div style="overflow-x:auto">
-    <table class="tabela">
-        <thead>
-            <tr>
-                <th>Data</th>
-                <th>Tipo</th>
-                <th>Categoria</th>
-                <th>Descrição</th>
-                <th>Valor</th>
-                <th>Status</th>
-                <th>Conta</th>
-                <th>Vinculado</th>
-                <th>Nota</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for m in movs %}
-            <tr>
-                <td>{{ m.data_movimentacao|data_br }}</td>
-                <td>
-                    {% if m.tipo == 'entrada' %}
-                        <span style="color:#1da851;font-weight:600">+ Entrada</span>
-                    {% else %}
-                        <span style="color:#ff4444;font-weight:600">- Saída</span>
-                    {% endif %}
-                </td>
-                <td>{{ m.categoria }}</td>
-                <td>{{ m.descricao or '' }}</td>
-                <td style="font-weight:600">R$ {{ m.valor|replace('.', ',') }}</td>
-                <td>
-                    {% if m.status == 'pago' %}
-                        <span style="color:#1da851">Pago</span>
-                    {% elif m.status == 'pendente' %}
-                        <span style="color:#ffa400">Pendente</span>
-                    {% else %}
-                        <span style="color:#ff4444">Cancelado</span>
-                    {% endif %}
-                </td>
-                <td>{{ m.conta_nome or '-' }}</td>
-                <td>
-                    {% if m.trabalhador_nome %}
-                        <a href="/financeiro/trabalhador/{{ m.trabalhador_id }}">{{ m.trabalhador_nome }}</a>
-                    {% elif m.pessoa_nome %}
-                        <a href="/financeiro/pessoa/{{ m.pessoa_id }}">{{ m.pessoa_nome }}</a>
-                    {% else %}
-                        -
-                    {% endif %}
-                </td>
-                <td>
-                    {% if m.nota_fiscal_foto %}
-                    <a href="/static/fotos/{{ m.nota_fiscal_foto }}" target="_blank" title="Ver nota fiscal">📷</a>
-                    {% endif %}
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-    </div>
-    {% else %}
-    <p style="color:var(--cor-texto-suave)">Nenhuma movimentação para este mês.</p>
-    {% endif %}
+<div class="fin-paginacao">
+    <span>Página <strong>{{ pagina }}</strong> de <strong>{{ paginas }}</strong>
+        · {{ n_pend_total }} pendência(s) no período</span>
+    <span class="fin-paginacao-botoes">
+        {% if pagina > 1 %}<a href="{{ url_com(pagina=pagina-1) }}">← Anterior</a>{% endif %}
+        {% if pagina < paginas %}<a href="{{ url_com(pagina=pagina+1) }}">Próxima →</a>{% endif %}
+    </span>
 </div>
+{% else %}
+<div class="vazio">
+    <h3>Nenhuma pendência neste período</h3>
+    <p>Nada a receber nem a pagar com vencimento entre {{ de_uso|data_br }} e {{ ate_uso|data_br }}.</p>
+    <p><a class="btn btn-secundario" href="{{ url_limpar }}">Limpar filtros</a></p>
+</div>
+{% endif %}
+
+<h3 class="fin-subtitulo">Fiado em aberto (fora do indicador “A receber”)</h3>
+<p class="fin-legenda">Vendas a fiado ainda não recebidas, organizadas por data da venda —
+o banco não registra vencimento para elas, por isso não compõem o total acima.</p>
+{% if fiados %}
+<table class="fin-tabela fin-somente-desktop">
+    <thead>
+        <tr><th>Venda em</th><th>Trabalhador</th><th class="fin-col-valor">Valor</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for f in fiados %}
+        <tr>
+            <td class="fin-data">{{ f.data_venda|data_br }}</td>
+            <td>{{ f.nome_completo or '—' }}</td>
+            <td class="fin-col-valor">{{ f.total|moeda }}</td>
+            <td>{% if f.fiado_trabalhador_id %}<a href="/financeiro/fiados?trabalhador_id={{ f.fiado_trabalhador_id }}">Fiado</a>{% endif %}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+<div class="fin-somente-mobile">
+    {% for f in fiados %}
+    <div class="fin-linha" style="cursor:default">
+        <span class="fin-data">{{ f.data_venda|data_br }}</span>
+        <span class="fin-linha-desc">{{ f.nome_completo or 'Fiado' }}</span>
+        <span class="fin-col-valor">{{ f.total|moeda }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% if fiado_tot and fiado_tot.n > 50 %}
+<p class="fin-nota">Mostrando os 50 mais recentes de {{ fiado_tot.n }} ({{ fiado_tot.total|moeda }} no total) — use a tela de Fiados.</p>
+{% endif %}
+{% else %}
+<p class="fin-legenda">Nenhum fiado em aberto{% if q %} para a busca “{{ q }}”{% endif %}.</p>
+{% endif %}
+
+{% endif %}
 {% endblock %}

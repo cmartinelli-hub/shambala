@@ -34,8 +34,31 @@ def _data_hora_br(valor: str) -> str:
     return valor or ""
 
 
+def _moeda(valor) -> str:
+    """R$ 1.234,56 — aceita Decimal, float, int, str; None vira R$ 0,00."""
+    from decimal import Decimal, InvalidOperation
+    if valor is None:
+        d = Decimal("0")
+    elif isinstance(valor, Decimal):
+        d = valor
+    else:
+        try:
+            d = Decimal(str(valor))
+        except (InvalidOperation, ValueError):
+            return str(valor)
+    inteiro, frac = f"{abs(d):.2f}".split(".")
+    milhar = ""
+    for i, c in enumerate(reversed(inteiro)):
+        if i and i % 3 == 0:
+            milhar = "." + milhar
+        milhar = c + milhar
+    sinal = "-" if d < 0 else ""
+    return f"{sinal}R$ {milhar},{frac}"
+
+
 templates.env.filters["data_br"] = _data_br
 templates.env.filters["data_hora_br"] = _data_hora_br
+templates.env.filters["moeda"] = _moeda
 
 
 def _obter_config_centro() -> dict:

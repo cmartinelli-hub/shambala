@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block titulo %}Lançamento {{ linha.id }} — Financeiro{% endblock %}
+
+{% block conteudo %}
+<a href="{{ volta }}" class="btn-voltar">← Voltar para a Visão Geral</a>
+<div class="cabecalho-secao">
+    <h2>Lançamento #{{ linha.id }}</h2>
+    <p class="fin-legenda">Somente leitura — nada aqui altera o registro.</p>
+</div>
+
+<div class="card-form fin-detalhe">
+    <dl>
+        <dt>Data do lançamento</dt><dd>{{ linha.data_movimentacao|data_br }}</dd>
+        {% if linha.data_pagamento %}
+        <dt>Data do pagamento</dt><dd>{{ linha.data_pagamento|data_br }}</dd>
+        {% endif %}
+        <dt>Valor</dt>
+        <dd class="{% if linha.tipo == 'entrada' %}fin-entrada{% else %}fin-saida{% endif %}">
+            {% if linha.tipo == 'entrada' %}Entrada (+){% else %}Saída (−){% endif %}
+            {{ linha.valor|moeda }}
+        </dd>
+        <dt>Natureza</dt><dd>{{ rotulo_natureza }}</dd>
+        <dt>Conta</dt>
+        <dd>{{ linha.conta_nome or '—' }}{% if linha.conta_tipo %} — {{ rotulo_conta }}{% endif %}</dd>
+        <dt>Situação registrada</dt>
+        <dd><span class="fin-sit{% if situacao.startswith('Registro histórico') %} fin-sit-historico{% endif %}">{{ situacao }}</span></dd>
+        {% if linha.forma_pagamento %}<dt>Forma de pagamento</dt><dd>{{ linha.forma_pagamento }}</dd>{% endif %}
+        {% if linha.descricao %}<dt>Descrição</dt><dd>{{ linha.descricao }}</dd>{% endif %}
+    </dl>
+
+    <h3 class="fin-subtitulo">Vínculos comprovados no banco</h3>
+    <ul class="fin-vinculos">
+        {% if linha.trabalhador_id %}
+        <li>Trabalhador: {{ linha.trabalhador_nome }}
+            (registro #{{ linha.trabalhador_id }}) —
+            <a href="/financeiro/trabalhador/{{ linha.trabalhador_id }}">histórico financeiro</a></li>
+        {% endif %}
+        {% if linha.pessoa_id %}
+        <li>Pessoa: {{ linha.pessoa_nome }} (registro #{{ linha.pessoa_id }}) —
+            <a href="/financeiro/pessoa/{{ linha.pessoa_id }}">histórico financeiro</a></li>
+        {% endif %}
+        {% if linha.categoria == 'mensalidade' and linha.trabalhador_id %}
+        <li><a href="/financeiro/mensalidades?trabalhador_id={{ linha.trabalhador_id }}">Tela de mensalidades deste trabalhador</a></li>
+        {% endif %}
+        {% if linha.caixa_id %}
+        <li>Origem: sessão do módulo Caixa (caixa #{{ linha.caixa_id }}) — referência textual,
+            a gaveta é administrada no módulo Caixa.</li>
+        {% endif %}
+        {% if linha.sangria_id %}
+        <li>Sangria registrada #{{ linha.sangria_id }} (módulo Caixa).</li>
+        {% endif %}
+        {% for e in eventos %}
+        <li>Evento de sessão #{{ e.id }} ({{ e.tipo }} · {{ e.natureza }}) na sessão
+            #{{ e.sessao_id }} do módulo Caixa{% if e.venda_id %}, venda #{{ e.venda_id }}{% endif %}
+            — identidade <code>{{ e.identidade }}</code>.</li>
+        {% endfor %}
+        {% if linha.categoria == 'transferencia' and not linha.sangria_id %}
+        <li class="fin-nota">Transferência entre contas: o banco não guarda vínculo com o
+            par de origem/destino — o outro lado não é inferido aqui.</li>
+        {% endif %}
+        {% if not linha.trabalhador_id and not linha.pessoa_id and not linha.caixa_id and not linha.sangria_id and not eventos %}
+        <li>Nenhum vínculo registrado.</li>
+        {% endif %}
+    </ul>
+
+    {% if linha.pix_copiadecola %}
+    <h3 class="fin-subtitulo">PIX copia-e-cola</h3>
+    <p><code class="fin-pix">{{ linha.pix_copiadecola }}</code></p>
+    {% endif %}
+    {% if linha.nota_fiscal_foto %}
+    <p><a href="/static/fotos/{{ linha.nota_fiscal_foto }}" target="_blank">Foto da nota fiscal</a></p>
+    {% endif %}
+</div>
+{% endblock %}

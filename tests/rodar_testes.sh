@@ -186,7 +186,7 @@ echo "== Executando as suítes =="
 set +e
 RC=0
 SUMARIO=""
-for SUITE in test_tres_passes.py test_plano_unico.py test_permissoes.py test_agenda_medium.py test_presenca_trabalhadores.py test_codigo_trabalhador.py test_terminal_presenca.py test_terminal_leitor.py test_correcoes_presenca.py test_gestao_correcoes_navegador.py test_pdv_precos_servidor.py test_cancelamento_vendas.py test_sessao_eventos_caixa.py test_caixa_navegador_task008.py teste_negativo_isolamento.py; do
+for SUITE in test_tres_passes.py test_plano_unico.py test_permissoes.py test_agenda_medium.py test_presenca_trabalhadores.py test_codigo_trabalhador.py test_terminal_presenca.py test_terminal_leitor.py test_correcoes_presenca.py test_gestao_correcoes_navegador.py test_pdv_precos_servidor.py test_cancelamento_vendas.py test_sessao_eventos_caixa.py test_caixa_navegador_task008.py test_financeiro_visaogeral_consultas_task011.py test_financeiro_visaogeral_navegador_task011.py teste_negativo_isolamento.py; do
   echo "-- $SUITE"
   SHAMBALA_ENV_FILE="$ARQ_ENV" \
   SHAMBALA_MODO_TESTE=1 \
