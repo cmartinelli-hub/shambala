@@ -496,7 +496,30 @@ def p6_filtros_invalidos_recusados():
               and "Situação fora dos valores permitidos" in t5, f"status {st5}")
 
 
+def _soma_vencida(mes_ref: str) -> Decimal:
+    """Quanto o recorte "vencidas até hoje" soma HOJE para esse mês.
+
+    Os cartões do relatório somam o recorte inteiro (todas as mensalidades do
+    mês, de todos os trabalhadores) — e o banco descartável é compartilhado com
+    as outras suítes do runner. Por isso a prova mede o DELTA das fixtures desta
+    suíte, não um absoluto que dependeria do que outra suíte deixou.
+    """
+    with conectar() as conn:
+        r = conn.execute(
+            """SELECT COALESCE(SUM(fm.valor), 0) AS v
+               FROM financeiro_movimentacoes fm
+               WHERE fm.categoria = 'mensalidade' AND fm.status = 'pendente'
+                 AND (fm.competencia = %s OR (fm.competencia IS NULL
+                      AND substr(fm.data_movimentacao, 1, 7) = %s))
+                 AND fm.data_movimentacao < %s""",
+            (mes_ref, mes_ref, date.today().isoformat())).fetchone()
+    return moeda(r["v"])
+
+
 def p7_tres_datas_diferentes():
+    # Medido ANTES das fixtures: o cartão soma o recorte inteiro (todas as
+    # mensalidades do mês, inclusive as de outras suítes no mesmo banco).
+    vencido_2026_06_antes = _soma_vencida("2026-06")
     tid_a, nome_a = novo_trabalhador("Competência A", mensalidade="60.00")
     tid_b, nome_b = novo_trabalhador("Competência B", mensalidade="60.00")
 
@@ -535,12 +558,15 @@ def p7_tres_datas_diferentes():
               lista != lista2 and lista2 != lista3, "recortes idênticos")
 
     st4, body4, _ = GET("/financeiro/mensalidades/relatorio?mes=2026-06&data_uso=comp")
-    venc = card(body4, "Vencidas até hoje ")
+    # O cartão do mês 2026-06 é o pendente de 60,00 desta suíte (o de maio está
+    # pago) somado ao que o recorte já tinha antes da suíte.
+    venc_num = card(body4, "Vencidas até hoje ")
+    esperado = vencido_2026_06_antes + Decimal("60.00")
     verificar("Mensalidades: 'Vencidas até hoje' é sempre pelo vencimento "
               "(o rótulo diz a data e a explicação separa os recortes)",
-              st4 == 200 and venc == "R$ 60,00"
+              st4 == 200 and _valor_br(venc_num) == esperado
               and "aqui é sempre o vencimento" in texto(body4),
-              f"card={venc!r}")
+              f"card={venc_num!r} esperado={esperado}")
 
     st5, body5, _ = GET("/financeiro/mensalidades/relatorio?mes=2026-05"
                         "&data_uso=comp&visao=trabalhador")
@@ -832,6 +858,33 @@ def _contagens_do_banco() -> dict:
     return {t: escalar(f"SELECT count(*) FROM {t}") for t in TABELAS_DO_PISO}
 
 
+def _contagem_alheia(chaves_proprias) -> int:
+    """Chaves de tentativa no banco que NÃO são desta execução.
+
+    As outras suítes do runner consomem (e limpam) as próprias chaves no MESMO
+    banco: a contagem global de `operacao_idempotencia` pode cair por causa
+    delas. O que esta suíte pode garantir é o mundo alheio — o que sobra fora do
+    rastro dela não pode diminuir por causa dela.
+    """
+    return escalar(
+        "SELECT count(*) FROM operacao_idempotencia WHERE NOT (chave = ANY(%s))",
+        (sorted(set(chaves_proprias)) or ["-"],))
+
+
+def _valor_br(txt) -> Decimal | None:
+    """'R$ 120,00' → Decimal, para comparar sem depender do formato."""
+    achado = re.search(r"R\$\s*([\d.]+,[\d]{2}|[\d]+(?:\.[\d]{2})?)", str(txt or ""))
+    if not achado:
+        return None
+    bruto = achado.group(1)
+    if "," in bruto:
+        bruto = bruto.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(bruto)
+    except ArithmeticError:
+        return None
+
+
 def limite_inferior_antes():
     """O piso de linhas de cada tabela ANTES da suíte escrever.
 
@@ -854,6 +907,9 @@ def limpar_suíte():
     """
     padrao = f"{PREFIXO}%"
     contagem = {}
+    # Universo alheio ANTES desta limpeza: as outras suítes podem ter apagado as
+    # próprias chaves no meio da corrida, e isso não é conta desta suíte.
+    alheias_antes = _contagem_alheia(CHAVES_USADAS)
     with conectar() as conn:
         vendas = [r["id"] for r in conn.execute(
             """SELECT id FROM vendas_pdv WHERE fiado_trabalhador_id IN
@@ -971,27 +1027,40 @@ def limpar_suíte():
             contagem["operacao_idempotencia"] = conn.execute(
                 "DELETE FROM operacao_idempotencia WHERE chave = ANY(%s)",
                 (sorted(chaves),)).rowcount
+    contagem["_alheias_antes"] = alheias_antes
+    contagem["_alheias_depois"] = _contagem_alheia(CHAVES_USADAS)
     return contagem
 
 
-def conferir_rastro(piso_antes: dict) -> bool:
+def conferir_rastro(piso_antes: dict, contagem: dict) -> bool:
     """A limpeza devolve o banco ao que era — nunca abaixo do piso da suíte.
 
-    Distingue as duas coisas que podem ter acontecido e que NÃO são a mesma
-    prova: (a) esta limpeza apagou além do próprio rastro → FALHA; (b) o banco
-    foi recriado por outro processo durante a corrida (o runner recria o banco
-    descartável a cada execução) → o piso não vale mais, e a prova tem de dizer
-    isso em vez de "verde".
+    Separa o que NÃO é a mesma prova: (a) esta limpeza apagou além do próprio
+    rastro → FALHA; (b) o banco foi recriado por outro processo durante a corrida
+    (o runner recria o banco descartável a cada execução) → o piso não vale mais e
+    a prova diz isso em vez de "verde"; (c) outra suíte apagou as PRÓPRIAS chaves
+    de tentativa no meio da corrida → o mundo alheio continua intacto, e é ele
+    que esta suíte deve provar não ter mexido.
     """
     depois = _contagens_do_banco()
     abaixo = {t: (piso_antes[t], depois[t]) for t in depois
               if depois[t] < piso_antes[t]}
+
+    # (c) `operacao_idempotencia` é a única tabela compartilhada com o rastro das
+    # outras suítes: vale o universo alheio, medido antes e depois da limpeza.
+    antes_alheias = contagem.get("_alheias_antes")
+    depois_alheias = contagem.get("_alheias_depois")
+    if ("operacao_idempotencia" in abaixo and antes_alheias is not None
+            and depois_alheias is not None and depois_alheias >= antes_alheias):
+        abaixo.pop("operacao_idempotencia")
+        print(f"  ok    operacao_idempotencia global caiu por outra suíte; "
+              f"chaves alheias intactas ({antes_alheias} → {depois_alheias})")
+
     if not abaixo:
         verificar("Limpeza: nenhuma tabela fica com menos linhas que o piso "
                   "anterior à suíte (nada de outra execução foi apagado)", True)
         return True
-    # O catálogo-sentinela caiu: esta suíte não o apaga, logo outro processo
-    # recriou o banco no meio — não é prova de limpeza, é corrida de ambiente.
+
     sentinela = "tipos_doacao" in abaixo
     FALHAS.append(
         "conferência do rastro: "
@@ -1028,14 +1097,19 @@ def main():
     try:
         contagem = limpar_suíte()
         print("\n[limpeza] rastro desta suíte removido: "
-              + ", ".join(f"{t}={n}" for t, n in sorted(contagem.items())))
+              + ", ".join(f"{t}={n}" for t, n in sorted(contagem.items())
+                          if not t.startswith("_")))
+        if "_alheias_antes" in contagem:
+            print(f"[limpeza] chaves de tentativa de OUTRAS suítes: "
+                  f"{contagem['_alheias_antes']} → {contagem.get('_alheias_depois')} "
+                  "(não podem diminuir por causa desta suíte)")
     except Exception as e:
         contagem = {}
         FALHAS.append(f"limpeza — exceção {type(e).__name__}: {e}")
         print(f"  [limpeza] {e}")
         traceback.print_exc()
     try:
-        conferir_rastro(piso_antes)
+        conferir_rastro(piso_antes, contagem)
     except Exception as e:
         FALHAS.append(f"conferência do rastro — exceção {type(e).__name__}: {e}")
         print(f"  [conferência] {e}")

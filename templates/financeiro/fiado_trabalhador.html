@@ -134,7 +134,9 @@ valor de face. Nada foi distribuído por nome, valor aproximado, data nem ordem 
             <td class="fin-col-valor">{% if v.credito_usado %}{{ v.credito_usado|moeda }}{% else %}—{% endif %}</td>
             <td class="fin-col-valor">{% if v.recebido %}<span class="fin-entrada">{{ v.recebido|moeda }}</span>{% else %}—{% endif %}
                 {% if not v.alocacoes_registradas and v.saldo > 0 %}<small class="fin-vinculo">histórico sem prova</small>{% endif %}</td>
-            <td class="fin-col-valor fin-pendente">{{ v.saldo|moeda }}</td>
+            {# Venda cancelada não é dívida: mostrar "R$ 0,00" na coluna de saldo
+               faria o operador ler um valor devido que não existe (TASK_012 §5). #}
+            <td class="fin-col-valor fin-pendente">{% if v.status == 'cancelada' %}—{% else %}{{ v.saldo|moeda }}{% endif %}</td>
             <td>
                 {% if v.status == 'cancelada' %}
                 <span class="fin-sit" style="color:#999">Cancelada (não somada)</span>
@@ -158,7 +160,7 @@ valor de face. Nada foi distribuído por nome, valor aproximado, data nem ordem 
         <summary>
             <span class="fin-data">{{ v.data_venda|data_br }}</span>
             <span class="fin-linha-desc">{{ v.caixa_nome }}{% if v.status == 'cancelada' %} · cancelada{% endif %}</span>
-            <span class="fin-col-valor fin-pendente">{{ v.saldo|moeda }}</span>
+            <span class="fin-col-valor fin-pendente">{% if v.status == 'cancelada' %}—{% else %}{{ v.saldo|moeda }}{% endif %}</span>
         </summary>
         <dl class="fin-linha-corpo">
             <dt>Valor original</dt><dd>{{ v.valor_original|moeda }}</dd>

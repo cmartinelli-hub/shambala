@@ -145,9 +145,21 @@ def _caminho_da_nota(nome_arquivo):
     return fn(nome_arquivo)
 
 
+# Toda chave que ESTA suíte gera. É a única forma honesta de limpar
+# `operacao_idempotencia`: o banco descartável é compartilhado com as outras
+# suítes do runner, e "tudo que estiver lá" apagaria a prova alheia.
+CHAVES_USADAS: set[str] = set()
+
+
 def chave():
-    """Chave de tentativa gerada ANTES do envio — nunca um id criado depois."""
-    return secrets.token_hex(16)
+    """Chave de tentativa gerada ANTES do envio — nunca um id criado depois.
+
+    Registrada em `CHAVES_USADAS` para a limpeza final apagar só o próprio
+    rastro (TASK_012 §5/§6).
+    """
+    k = secrets.token_hex(16)
+    CHAVES_USADAS.add(k)
+    return k
 
 
 def escalar(sql, params=(), padrao=0):
@@ -975,7 +987,7 @@ def prova_nota_fora_da_transacao():
         conn.execute("DELETE FROM financeiro_movimentacoes WHERE descricao LIKE %s",
                      (f"{PREFIXO} compra fin09%",))
         conn.execute("DELETE FROM operacao_idempotencia WHERE chave = ANY(%s)",
-                     ([k, k2, k3, k4],))
+                     (sorted(CHAVES_USADAS),))
 
 
 def prova_venda_de_livro():

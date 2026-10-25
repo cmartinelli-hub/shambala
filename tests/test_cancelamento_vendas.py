@@ -346,7 +346,13 @@ def m7():
         "dívida atual não lista mais o trabalhador com única venda cancelada"
     st, corpo, _ = t6._req(_jar(), "GET", f"/financeiro/fiados?trabalhador_id={trab}")
     assert "Cancelada (não somada)" in corpo, "histórico cancelado visível no relatório"
-    assert "R$ 0.00" in corpo, "pendente zerado nos totais"
+    # TASK_012 §5: os valores das telas do financeiro saem no formato brasileiro
+    # (`moeda`), não em formato C. E a linha cancelada não mostra saldo — dívida
+    # cancelada não é dívida (antes lia "R$ 0.00" na coluna de pendente).
+    assert "R$ 0,00" in corpo, "pendente zerado nos totais (formato brasileiro)"
+    assert "Cancelada (não somada)</span>" in corpo and \
+        'fin-col-valor fin-pendente">—</td>' in corpo, \
+        "linha cancelada sem saldo devedor exibido"
 
 
 @teste("M8a fiado pago: bloqueado antes de qualquer efeito (FIN-06 é outro fluxo)")
