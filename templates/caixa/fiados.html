@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_conta_destino.html" as contas %}
 {% block titulo %}Fiados — Devedores{% endblock %}
 
 {% block estilos %}
@@ -287,6 +288,7 @@
                         <option value="especie">Espécie</option>
                         <option value="pix">PIX</option>
                     </select>
+                    {{ contas.seletor_por_forma(contas_por_forma, rotulos_tipo_conta) }}
                     <label style="font-size:.85rem;font-weight:600;white-space:nowrap">Valor entregue (R$)</label>
                     <input type="number" name="valor" id="valor-pagar-{{ tid }}"
                            step="0.01" min="0.01" required
@@ -320,6 +322,7 @@
                 <option value="especie">Espécie</option>
                 <option value="pix">PIX</option>
             </select>
+            {{ contas.seletor_por_forma(contas_por_forma, rotulos_tipo_conta) }}
             <input type="number" name="valor" step="0.01" min="0.01" placeholder="Valor (R$)" required
                    style="width:100px;padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
             <input type="text" name="descricao" placeholder="Descrição (opcional)"

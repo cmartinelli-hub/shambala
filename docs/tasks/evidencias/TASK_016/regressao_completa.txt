@@ -2,17 +2,17 @@
   config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
   banco ...: shambala_test_passes
   porta ...: 9011
-  token ...: t010-20261025154418-1482487 (identifica ESTA execução nas provas)
-  árvore ..: 558d62d5f45445b6d533d6f11c5f674a615cead5-dirty (código validado por esta execução)
+  token ...: t010-20261025163250-1701370 (identifica ESTA execução nas provas)
+  árvore ..: 1ba3b85faf828feb0b603eb56dec7a44384e486d-dirty (código validado por esta execução)
 == Registrando o estado do DEV (apenas leitura) ==
   DEV (shambala): pessoas=678 checkins=2920
   porta 9011 livre: ok
 == Recriando o banco de teste (conexão de manutenção validada) ==
   shambala_test_passes criado e selado para esta execução
 == Confrontando a identidade efetiva (mesma configuração do app) ==
-  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025154418-1482487
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025163250-1701370
 == Subindo o app de teste ==
-[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025154418-1482487'}
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025163250-1701370'}
   app no ar: destino confirmado pelo próprio app, vinculado ao token
 == Executando as suítes ==
 -- test_tres_passes.py
@@ -280,8 +280,8 @@
 
 25/25 testes passaram, 0 pulados (TASK_007 — cancelamento rastreável)
 -- test_sessao_eventos_caixa.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025154418-1482487'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025154418-1482487)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025163250-1701370'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025163250-1701370)
 [seed] fixtures prontas
 
 ══ CENÁRIO MISTO DETERMINÍSTICO (inicial 100 → físico esperado 183) ══
@@ -399,6 +399,7 @@
 
 ══ CASO 8 — ESCRITAS × FECHAMENTO CONCORRENTES ══
   ✔ CASO 8 — nenhuma requição da corrida terminou em exceução não tratada
+  ✔ fechar sessão D após a corrida
   ✔ CASO 8 — a sessão fechou com o esperado vindo dos eventos finais da corrida
   ✔ nenhum evento foi escrito depois do fechamento (trava compatível com TASK_006/007)
   ✔ vendas da corrida gravaram exatamente um evento por venda concluída
@@ -482,10 +483,10 @@
   ✔ fechamento da divergência de arredondamento COM observação
   ✔ fechado com divergência -0.01 registrada, esperado intocado (0.01)
 
-[resultado] aprovadas=161 falhas=0
+[resultado] aprovadas=162 falhas=0
 -- test_caixa_navegador_task008.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025154418-1482487'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025154418-1482487)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025163250-1701370'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025163250-1701370)
 [seed] fixtures T008N prontas
   ✔ C1 a tela orienta que só PIX está disponível sem sessão
   ✔ C1 PIX pré-selecionado; espécie e fiado bloqueados sem sessão
@@ -600,8 +601,8 @@
 
 [resultado] aprovadas=51 falhas=0
 -- test_financeiro_visaogeral_navegador_task011.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025154418-1482487'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025154418-1482487)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025163250-1701370'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025163250-1701370)
 [startup] 1 mensalidade(s) receberam competência rotulada do vencimento já gravado.
 [seed] fixtures T011N prontas (janela 2026-06)
   ✔ N1 período em destaque (01/06/2026 a 30/06/2026)
@@ -1097,8 +1098,8 @@
 
 79/79 verificações aprovadas (TASK_012 §5 — consultas, saldos e experiência integrada)
 -- test_financeiro_navegador_task012.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025154418-1482487'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025154418-1482487)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025163250-1701370'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025163250-1701370)
 [seed] fixtures T012N prontas (janela 2026-09-01 a 2026-09-30)
 -- C1 mensalidades: as três datas rotuladas e o valor em formato brasileiro
   ✔ C1 a tela diz que a data é o vencimento
@@ -1136,6 +1137,94 @@
 
 [resultado] aprovadas=27 falhas=0
   evidências: /nc/projetos/shambala/docs/tasks/evidencias/TASK_012
+-- test_t016_navegador.py
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025163250-1701370'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025163250-1701370)
+[seed] fixtures T016N prontas
+-- N1 PDV com duas contas de espécie: seletor com as duas e venda bloqueada sem escolha
+  ✔ N1.1 o bloco de conta da espécie aparece no PDV
+  ✔ N1.2 com duas contas elegíveis a tela pede a escolha (select)
+  ✔ N1.3 as duas contas de espécie estão na lista
+  ✔ N1.4 conta inativa NÃO é oferecida
+  ✔ N1.5 conta de obrigações (areceber) NÃO é oferecida
+  ✔ N1.6a o item entrou no carrinho
+  ✔ N1.6 sem escolher a conta a venda NÃO é enviada
+  ✔ N1.7 nenhuma venda foi criada
+-- N2 PDV escolhendo a SEGUNDA conta: venda conclui e grava nela
+  ✔ N2.1 o PDV abriu com o seletor
+  ✔ N2.2 a venda foi criada
+  ✔ N2.3 a venda persistiu na conta ESCOLHIDA
+-- N3 PDV com PIX: seletor oferece banco e poupança, e grava no destino
+  ✔ N3.1 o seletor de conta do PIX aparece ao escolher PIX
+  ✔ N3.2 banco e poupança são oferecidos
+  ✔ N3.3 os rótulos distinguem banco de poupança
+  ✔ N3.4 a venda PIX foi criada
+  ✔ N3.5 o PIX gravou na POUPANÇA escolhida
+-- N4 doação: escolha obrigatória e formulário preservado após erro
+  ✔ N4.1 a doação em espécie pede a conta
+  ✔ N4.2 sem escolha o envio não acontece e o valor digitado permanece
+  ✔ N4.3 a descrição digitada permanece
+-- N5 fiado e mensalidade: o seletor de conta acompanha a forma de pagamento
+  ✔ N5.1 o painel de recebimento de fiado tem escolha de conta
+  ✔ N5.2 só o bloco da forma escolhida fica visível
+  ✔ N5.3 a tela de mensalidades tem escolha de conta
+-- N6 conta inativa sai das opções e recusa sem efeito
+  ✔ N6.1 a conta inativa não aparece no PDV
+  ✔ N6.2 a conta de obrigações não aparece como destino
+-- N7 nenhuma rolagem horizontal em 412, 768, 1024 e 1366
+  · N7 pdv em 412px: CONHECIDO (pré-existente): scrollWidth=470 innerWidth=412
+  ✔ N7 doacao sem rolagem horizontal em 412px
+  ✔ N7 fiados sem rolagem horizontal em 412px
+  ✔ N7 mensalidades sem rolagem horizontal em 412px
+  ✔ N7 pdv sem rolagem horizontal em 768px
+  ✔ N7 doacao sem rolagem horizontal em 768px
+  ✔ N7 fiados sem rolagem horizontal em 768px
+  ✔ N7 mensalidades sem rolagem horizontal em 768px
+  ✔ N7 pdv sem rolagem horizontal em 1024px
+  ✔ N7 doacao sem rolagem horizontal em 1024px
+  ✔ N7 fiados sem rolagem horizontal em 1024px
+  ✔ N7 mensalidades sem rolagem horizontal em 1024px
+  ✔ N7 pdv sem rolagem horizontal em 1366px
+  ✔ N7 doacao sem rolagem horizontal em 1366px
+  ✔ N7 fiados sem rolagem horizontal em 1366px
+  ✔ N7 mensalidades sem rolagem horizontal em 1366px
+
+[resultado] aprovadas=39 falhas=0
+  evidências: /nc/projetos/shambala/docs/tasks/evidencias/TASK_016/navegador
+-- test_t016_matriz.py
+[ok] banco shambala_test_passes / servidor http://127.0.0.1:9011 (token t010-20261025163250-1701370)
+-- E1 fluxo individual: um recebimento grava na conta escolhida
+  ✔ E1.1 a doação foi aceita
+  ✔ E1.2 o valor entrou na conta ESCOLHIDA
+  ✔ E1.3 há exatamente um lançamento e na conta certa
+-- E2 fluxo EM LOTE: separa por conta e preserva o total em centavos
+  ✔ E2.1 o lote foi aceito
+  ✔ E2.2 o total do lote caiu inteiro na conta escolhida
+  ✔ E2.3 a outra conta de espécie NÃO recebeu nada
+  ✔ E2.4 lote idêntico em OUTRA conta vai para a conta nova
+-- E3 idempotência: mesma chave/troca de conta
+  ✔ E3.1 primeira tentativa aceita na gaveta
+  ✔ E3.2 gravou uma vez na gaveta
+  ✔ E3.3 reenvio idêntico (mesma conta) NÃO grava de novo
+  ✔ E3.4 mesma chave com conta DIFERENTE é conflito, sem escrita
+-- E4 inativação concorrente: escolhida na tela, inativada antes do envio
+  ✔ E4.1 o servidor recusou com motivo próprio (conta inativa)
+  ✔ E4.2 nada foi gravado na conta inativada
+-- E5 fechamento legado e cancelamento de venda
+  ✔ E5.1 fechamento usa a conta PERSISTIDA na venda
+  ✔ E5.2 sem vínculo o fechamento RECUSA e não escreve nada
+  ✔ E5.3 com a escolha do operador grava na conta escolhida
+  ✔ E5.4 escolha inválida no fechamento RECUSA sem escrita
+  ✔ E5.5 a venda foi cancelada
+  ✔ E5.6 o efeito físico da venda cancelada foi estornado
+  ✔ E5.7 o cancelamento não mexeu no saldo da conta
+-- E6 saldo anterior ao período não desaparece
+  ✔ E6.1 o saldo ANTERIOR ao período soma só o histórico
+  ✔ E6.2 o recebimento de hoje soma ao saldo anterior
+  ✔ E6.3 o saldo anterior não foi recalculado nem reescrito
+  ✔ E6.4 a tela de contas mostra o acumulado da conta histórica
+
+[resultado] aprovadas=24 falhas=0
 -- test_financeiro_morte_processo_task014.py
 Exception in thread Thread-1 (disparar):
 Traceback (most recent call last):
@@ -1304,11 +1393,11 @@ TESTE NEGATIVO — a trava rejeita o banco de desenvolvimento?
 
 [4] Contrato de configuração e prova de execução corrente:
   OK    arquivo de configuração ausente — recusado: arquivo de configuração da execução ausente: /nao/existe/.env
-  OK    arquivo sem SHAMBALA_DB_NAME — recusado: o arquivo de configuração /tmp/shambala_neg_qvb21kut.env não define SHAMBALA_DB_NAME — des
-  OK    arquivo apontando banco de DEV ('shambala') — recusado: destino 'shambala' do arquivo /tmp/shambala_neg_flozu__n.env não é comprovadamente descart
+  OK    arquivo sem SHAMBALA_DB_NAME — recusado: o arquivo de configuração /tmp/shambala_neg_vei7545e.env não define SHAMBALA_DB_NAME — des
+  OK    arquivo apontando banco de DEV ('shambala') — recusado: destino 'shambala' do arquivo /tmp/shambala_neg_amzhase0.env não é comprovadamente descart
   OK    destino solicitado A diverge do arquivo B (sentinelas A/B) — recusado: divergência de destino: solicitado 'shambala_a_test', configuração nomeada '/tmp/shambala_
-  OK    destino solicitado bate com o arquivo — aceito: {'banco': 'shambala_a_test', 'arquivo': '/tmp/shambala_neg_v37qjk19.env'}
-  OK    log sem confirmação alguma (destino não provado) — recusado: o app nunca imprimiu 'Ambiente descartável confirmado' em /tmp/shambala_neg_log_31whxww4: 
+  OK    destino solicitado bate com o arquivo — aceito: {'banco': 'shambala_a_test', 'arquivo': '/tmp/shambala_neg_oo_27hr3.env'}
+  OK    log sem confirmação alguma (destino não provado) — recusado: o app nunca imprimiu 'Ambiente descartável confirmado' em /tmp/shambala_neg_log_fcvc8238: 
   OK    log de OUTRA execução (token antigo) — recusado: o log pertence a OUTRA execução (token 'tok-ANTIGA' != 'tok-desta-execucao'): prova de log
   OK    token corrente mas banco efetivo divergente do esperado — recusado: o servidor HTTP está no banco efetivo 'shambala_outra_test', a suíte espera 'shambala_a_te
   OK    execução corrente provada (token + banco efetivo) — aceito: {'banco_efetivo': 'shambala_a_test', 'token': 'tok-desta-execucao', 'log': '/tmp/shambala_
@@ -1340,9 +1429,11 @@ test_financeiro_mensalidades_task012.py: rc=0
 test_fiado_alocacoes_task012.py: rc=0
 test_financeiro_consultas_task012.py: rc=0
 test_financeiro_navegador_task012.py: rc=0
+test_t016_navegador.py: rc=0
+test_t016_matriz.py: rc=0
 test_financeiro_morte_processo_task014.py: rc=0
 teste_negativo_isolamento.py: rc=0
-tests/rodar_testes.sh, linha 89: 1482562 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+tests/rodar_testes.sh, linha 89: 1701412 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
 == Conferência final do DEV ==
   antes : pessoas=678 checkins=2920
   depois: pessoas=678 checkins=2920

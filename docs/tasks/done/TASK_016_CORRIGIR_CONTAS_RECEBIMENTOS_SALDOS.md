@@ -5,11 +5,29 @@ Data: 25/10/2026. Commit `7eef33f`.
 Relatório: `docs/investigacoes/TASK_016_CORRECOES_CONTAS.md`.
 Resumo: conta de destino explícita e validada no servidor (contrato único
 conta×forma), banco/poupança recebendo PIX, `areceber` fora do dinheiro,
-disponível × pendente separados, conta na identidade da tentativa. 23 suítes
-rc=0; sem schema novo; baselines do DEV idênticos; contas do DEV intactas.
-Limitações registradas: PDV ainda não pergunta a conta quando há duas de espécie
-(recusa em vez de errar), navegador não revalidado com esse cenário e a regra de
-sessão legada preservada (com o risco anotado).
+disponível × pendente separados, conta na identidade da tentativa.
+
+Rodada 2 completou os pontos que faltavam:
+- **seleção explícita em todas as telas**: PDV, fiado (dívida + crédito),
+  mensalidade, doação e fechamento legado, com o macro único
+  `_conta_destino.html` — mesma organização de tela, sem novo layout;
+- **fechamento legado**: o destino vem de `vendas_pdv.conta_id` (vínculo
+  persistido na hora da venda); sem vínculo, o fechamento **exige a escolha do
+  operador**, valida contra o contrato e nunca deduz por tipo. Nenhum histórico
+  foi reescrito — as 1859 vendas antigas ficaram NULL;
+- **validação de navegador** com duas contas de espécie e PIX em banco/poupança:
+  39/39 verdes (`test_t016_navegador.py`);
+- **matriz de cobertura** provada por rota real: 24/24
+  (`test_t016_matriz.py`), incluindo individual × lote, idempotência com troca de
+  conta, inativação concorrente, fechamento/cancelamento e saldo anterior ao
+  período.
+
+25 suítes rc=0; única mudança de schema é a coluna aditiva `vendas_pdv.conta_id`;
+baselines do DEV idênticos; contas do DEV intactas.
+
+Limitações registradas: defeito de layout **pré-existente** do PDV em 412px
+(transborda 470px — medido contra o commit anterior, idêntico); regra de sessão
+legada preservada; saldo inicial e saldos reais pendentes do dono.
 
 ## 1. Objetivo e decisão do dono
 

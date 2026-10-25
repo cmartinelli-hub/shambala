@@ -1,0 +1,79 @@
+{# TASK_016 — seletor de CONTA DE DESTINO por forma de pagamento.
+
+   Regra (servico_sessao): espécie entra em conta de espécie; PIX entra em pix,
+   banco ou poupança. Com uma só conta elegível, ela aparece como padrão (campo
+   oculto); com várias, o operador escolhe; sem nenhuma, o aviso aparece e o
+   servidor recusa.
+
+   Uso: {% import "_conta_destino.html" as contas %}
+        {{ contas.seletor('especie', contas_por_forma, rotulos_tipo_conta) }}
+
+   O campo enviado é `conta_id` (padrão) ou `conta_pix_id` para PIX, que é o nome
+   consagrado nas rotas e nas tentativas em voo. #}
+
+{% macro seletor(forma, opcoes_por_forma, rotulos, campo='conta_id', rotulo_extra='') %}
+{% set opcoes = (opcoes_por_forma or {}).get(forma, []) %}
+<div class="conta-destino" data-forma="{{ forma }}">
+    <label for="conta-sel-{{ forma }}-{{ campo }}">
+        {{ rotulo_extra or ('O valor de ' ~ ('PIX' if forma == 'pix' else 'Espécie') ~ ' entra em qual conta?') }}
+    </label>
+    {% if opcoes | length == 1 %}
+    <input type="hidden" name="{{ campo }}" id="conta-sel-{{ forma }}-{{ campo }}" value="{{ opcoes[0].id }}">
+    <div class="conta-destino-fixa">
+        {{ opcoes[0].nome }}
+        <small>{{ rotulos.get(opcoes[0].tipo, opcoes[0].tipo) }}</small>
+    </div>
+    {% elif opcoes %}
+    <select name="{{ campo }}" id="conta-sel-{{ forma }}-{{ campo }}" class="conta-destino-sel" required>
+        <option value="">— escolha a conta —</option>
+        {% for c in opcoes %}
+        <option value="{{ c.id }}">{{ c.nome }} — {{ rotulos.get(c.tipo, c.tipo) }}</option>
+        {% endfor %}
+    </select>
+    {% else %}
+    <div class="conta-destino-erro">
+        Nenhuma conta ativa recebe {{ 'PIX' if forma == 'pix' else 'espécie' }}:
+        a operação será recusada até que exista uma conta válida em Configurações.
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# Variante para telas que já têm o seletor de forma junto: mostra o bloco da
+   forma escolhida e esconde o outro (troca por JS no próprio formulário). #}
+{% macro seletor_por_forma(opcoes_por_forma, rotulos, campo_especie='conta_id', campo_pix='conta_pix_id', forma_inicial='especie') %}
+<div class="conta-destino-grupo" data-forma-inicial="{{ forma_inicial }}">
+    <div class="conta-destino-bloco" data-para="especie"
+         {% if forma_inicial != 'especie' %}style="display:none"{% endif %}>
+        {{ seletor('especie', opcoes_por_forma, rotulos, campo_especie) }}
+    </div>
+    <div class="conta-destino-bloco" data-para="pix"
+         {% if forma_inicial != 'pix' %}style="display:none"{% endif %}>
+        {{ seletor('pix', opcoes_por_forma, rotulos, campo_pix) }}
+    </div>
+</div>
+<script>
+(function () {
+    // acompanha o seletor de forma do formulário que contém este grupo
+    document.querySelectorAll('.conta-destino-grupo').forEach(function (grupo) {
+        var form = grupo.closest('form');
+        if (!form) return;
+        var sel = form.querySelector('select[name="forma_pagamento"], select[name="forma"]');
+        if (!sel) return;
+        function aplicar() {
+            grupo.querySelectorAll('.conta-destino-bloco').forEach(function (b) {
+                var ativo = b.dataset.para === sel.value;
+                b.style.display = ativo ? '' : 'none';
+                // o bloco escondido não envia o campo, para não colidir
+                b.querySelectorAll('input, select').forEach(function (i) {
+                    i.disabled = !ativo;
+                });
+            });
+        }
+        sel.addEventListener('change', aplicar);
+        aplicar();
+    });
+})();
+</script>
+{% endmacro %}

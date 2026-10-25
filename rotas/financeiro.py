@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from psycopg2.errors import UniqueViolation
 
 from banco import conectar, _normalizar, conta_id_por_tipo
+from servico_sessao import ROTULOS_TIPO_CONTA, contas_de_destino
 from rotas.auth import obter_atendente_logado
 from rotas.financeiro_mensalidades import sincronizar_mensalidades
 from templates_config import templates
@@ -751,6 +752,9 @@ async def mensalidades(
         sessoes = [s for s in todas if s["versao"] == "eventos"]
         sessoes_legadas = [s for s in todas if s["versao"] != "eventos"]
         contas_pix = [dict(c) for c in contas_por_tipo(conn, "pix")]
+        # TASK_016: escolha explícita da conta de destino do recebimento
+        contas_por_forma = {f: [dict(c) for c in contas_de_destino(conn, f)]
+                            for f in ("especie", "pix")}
 
     return templates.TemplateResponse("financeiro/mensalidades.html", {
         "request": request,
@@ -769,6 +773,9 @@ async def mensalidades(
         "sessoes": sessoes,
         "sessoes_legadas": sessoes_legadas,
         "contas_pix": contas_pix,
+        # TASK_016: escolha explícita da conta de destino do recebimento
+        "contas_por_forma": contas_por_forma,
+        "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
     })
 
 

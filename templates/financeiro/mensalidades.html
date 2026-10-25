@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_conta_destino.html" as contas %}
 {% block titulo %}Mensalidades{% endblock %}
 
 {% block estilos %}
@@ -187,6 +188,10 @@
                 <option value="especie">{{ icone("banknote") }} Espécie</option>
                 <option value="pix">{{ icone("smartphone") }} PIX</option>
             </select>
+        </div>
+        {# TASK_016: a conta de destino do recebimento é escolha explícita #}
+        <div style="display:flex;align-items:center;gap:.5rem">
+            {{ contas.seletor_por_forma(contas_por_forma, rotulos_tipo_conta) }}
         </div>
         <div style="display:flex;align-items:center;gap:.5rem">
             <label style="font-weight:600;font-size:.9rem" for="dest-sessao">Gaveta (sessão aberta):</label>

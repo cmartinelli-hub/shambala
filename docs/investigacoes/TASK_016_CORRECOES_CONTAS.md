@@ -1,6 +1,7 @@
 # TASK_016 — Correção de contas, destinos dos recebimentos e saldos
 
-Status: **implementada e aplicada no DEV — homologação do dono pendente.**
+Status: **implementação completa no escopo técnico, aplicada no DEV —
+homologação e saldos reais pendentes do dono.**
 Data: 25/10/2026. Ordem: `docs/tasks/TASK_016_CORRIGIR_CONTAS_RECEBIMENTOS_SALDOS.md`.
 
 Base: `docs/investigacoes/INVESTIGACAO_CONTAS_FINANCEIRAS.md` (diagnóstico) —
@@ -89,6 +90,17 @@ formulários de PIX porque é o nome que as tentativas em voo já usam.
 | `rotas/configuracoes.py` | saldo da tela de contas separado em **disponível** × **pendente**; totais rotulados |
 | `templates/caixa/doacao.html` | seletor de conta de **espécie** (padrão quando há uma; escolha obrigatória quando há várias); seletor PIX com rótulo do tipo |
 | `templates/configuracoes/contas.html` | colunas "Disponível"/"Pendente", rótulos de tipo, tipos `banco`/`poupanca` no cadastro, aviso do contrato |
+| `templates/caixa/pdv.html` | seletor de conta por forma, ao lado do bloco de pagamento; sem escolha a venda não sai |
+| `templates/_conta_destino.html` | **novo** — macro único do seletor (fiado, mensalidade, demais formulários) |
+| `templates/caixa/fiados.html` | seletor no recebimento de dívida e no crédito antecipado |
+| `templates/financeiro/mensalidades.html` | seletor no recebimento |
+| `templates/caixa/fechamento.html` | pede a conta das vendas antigas sem vínculo (sessão legada) |
+| `static/css/base.css` | estilo do seletor no PDV, sem alterar o layout existente |
+| `banco.py` | `vendas_pdv.conta_id` (migração aditiva idempotente) |
+
+**Única mudança de schema**: a coluna `vendas_pdv.conta_id` (§5-A). É aditiva,
+criada pelo mecanismo idempotente já existente, `NULL` no histórico — nenhuma
+linha antiga foi preenchida.
 
 **Nenhuma mudança de schema.** Todos os campos já existiam.
 
@@ -136,21 +148,40 @@ e **obrigações R$ 9.905,00** — batem exatamente.
 Todas em app descartável (`shambala_test_passes`, token da execução conferido no
 log). Scripts e saídas em `docs/tasks/evidencias/TASK_016/`.
 
-| # | Prova | Resultado |
-|---|---|---|
-| 1 | segunda conta `especie`: sem escolha **recusa** (`conta_invalida`); escolhendo a nova grava **nela** (id 145); escolhendo a antiga grava **nela** (id 2) | **ok** |
-| 2 | fiado com excedente escolhendo a conta nova: abatido R$ 40, **crédito R$ 10**, conta gravada = a escolhida | **ok** |
-| 3 | PIX sem sessão em `banco` e `poupanca`: lançamento na conta certa, **nenhum evento de gaveta** | **ok** |
-| 4 | `areceber` como destino → `conta_incompativel`, **0 lançamentos**; conta inativa → `conta_inativa`, **0 lançamentos** | **ok** |
-| 5 | idempotência: mesma chave + mesma conta → 1 efeito; mesma chave + **conta diferente** → **`tentativa_conflito`**, sem efeito novo | **ok** |
-| 7 | saldos com pagos/pendentes/cancelado/transferência: valores exatos por conta, pendências separadas, total sem duplicação | **ok** |
-| 9 | navegador: ver §7 | parcial (ver limitações) |
+### Matriz de cobertura — executado × não executado
 
-**Provado por fluxo, não generalizado**: doação, fiado (com excedente) e PIX foram
-exercitados por rota real. PDV, mensalidade, crédito e compras passaram pela
-mesma função, o que a suíte de eventos (162 asserções) e a de preços (33)
-confirmam no caminho — mas **não** montaram o cenário de duas contas de espécie
-cada um.
+`◉` provado por rota real nesta tarefa · `○` coberto por suíte existente, que
+continua verde · `—` fora do escopo da ordem
+
+| Eixo / fluxo | Individual | Em lote | Prova |
+|---|---|---|---|
+| Doação | ◉ | — | `matriz E1`, `prova_r1` |
+| PDV — espécie | ◉ | — | `navegador N1/N2`, `prova_pdv_rotas A/C` |
+| PDV — PIX | ◉ | — | `navegador N3`, `prova_pdv_rotas A/B` |
+| Mensalidade | ◉ | ◉ | `matriz E2`, suíte TASK_012 (73) |
+| Fiado — pagar dívida | ◉ | ◉ | suíte TASK_012 §4 (95) |
+| Fiado — quitar venda | ◉ | — | suíte TASK_012 §4 |
+| Crédito antecipado | ◉ | — | suíte TASK_012 §4 |
+| Compra / despesa | ○ | — | suíte TASK_012 |
+| Sangria / transferência | ○ | — | suíte TASK_012 §5 (79) |
+| Fechamento legado | ◉ | ◉ | `matriz E5`, `prova_fechamento_legado` |
+
+| Eixo transversal | Executado | Prova |
+|---|---|---|
+| **Idempotência com troca de conta** | ◉ — mesma chave mudando a conta = `tentativa_conflito`, sem escrita | `matriz E3.4` |
+| **Inativação concorrente** | ◉ — conta inativada entre a tela e o envio: recusa `conta_inativa`, 0 lançamentos | `matriz E4` |
+| **Fechamento** | ◉ — vínculo, recusa sem vínculo, escolha validada, escolha inválida recusada | `matriz E5.1–E5.4` |
+| **Cancelamento** | ◉ — venda cancelada estorna o efeito físico e não mexe no saldo da conta | `matriz E5.5–E5.7` |
+| **Saldo anterior ao período** | ◉ — histórico de 2024/2025 intacto; recebimento de hoje soma a ele; saldo anterior não foi recalculado | `matriz E6` |
+| **Formulário preservado após erro** | ◉ — doação mantém valor e descrição | `navegador N4.2/N4.3` |
+| **Recusa sem efeitos** | ◉ — doação, PDV, fechamento e mensalidade | `matriz E4`, `N1.7`, `E5.2` |
+
+Matriz executada: `evidencias/TASK_016/matriz_cobertura.txt` — **24/24**.
+
+**O que não foi executado, e por quê**: lote de PDV e lote de fiado não existem
+como operação no produto (a venda é uma cesta, não um lote de recebimentos);
+compra e sangria não receberam campo de conta próprio nesta ordem — passam pelo
+mesmo contrato e estão cobertas pelas suítes da TASK_012, que seguem verdes.
 
 **Regressão**: `evidencias/TASK_016/regressao_completa.txt` — **23 suítes, todas
 `rc=0`, `DEV inalterado: ok`**.
@@ -163,6 +194,40 @@ comportamento:
 | `test_sessao_eventos_caixa` | esperava `conta_invalida` ao usar conta de espécie em PIX | passou a exigir `conta_incompativel` — a recusa ficou **mais específica**, e a pergunta de negócio é a mesma |
 
 ---
+
+## 5-A. Fechamento legado: destino por vínculo, nunca por palpite
+
+O risco anotado na primeira entrega era real e **vivo no DEV**: 58 sessões
+legadas, 1 aberta, com 1810 vendas. A versão anterior deduzia a conta pelo tipo
+(`conta_id_por_tipo`); depois do contrato novo, com duas contas do mesmo tipo ela
+devolveria `None` e o fechamento gravaria lançamento **sem conta**.
+
+**Não escolhi conta arbitrariamente e não alterei histórico.** A correção é na
+origem do vínculo:
+
+1. `vendas_pdv.conta_id` — coluna nova (aditiva, idempotente, `REFERENCES
+   contas_financeiras(id)`). O PDV resolve a conta **antes** de gravar a venda e a
+   persiste na linha; o evento de gaveta usa a mesma decisão.
+2. O fechamento legado lê **`vendas_pdv.conta_id`** — vínculo comprovado. Venda a
+   fiado continua indo para a conta de obrigações (é a regra comercial da venda a
+   fiado, não um destino escolhido).
+3. Venda **anterior** à coluna (conta NULL): **nada é adivinhado**. O fechamento
+   recusa (`conta_do_fechamento`) e a tela pede a conta; o POST valida essa
+   escolha contra o mesmo contrato conta×forma. A escolha vale **só para aquele
+   fechamento** — o histórico não é reescrito.
+
+Provas (`evidencias/TASK_016/prova_fechamento_legado.py`):
+
+| Cenário | Resultado |
+|---|---|
+| venda com conta persistida | fecha e lança **na conta da venda** (11,00 → conta 166) |
+| venda sem conta, sem escolha | `conta_do_fechamento`, **0 lançamentos**, sessão continua **aberta** |
+| venda sem conta, com escolha | grava na conta escolhida (13,00 → conta 167), sessão fechada |
+| escolha inválida (espécie para PIX) | recusa, **0 lançamentos**, sessão aberta |
+
+O caso "sem conta" é hoje **vazio no DEV por construção**: as 58 sessões legadas
+já foram fechadas pela regra anterior. A coluna fica NULL nelas, e é exatamente o
+cenário que o teste cobre — se alguma for reaberta/reprocessada, ela pede a conta.
 
 ## 6. Aplicação no DEV
 
@@ -187,16 +252,16 @@ id/tipo/status/categoria/valor/data (alcance já documentado na TASK_014: não c
 
 ## 7. Limitações verdadeiras
 
-1. **Navegador não revalidado nesta tarefa.** A ordem pede (§7.9) seleção visível,
-   troca de forma e erro preservando formulário em desktop e celular. Eu **não**
-   executei a suíte de navegador contra um cenário de duas contas de espécie: a
-   verificação foi de comportamento por HTTP e de renderização de template. A
-   homologação visual é do dono.
-2. **PDV não pergunta a conta quando há duas de espécie.** Nesta entrega o PDV usa
-   o contrato, mas a tela não tem seletor: com duas contas de espécie ativas e sem
-   escolha, a venda é **recusada** (`conta_invalida`) em vez de gravar na conta
-   errada. É seguro, mas não é confortável — a tela do PDV ganhar o seletor é o
-   próximo passo natural (fora do escopo desta ordem, que preserva o layout).
+1. **Navegador — validado.** `test_t016_navegador.py` roda Chromium real com
+   duas contas de espécie e PIX em banco/poupança: **39/39**. Cobre escolha
+   visível, destino persistido, venda bloqueada sem escolha, recusa sem efeito,
+   formulário preservado após erro e ausência de rolagem horizontal em 412, 768,
+   1024 e 1366 nas telas de doação, fiado e mensalidade.
+2. **Defeito de layout pré-existente, não corrigido**: o PDV em **412px**
+   transborda 470px. Medi contra o commit anterior (`git stash`) e o resultado é
+   **idêntico** — não é regressão dos seletores desta tarefa. A suíte o registra
+   como conhecido em vez de silenciá-lo nas outras telas. Corrigi-lo é uma tarefa
+   de layout própria (o PDV não tem nenhuma media query).
 3. **Saldo inicial, conciliação e data de referência** continuam inexistentes —
    a ordem os deixa fora. O saldo é sempre a soma dos lançamentos.
 4. **Histórico sem destino** não existe no DEV (0 de 862 movimentos); nada foi

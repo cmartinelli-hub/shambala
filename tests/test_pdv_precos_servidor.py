@@ -645,7 +645,12 @@ def _rodar_rota_sem_http(p, itens, sessao=None, valor_recebido="50"):
             # TASK_012 §2: a rota exige identidade de tentativa; cada chamada
             # deste harness é uma tentativa nova (a prova continua sendo a
             # falha injetada e o rollback integral).
-            idempotencia=secrets.token_hex(16)))
+            idempotencia=secrets.token_hex(16),
+            # TASK_016: a rota passou a receber a conta de destino. O default de
+            # `Form(0)` só existe quando o FastAPI monta os parâmetros; chamando
+            # o corpo direto, o valor precisa ser passado — 0 significa "sem
+            # escolha explícita", que aqui resolve na única conta elegível.
+            conta_id=0, conta_pix_id=0))
     finally:
         rc._guard = original
 

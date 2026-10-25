@@ -626,6 +626,11 @@ def _migrar(conn):
         ("mediuns_dia", "vagas_dia", "INTEGER"),
         ("financeiro_movimentacoes", "caixa_id", "INTEGER REFERENCES caixas(id)"),
         ("caixas", "chave_pix_id", "INTEGER REFERENCES chaves_pix(id)"),
+        # TASK_016: a conta de destino da venda é decidida no PDV e PERSISTIDA
+        # aqui. É o vínculo comprovado que o fechamento de sessão legado lê em
+        # vez de adivinhar por tipo. Vendas anteriores a esta migração ficam com
+        # NULL de propósito — nada é atribuído retroativamente.
+        ("vendas_pdv", "conta_id", "INTEGER REFERENCES contas_financeiras(id)"),
         ("vendas_pdv", "fiado_trabalhador_id", "INTEGER REFERENCES trabalhadores(id)"),
         ("vendas_pdv", "fiado_pago", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ("vendas_pdv", "fiado_data_pagamento", "TEXT"),

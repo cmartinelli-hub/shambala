@@ -69,6 +69,15 @@ só, ela é o padrão e a tela mostra qual. `conta_id` integra o corpo da tentat
 `conta_id_por_tipo` devolve id só quando o tipo identifica UMA conta ativa — na
 ambiguidade devolve `None` de propósito.
 
+**Fechamento de sessão legado**: o destino vem de `vendas_pdv.conta_id`, gravado
+no momento da venda. Venda anterior à coluna (NULL) **não é deduzida**: o
+fechamento recusa (`conta_do_fechamento`), a tela pede a conta
+(`conta_legado_<forma>`) e o POST valida contra o mesmo contrato. Venda a fiado vai
+sempre para a conta de obrigações. Nada é atribuído retroativamente.
+
+Seletor de conta nas telas: macro `templates/_conta_destino.html` — usado no PDV,
+fiado, mensalidade, doação e fechamento. Não reimplementar o seletor à mão.
+
 Saldo na tela de contas: **Disponível** = entrada−saída com `status='pago'`;
 **Pendente** = a mesma conta com `pendente`. `areceber` aparece marcada como
 obrigação e **não** entra em "Recursos disponíveis". Contas de caixa seguem

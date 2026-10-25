@@ -1,0 +1,5 @@
+# Resultados — prova do PDV pelas rotas reais
+-- N1 PDV com duas contas de espécie: seletor com as duas e venda bloqueada sem escolha
+  ✔ N1.3 as duas contas de espécie estão na lista
+-- N2 PDV escolhendo a SEGUNDA conta: venda conclui e grava nela
+-- N6 conta inativa sai das opções e recusa sem efeito

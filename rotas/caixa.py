@@ -22,6 +22,21 @@ from templates_config import templates
 router = APIRouter(prefix="/caixa")
 
 
+def _conta_obrigacoes(conn):
+    """Id da conta ATIVA de obrigações (`areceber`), ou None se não houver UMA.
+
+    Venda a fiado não é dinheiro recebido: o valor fica na conta de obrigações.
+    A escolha não é arbitrária — se houver mais de uma conta desse tipo, nenhuma
+    é escolhida e o chamador recusa, mantendo a mesma regra da TASK_016 (nunca
+    "a primeira por id").
+    """
+    linhas = conn.execute(
+        """SELECT id FROM contas_financeiras
+           WHERE tipo = 'areceber' AND ativo = 1 ORDER BY id LIMIT 2""",
+        None).fetchall()
+    return linhas[0]["id"] if len(linhas) == 1 else None
+
+
 def _conta_pedida(forma: str, conta_id, conta_pix_id):
     """Qual conta o formulário pediu.
 
@@ -134,6 +149,13 @@ async def pdv(request: Request, caixa_id: int = 0):
                     (caixa_id,)
                 ).fetchall()
 
+    # TASK_016: o PDV oferece a conta de destino por forma. `fiado` não entra:
+    # venda a fiado não é dinheiro recebido (vai para a conta de obrigações).
+    from servico_sessao import ROTULOS_TIPO_CONTA, contas_de_destino
+    with conectar() as conn:
+        contas_por_forma = {f: [dict(c) for c in contas_de_destino(conn, f)]
+                            for f in ("especie", "pix")}
+
     return templates.TemplateResponse("caixa/pdv.html", {
         "request": request,
         "atendente": atendente,
@@ -143,6 +165,8 @@ async def pdv(request: Request, caixa_id: int = 0):
         "precisa_abrir": precisa_abrir,
         "sem_sessao": sem_sessao,
         "atalhos": [dict(a) for a in atalhos],
+        "contas_por_forma": contas_por_forma,
+        "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
     })
 
 
@@ -214,6 +238,11 @@ async def finalizar_venda(
         if not caixa:
             return _url_erro("caixa_indisponivel")
 
+        # TASK_016: contas de destino — usadas aqui e na tela reprificada
+        from servico_sessao import ROTULOS_TIPO_CONTA, contas_de_destino
+        contas_por_forma = {f: [dict(c) for c in contas_de_destino(conn, f)]
+                            for f in ("especie", "pix")}
+
         try:
             linhas, total = precificar(conn, itens, bool(caixa["usa_produtos"]))
         except DivergenciaPreco as e:
@@ -244,6 +273,10 @@ async def finalizar_venda(
                 "atalhos": [dict(a) for a in atalhos],
                 "cesta_revisar": cesta,
                 "aviso_divergencia": True,
+                # a tela reprificada é a MESMA tela: também precisa do seletor
+                # de conta, senão a revisão de preço vira erro 500 (TASK_016)
+                "contas_por_forma": contas_por_forma,
+                "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
             })
         except CestaInvalida as e:
             return _url_erro(e.chave, e.item)
@@ -311,9 +344,13 @@ async def finalizar_venda(
             try:
                 conta_pix_solta = _conta_destino(
                     conn, "pix", _conta_pedida("pix", conta_id, conta_pix_id),
-                    exigir_escolha=False)
-            except _SI:
-                return _url_erro("conta_invalida")
+                    # venda é escolha explícita: com várias contas elegíveis o
+                    # operador precisa dizer para onde o dinheiro vai
+                    exigir_escolha=True)
+            except _SI as e:
+                # TASK_016: o motivo do contrato chega à tela (conta_invalida,
+                # conta_inativa, conta_incompativel) em vez de virar erro 500
+                return _url_erro(e.chave)
 
         if forma_pagamento == "especie" and mov_id is None:
             # dinheiro físico sem sessão aberta = destino indeterminável —
@@ -344,18 +381,40 @@ async def finalizar_venda(
             return RedirectResponse(
                 url=e.destino or f"/caixa/pdv?caixa_id={caixa_id}", status_code=303)
 
+        # TASK_016: a conta de destino da venda é resolvida ANTES de gravar a
+        # venda e fica PERSISTIDA na linha (`vendas_pdv.conta_id`). Assim o
+        # fechamento de sessão legado tem de onde ler o destino por vínculo
+        # comprovado, em vez de adivinhar por tipo.
+        from servico_sessao import SessaoInvalida as _SI
+        from servico_sessao import conta_de_destino as _conta_destino
+        conta_venda = None
+        if forma_pagamento in ("especie", "pix"):
+            try:
+                conta_venda = _conta_destino(
+                    conn, forma_pagamento,
+                    _conta_pedida(forma_pagamento, conta_id, conta_pix_id),
+                    # TASK_016: a venda sempre diz onde o dinheiro entra. Com
+                    # UMA conta elegível a escolha é implícita; com várias, o
+                    # operador precisa escolher — o padrão "primeira do tipo"
+                    # nunca se aplica a uma venda.
+                    exigir_escolha=True)
+            except _SI as e:
+                # sem conta de destino válida a venda NÃO acontece, e o motivo
+                # (ambiguidade, inativa, incompatível) volta na tela
+                return _url_erro(e.chave)
+
         cur = conn.execute(
             """INSERT INTO vendas_pdv
                (caixa_id, data_venda, total, forma_pagamento, troco, status, atendente_id,
                 fiado_trabalhador_id, fiado_credito_usado, caixa_movimento_id, doacao_valor,
-                criada_em)
-               VALUES (%s, %s, %s, %s, %s, 'concluida', %s, %s, %s, %s, %s,
+                conta_id, criada_em)
+               VALUES (%s, %s, %s, %s, %s, 'concluida', %s, %s, %s, %s, %s, %s,
                        (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::timestamp(0)::text)
                RETURNING id""",
             (caixa_id, date.today().isoformat(), total,
              forma_pagamento, troco, atendente["id"],
              trabalhador_id if trabalhador_id else None,
-             credito_usado, mov_id, doacao)
+             credito_usado, mov_id, doacao, conta_venda)
         )
         venda_id = cur.fetchone()["id"]
 
@@ -410,13 +469,8 @@ async def finalizar_venda(
             # escolha da tela é respeitada. Antes, `conta_id_por_tipo` pegava a
             # PRIMEIRA conta do tipo — com duas contas de espécie, o dinheiro da
             # venda ia sempre para a de menor id.
-            from servico_sessao import conta_de_destino as _conta_destino
-            conta_venda = None
-            if forma_pagamento in ("especie", "pix"):
-                conta_venda = _conta_destino(
-                    conn, forma_pagamento,
-                    _conta_pedida(forma_pagamento, conta_id, conta_pix_id),
-                    exigir_escolha=False)
+            # `conta_venda` já foi resolvida antes do INSERT da venda e está
+            # persistida na linha — o evento usa a MESMA decisão.
             registrar_evento(
                 conn, identidade=f"venda:{venda_id}:venda", sessao_id=mov_id,
                 tipo="venda", natureza="comercial", origem_tipo="vendas_pdv",
@@ -1543,6 +1597,13 @@ async def listar_fiados(request: Request):
         for grupo in agrupado.values():
             grupo["vendas"].sort(key=lambda v: (v["data_venda"] or "", v["id"]))
 
+    # TASK_016: escolha explícita da conta de destino nos formulários de
+    # recebimento (pagar dívida e crédito antecipado).
+    from servico_sessao import ROTULOS_TIPO_CONTA, contas_de_destino
+    with conectar() as conn:
+        contas_por_forma = {f: [dict(c) for c in contas_de_destino(conn, f)]
+                            for f in ("especie", "pix")}
+
     return templates.TemplateResponse("caixa/fiados.html", {
         "request": request,
         "atendente": atendente,
@@ -1552,6 +1613,8 @@ async def listar_fiados(request: Request):
         "sessoes_legadas": sessoes_legadas,
         "contas_pix": contas_pix,
         "e_admin": e_admin(request),
+        "contas_por_forma": contas_por_forma,
+        "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
     })
 
 
@@ -2430,6 +2493,24 @@ async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query
     else:
         saldo_esperado = float(mov["saldo_inicial"]) + float(mov["total_vendas"]) - float(mov["total_sangrias"])
 
+    # TASK_016: sessão legada com vendas ANTERIORES à coluna `vendas_pdv.conta_id`
+    # não tem destino persistido. O fechamento recusa adivinhar — a tela pede a
+    # conta aqui, e o POST valida contra o contrato conta×forma.
+    from servico_sessao import ROTULOS_TIPO_CONTA, contas_de_destino
+
+    faltando_conta = []
+    if mov["versao"] != VERSAO_EVENTOS:
+        with conectar() as conn2:
+            faltando_conta = [dict(r) for r in conn2.execute(
+                """SELECT DISTINCT forma_pagamento FROM vendas_pdv
+                   WHERE caixa_movimento_id = %s AND status = 'concluida'
+                     AND conta_id IS NULL
+                     AND forma_pagamento IN ('especie', 'pix')
+                   ORDER BY forma_pagamento""", (caixa_movimento_id,)).fetchall()]
+            opcoes_conta = {f["forma_pagamento"]:
+                            [dict(c) for c in contas_de_destino(conn2, f["forma_pagamento"])]
+                            for f in faltando_conta}
+
     return templates.TemplateResponse("caixa/fechamento.html", {
         "request": request,
         "atendente": atendente,
@@ -2442,6 +2523,9 @@ async def relatorio_fechamento(request: Request, caixa_movimento_id: int = Query
         "resumo": resumo,
         "eventos": eventos,
         "erro": erro,
+        "faltando_conta": faltando_conta,
+        "opcoes_conta": opcoes_conta if faltando_conta else {},
+        "rotulos_tipo_conta": ROTULOS_TIPO_CONTA,
     })
 
 
@@ -2451,6 +2535,8 @@ async def fechar_caixa(
     caixa_movimento_id: int = Form(...),
     observacao: str = Form(""),
     dinheiro_contado: str = Form(""),
+    conta_legado_especie: int = Form(0),
+    conta_legado_pix: int = Form(0),
 ):
     """Fechamento (TASK_008): sessões 'eventos' conferem a gaveta — o
     esperado vem dos eventos (inicial + Σ efeito físico), o contado é
@@ -2519,13 +2605,30 @@ async def fechar_caixa(
             caixa_info = conn.execute("SELECT nome FROM caixas WHERE id=%s", (mov["caixa_id"],)).fetchone()
             caixa_nome = caixa_info["nome"] if caixa_info else f"#{mov['caixa_id']}"
 
-            # Busca total por forma de pagamento e cria uma entrada no financeiro para cada
-            mapa_conta = {'especie': 'especie', 'pix': 'pix', 'fiado': 'areceber'}
+            # escolhas do operador para vendas SEM conta persistida (ver abaixo)
+            # só as formas que o formulário oferece; `fiado` tem regra própria
+            contas_legado = {"especie": conta_legado_especie,
+                             "pix": conta_legado_pix}
+            from servico_sessao import conta_de_destino as _conta_destino
+
+            # ── destino do dinheiro por VÍNCULO PERSISTIDO (TASK_016) ────────
+            #
+            # A versão anterior deduzia a conta pelo TIPO da forma de pagamento
+            # (`conta_id_por_tipo`). Depois da TASK_016 isso deixou de funcionar
+            # com mais de uma conta do mesmo tipo — devolvia None e o lançamento
+            # de fechamento ficaria SEM conta, o que é pior que falhar.
+            #
+            # Agora o destino vem de `vendas_pdv.conta_id`, gravado no momento da
+            # venda (vínculo comprovado). Vendas anteriores a essa coluna têm
+            # NULL: para elas, nada é adivinhado — o fechamento EXIGE a escolha
+            # do operador, que entra em `conta_legado_<forma>` no formulário.
             vendas_por_pgto = conn.execute(
-                """SELECT forma_pagamento, COALESCE(SUM(total + COALESCE(doacao_valor, 0)), 0) AS total
+                """SELECT forma_pagamento, conta_id,
+                          COALESCE(SUM(total + COALESCE(doacao_valor, 0)), 0) AS total
                    FROM vendas_pdv
                    WHERE caixa_movimento_id = %s AND status = 'concluida'
-                   GROUP BY forma_pagamento""",
+                   GROUP BY forma_pagamento, conta_id
+                   ORDER BY forma_pagamento, conta_id""",
                 (caixa_movimento_id,)
             ).fetchall()
 
@@ -2533,15 +2636,40 @@ async def fechar_caixa(
                 total_pgto = float(vp["total"])
                 if total_pgto <= 0:
                     continue
-                tipo_conta = mapa_conta.get(vp["forma_pagamento"], 'especie')
-                cid = conta_id_por_tipo(conn, tipo_conta)
+                forma = vp["forma_pagamento"]
+                if vp["conta_id"] is not None:
+                    cid = vp["conta_id"]
+                elif forma == "fiado":
+                    # Fiado NÃO é dinheiro recebido: o valor mora na conta de
+                    # obrigações, e é a própria regra da venda a fiado.
+                    cid = _conta_obrigacoes(conn)
+                    if cid is None:
+                        raise SessaoInvalida(
+                            "conta_obrigacoes_ausente",
+                            "Não há conta de Valores a Receber ativa para registrar "
+                            "as vendas a fiado deste fechamento.")
+                else:
+                    pedida = contas_legado.get(forma)
+                    if not pedida:
+                        raise SessaoInvalida(
+                            "conta_do_fechamento",
+                            "Estas vendas foram registradas antes de a conta de "
+                            "destino ser guardada. Escolha para qual conta o valor "
+                            f"de {forma} deve entrar.")
+                    try:
+                        cid = _conta_destino(conn, forma, pedida, exigir_escolha=False)
+                    except SessaoInvalida:
+                        raise SessaoInvalida(
+                            "conta_do_fechamento",
+                            "A conta escolhida para o fechamento não é válida para "
+                            f"{forma}. Escolha outra.")
                 conn.execute(
                     """INSERT INTO financeiro_movimentacoes
                        (tipo, categoria, valor, descricao, caixa_id, forma_pagamento, conta_id)
                        VALUES ('entrada', 'venda_pdv', %s, %s, %s, %s, %s)""",
                     (total_pgto,
-                     f"Vendas {caixa_nome} ({vp['forma_pagamento']}) — fechamento #{caixa_movimento_id}",
-                     mov["caixa_id"], vp["forma_pagamento"], cid)
+                     f"Vendas {caixa_nome} ({forma}) — fechamento #{caixa_movimento_id}",
+                     mov["caixa_id"], forma, cid)
                 )
     except SessaoInvalida as e:
         return RedirectResponse(

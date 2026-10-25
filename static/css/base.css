@@ -5108,3 +5108,31 @@ h1 .icone, h2 .icone, h3 .icone, .fin-titulo .icone {
 
 /* Estado sem imagem (arquivo ausente): não deixa "quadrado quebrado". */
 .icone[alt=""] { color: transparent; }
+
+/* TASK_016 — seletor de conta no PDV: mesmo espaço do bloco de pagamento,
+   sem aumentar a coluna nem empurrar carrinho/total. */
+.pdv-conta { margin: .4rem 0; }
+.pdv-conta > label {
+    display: block;
+    font-size: .8rem;
+    color: var(--cor-texto-suave);
+    margin-bottom: .25rem;
+}
+.pdv-conta-sel {
+    width: 100%;
+    padding: .45rem;
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    font-size: .9rem;
+}
+.pdv-conta-fixa {
+    padding: .45rem;
+    border: 1px solid var(--cor-borda);
+    border-radius: var(--raio);
+    background: var(--cor-fundo-suave, #f7f7f7);
+    font-size: .9rem;
+}
+.pdv-conta-fixa small { color: var(--cor-texto-suave); }
+.pdv-conta-erro { color: #c0392b; font-size: .82rem; }
+/* No celular o seletor ocupa a linha inteira e não estica a página */
+.pdv-conta, .pdv-conta-sel, .pdv-conta-fixa { max-width: 100%; box-sizing: border-box; }

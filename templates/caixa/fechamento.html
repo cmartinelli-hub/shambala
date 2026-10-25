@@ -306,6 +306,38 @@
     </p>
     <form method="post" action="/caixa/fechar" onsubmit="return confirm('Tem certeza que deseja fechar o caixa? Esta ação não pode ser desfeita.')">
         <input type="hidden" name="caixa_movimento_id" value="{{ movimento.id }}">
+        {# TASK_016: vendas antigas não têm a conta de destino guardada. O
+           fechamento não adivinha: o operador escolhe aqui, e o servidor valida
+           contra o contrato conta×forma antes de qualquer escrita. #}
+        {% for f in faltando_conta %}
+        <div class="campo">
+            <label for="cl-{{ f.forma_pagamento }}">
+                Onde entra o valor de <strong>{{ f.forma_pagamento }}</strong> destas vendas?
+            </label>
+            {% set opcoes = opcoes_conta.get(f.forma_pagamento, []) %}
+            {% if opcoes | length == 1 %}
+            <input type="hidden" name="conta_legado_{{ f.forma_pagamento }}" value="{{ opcoes[0].id }}">
+            <div style="padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio);background:var(--cor-fundo-suave, #f7f7f7)">
+                {{ opcoes[0].nome }}
+                <small style="color:var(--cor-texto-suave)">— {{ rotulos_tipo_conta.get(opcoes[0].tipo, opcoes[0].tipo) }}</small>
+            </div>
+            {% elif opcoes %}
+            <select id="cl-{{ f.forma_pagamento }}" name="conta_legado_{{ f.forma_pagamento }}" required
+                    style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
+                <option value="">— escolha a conta —</option>
+                {% for c in opcoes %}
+                <option value="{{ c.id }}">{{ c.nome }} — {{ rotulos_tipo_conta.get(c.tipo, c.tipo) }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <div style="color:#c0392b">Nenhuma conta ativa recebe {{ f.forma_pagamento }}:
+                o fechamento será recusado até que exista uma conta válida.</div>
+            {% endif %}
+            <small style="color:var(--cor-texto-suave);display:block;margin-top:.3rem">
+                Vendas registradas antes de o destino ser guardado. Esta escolha vale
+                só para este fechamento; o histórico não é alterado.</small>
+        </div>
+        {% endfor %}
         {% if resumo %}
         <div style="margin-bottom:1rem;max-width:400px;margin-left:auto;margin-right:auto">
             <label for="dinheiro_contado" style="font-weight:600;display:block;margin-bottom:.3rem;font-size:.9rem">

@@ -439,6 +439,37 @@
                 {% endif %}
             </div>
 
+            {# TASK_016: o DESTINO do dinheiro fica explícito. Com uma conta
+               elegível por forma, ela aparece como padrão (campo oculto); com
+               mais de uma, o operador escolhe — e a venda não é finalizada sem
+               essa escolha. Fica no bloco de pagamento que já existia, sem
+               mudar a organização da tela. #}
+            {% for forma, rotulo in [('especie', 'Espécie'), ('pix', 'PIX')] %}
+            {% set opcoes = contas_por_forma.get(forma, []) %}
+            <div class="pdv-conta" id="conta-{{ forma }}" {% if forma == 'pix' %}style="display:none"{% endif %}>
+                <label for="sel-conta-{{ forma }}">O valor de {{ rotulo }} entra em qual conta?</label>
+                {% if opcoes | length == 1 %}
+                <input type="hidden" name="conta_{{ forma }}" id="f-conta-{{ forma }}" value="{{ opcoes[0].id }}">
+                <div class="pdv-conta-fixa">
+                    {{ opcoes[0].nome }}
+                    <small>{{ rotulos_tipo_conta.get(opcoes[0].tipo, opcoes[0].tipo) }}</small>
+                </div>
+                {% elif opcoes %}
+                <select id="sel-conta-{{ forma }}" class="pdv-conta-sel"
+                        onchange="document.getElementById('f-conta-{{ forma }}').value = this.value">
+                    <option value="">— escolha a conta —</option>
+                    {% for c in opcoes %}
+                    <option value="{{ c.id }}">{{ c.nome }} — {{ rotulos_tipo_conta.get(c.tipo, c.tipo) }}</option>
+                    {% endfor %}
+                </select>
+                <input type="hidden" name="conta_{{ forma }}" id="f-conta-{{ forma }}" value="">
+                {% else %}
+                <div class="pdv-conta-erro">Nenhuma conta ativa recebe {{ rotulo }}:
+                    a venda será recusada. Confira as contas em Configurações.</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+
             <div class="pdv-especie{% if not sem_sessao %} ativo{% endif %}" id="painel-especie">
                 <label for="valor-recebido">Valor recebido (R$)</label>
                 <input type="number" id="valor-recebido" class="pdv-input-valor"
@@ -499,6 +530,8 @@
     {{ campo_idempotencia() }}
     <input type="hidden" name="caixa_id" value="{{ caixa_sel.id }}">
     <input type="hidden" name="forma_pagamento" id="f-pagamento">
+    {# a conta é copiada do seletor da forma escolhida no momento de finalizar #}
+    <input type="hidden" name="conta_id" id="f-conta-id" value="">
     <input type="hidden" name="valor_recebido" id="f-valor-recebido">
     <input type="hidden" name="itens_json" id="f-itens-json">
     <input type="hidden" name="trabalhador_id" id="f-trabalhador-id" value="0">
@@ -781,6 +814,11 @@ document.querySelectorAll('input[name="pgto"]').forEach(r => {
         document.getElementById('painel-especie').classList.toggle('ativo', r.value === 'especie');
         document.getElementById('painel-pix').classList.toggle('ativo', r.value === 'pix');
         document.getElementById('painel-fiado').classList.toggle('ativo', r.value === 'fiado');
+        // TASK_016: o seletor de conta acompanha a forma escolhida
+        ['especie', 'pix'].forEach((f) => {
+            const bloco = document.getElementById('conta-' + f);
+            if (bloco) bloco.style.display = (r.value === f) ? '' : 'none';
+        });
         if (r.value === 'especie') calcTroco();
     });
 });
@@ -866,6 +904,9 @@ function submeterVenda(comImpressao) {
         return;
     }
 
+    // TASK_016: a conta de destino vai junto — e sem ela a venda não sai.
+    if (!_definirConta(pgto)) return;
+
     // Espécie — submit directly
     document.getElementById('f-pagamento').value = pgto;
     document.getElementById('f-valor-recebido').value =
@@ -875,11 +916,35 @@ function submeterVenda(comImpressao) {
     document.getElementById('form-finalizar').submit();
 }
 
+/* Copia a conta da forma escolhida para o campo enviado ao servidor.
+   Devolve false (e avisa) quando há mais de uma conta e nenhuma foi escolhida:
+   melhor recusar na tela, com o carrinho preservado, do que gravar na conta
+   errada. O servidor valida de novo — isto é conveniência, não autoridade. */
+function _definirConta(forma) {
+    const destino = document.getElementById('f-conta-id');
+    const campo = document.getElementById('f-conta-' + forma);
+    const sel = document.getElementById('sel-conta-' + forma);
+    let valor = (campo ? campo.value : '') || '';
+    if (sel) valor = sel.value || '';
+    if (!valor) {
+        if (sel) {
+            sel.style.borderColor = '#c0392b';
+            sel.focus();
+            if (sel.reportValidity) sel.reportValidity();
+        }
+        destino.value = '';
+        return false;
+    }
+    destino.value = valor;
+    return true;
+}
+
 document.getElementById('btn-finalizar').addEventListener('click', () => submeterVenda(false));
 document.getElementById('btn-finalizar-sem-impressao').addEventListener('click', () => submeterVenda(true));
 
 // ── Modal PIX: finalizar buttons ────────────────────────────────────────────
 function _submeterPix(comImpressao) {
+    if (!_definirConta('pix')) return;
     const doacao = parseFloat(document.getElementById('pix-doacao').dataset.doacaoAtual || '0') || 0;
     document.getElementById('f-pagamento').value = 'pix';
     document.getElementById('f-valor-recebido').value = 0;

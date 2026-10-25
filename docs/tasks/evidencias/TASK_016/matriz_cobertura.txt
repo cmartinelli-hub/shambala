@@ -1,0 +1,58 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025162600-1659536 (identifica ESTA execução nas provas)
+  árvore ..: 1ba3b85faf828feb0b603eb56dec7a44384e486d-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2920
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025162600-1659536
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025162600-1659536'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_t016_matriz.py
+[ok] banco shambala_test_passes / servidor http://127.0.0.1:9011 (token t010-20261025162600-1659536)
+-- E1 fluxo individual: um recebimento grava na conta escolhida
+  ✔ E1.1 a doação foi aceita
+  ✔ E1.2 o valor entrou na conta ESCOLHIDA
+  ✔ E1.3 há exatamente um lançamento e na conta certa
+-- E2 fluxo EM LOTE: separa por conta e preserva o total em centavos
+  ✔ E2.1 o lote foi aceito
+  ✔ E2.2 o total do lote caiu inteiro na conta escolhida
+  ✔ E2.3 a outra conta de espécie NÃO recebeu nada
+  ✔ E2.4 lote idêntico em OUTRA conta vai para a conta nova
+-- E3 idempotência: mesma chave/troca de conta
+  ✔ E3.1 primeira tentativa aceita na gaveta
+  ✔ E3.2 gravou uma vez na gaveta
+  ✔ E3.3 reenvio idêntico (mesma conta) NÃO grava de novo
+  ✔ E3.4 mesma chave com conta DIFERENTE é conflito, sem escrita
+-- E4 inativação concorrente: escolhida na tela, inativada antes do envio
+  ✔ E4.1 o servidor recusou com motivo próprio (conta inativa)
+  ✔ E4.2 nada foi gravado na conta inativada
+-- E5 fechamento legado e cancelamento de venda
+  ✔ E5.1 fechamento usa a conta PERSISTIDA na venda
+  ✔ E5.2 sem vínculo o fechamento RECUSA e não escreve nada
+  ✔ E5.3 com a escolha do operador grava na conta escolhida
+  ✔ E5.4 escolha inválida no fechamento RECUSA sem escrita
+  ✔ E5.5 a venda foi cancelada
+  ✔ E5.6 o efeito físico da venda cancelada foi estornado
+  ✔ E5.7 o cancelamento não mexeu no saldo da conta
+-- E6 saldo anterior ao período não desaparece
+  ✔ E6.1 o saldo ANTERIOR ao período soma só o histórico
+  ✔ E6.2 o recebimento de hoje soma ao saldo anterior
+  ✔ E6.3 o saldo anterior não foi recalculado nem reescrito
+  ✔ E6.4 a tela de contas mostra o acumulado da conta histórica
+
+[resultado] aprovadas=24 falhas=0
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_t016_matriz.py: rc=0
+tests/rodar_testes.sh, linha 89: 1659602 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2920
+  depois: pessoas=678 checkins=2920
+  DEV inalterado: ok
