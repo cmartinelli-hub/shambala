@@ -90,7 +90,6 @@ não usam os demais filtros. Refine as pendências na aba “A receber / A pagar
             <label>Atalhos</label>
             <span class="fin-atalhos">
                 <a href="{{ url_mes_anterior }}">Mês anterior</a>
-                ·
                 <a href="{{ url_mes_atual }}">Mês atual</a>
             </span>
         </div>
@@ -157,7 +156,8 @@ Recebimentos/Pagamentos.</p>
 {% endif %}
 
 {% if movs %}
-<table class="fin-tabela fin-somente-desktop">
+<div class="fin-rolo fin-somente-desktop">
+<table class="fin-tabela">
     <thead>
         <tr>
             <th>Data</th>
@@ -189,6 +189,7 @@ Recebimentos/Pagamentos.</p>
     {% endfor %}
     </tbody>
 </table>
+</div>
 
 <div class="fin-somente-mobile">
     {% for m in movs %}
@@ -237,7 +238,7 @@ Recebimentos/Pagamentos.</p>
 <p class="fin-legenda">Entradas e saídas <em>registradas</em> no período — não é saldo
 disponível nem conciliação bancária. Transferências internas aparecem na conta
 de destino/origem com natureza “Transferência”.</p>
-<div class="grade-cards">
+<div class="grade-cards fin-contas">
     {% for cm in contas_mov %}
     <div class="card-stat{% if cm.tipo == 'areceber' %} fin-card-obrigacao{% endif %}">
         <div class="stat-label">{{ cm.nome }}</div>
@@ -260,7 +261,8 @@ Para dar baixa, use as telas de Mensalidades e Fiados (nenhuma baixa acontece aq
 
 {% if pendentes %}
 <h3 class="fin-subtitulo">A receber e a pagar ({{ n_pend_total }} registro(s) · A receber {{ a_receber|moeda }} · A pagar {{ a_pagar|moeda }})</h3>
-<table class="fin-tabela fin-somente-desktop">
+<div class="fin-rolo fin-somente-desktop">
+<table class="fin-tabela">
     <thead>
         <tr>
             <th>Vencimento</th>
@@ -295,6 +297,7 @@ Para dar baixa, use as telas de Mensalidades e Fiados (nenhuma baixa acontece aq
     {% endfor %}
     </tbody>
 </table>
+</div>
 
 <div class="fin-somente-mobile">
     {% for p in pendentes %}
@@ -336,7 +339,8 @@ Para dar baixa, use as telas de Mensalidades e Fiados (nenhuma baixa acontece aq
 <p class="fin-legenda">Vendas a fiado ainda não recebidas, organizadas por data da venda —
 o banco não registra vencimento para elas, por isso não compõem o total acima.</p>
 {% if fiados %}
-<table class="fin-tabela fin-somente-desktop">
+<div class="fin-rolo fin-somente-desktop">
+<table class="fin-tabela">
     <thead>
         <tr><th>Venda em</th><th>Trabalhador</th><th class="fin-col-valor">Valor</th><th></th></tr>
     </thead>
@@ -351,6 +355,7 @@ o banco não registra vencimento para elas, por isso não compõem o total acima
     {% endfor %}
     </tbody>
 </table>
+</div>
 <div class="fin-somente-mobile">
     {% for f in fiados %}
     <div class="fin-linha" style="cursor:default">

@@ -11,7 +11,9 @@ dono vê e faz na tela, com Chromium real:
 - paginação server-side com contagens estáveis;
 - aba "A receber / A pagar" com fiado em grupo próprio e fora do indicador;
 - smartphone (412×915) sem scroll horizontal e com as linhas expansíveis;
-- foco por teclado alcançando os controles do formulário de filtros.
+- foco por teclado alcançando os controles do formulário de filtros;
+- larguras de 412 a 1366 com um lançamento de R$ 1.234.567,89: nenhum número
+  corta dentro do cartão e nenhuma página ganha rolagem horizontal.
 
 Dados fictícios com prefixo T011N na janela 2026-06 de banco descartável; o
 destino do script E do servidor HTTP é provado antes de qualquer escrita
@@ -185,15 +187,16 @@ def _esperar_texto(pagina, trecho, segundos=8):
         raise AssertionError(f"a tela não mostrou {trecho!r}")
 
 
-def _evidencia(pagina, nome):
+def _evidencia(pagina, nome, pagina_inteira=False):
     os.makedirs(EVIDENCIAS, exist_ok=True)
-    pagina.screenshot(path=os.path.join(EVIDENCIAS, nome + ".png"))
+    pagina.screenshot(path=os.path.join(EVIDENCIAS, nome + ".png"),
+                      full_page=pagina_inteira)
 
 
 # ── 5. Fixtures fictícias (janela 2026-06, soma combinada à mão) ────────────
-# Recebimentos = 28×1,00 + 100 + 50 = 178,00 · Pagamentos = 30,00
-# Resultado = 148,00 · A receber = 60,00 · A pagar = 25,00 · Fiado = 45,00
-# Movimentações na janela = 37 (inclui par de transferência, histórico e cancelado)
+# Recebimentos = 28×1,00 + 100 + 50 + 1.234.567,89 = 1.234.745,89 · Pagamentos = 30,00
+# Resultado = 1.234.715,89 · A receber = 60,00 · A pagar = 25,00 · Fiado = 45,00
+# Movimentações na janela = 38 (inclui par de transferência, histórico e cancelado)
 def _semeadura():
     criar_tabelas()
     from rotas.auth import hash_senha
@@ -256,6 +259,9 @@ def _semeadura():
                f"{PREFIXO} linha {i + 1:02d}", "pago", cid_esp)
         fm("entrada", "venda_pdv", "100.00", "2026-06-05", f"{PREFIXO} venda", "pago", cid_esp)
         fm("entrada", "doacao", "50.00", "2026-06-06", f"{PREFIXO} doação", "pago", cid_pix)
+        # valor muito acima dos fixtures: é assim que a tela precisa se comportar
+        fm("entrada", "outros", "1234567.89", "2026-06-25", f"{PREFIXO} dízima grande",
+           "pago", cid_esp)
         fm("saida", "compra", "30.00", "2026-06-07", f"{PREFIXO} compra", "pago", cid_pix)
         fm("saida", "transferencia", "200.00", "2026-06-15", f"{PREFIXO} depósito (origem)",
            "pago", cid_esp)
@@ -288,15 +294,15 @@ def n1():
         corpo = pagina.inner_text("body")
         verificar("N1 período em destaque (01/06/2026 a 30/06/2026)",
                   "01/06/2026" in corpo and "30/06/2026" in corpo)
-        verificar("N1 cartão Recebimentos = + R$ 178,00 (sem transferência/sangria/histórico)",
-                  "+ R$ 178,00" in corpo)
+        verificar("N1 cartão Recebimentos = + R$ 1.234.745,89 (com ponto de milhar; "
+                  "sem transferência/sangria/histórico)", "+ R$ 1.234.745,89" in corpo)
         verificar("N1 cartão Pagamentos = − R$ 30,00", "− R$ 30,00" in corpo)
-        verificar("N1 cartão Resultado = R$ 148,00", "R$ 148,00" in corpo)
+        verificar("N1 cartão Resultado = R$ 1.234.715,89", "R$ 1.234.715,89" in corpo)
         verificar("N1 cartão A receber = R$ 60,00", "R$ 60,00" in corpo)
         verificar("N1 resultado declara 'Não é saldo disponível'",
                   pagina.locator(".fin-def", has_text="Não é saldo").count() == 1)
-        verificar("N1 aba Movimentações traz a contagem do recorte (37)",
-                  "Movimentações (37)" in corpo)
+        verificar("N1 aba Movimentações traz a contagem do recorte (38)",
+                  "Movimentações (38)" in corpo)
         verificar("N1 primeira linha já rotula o registro histórico a conferir",
                   "Registro histórico" in corpo)
         verificar("N1 cancelado permanece listado com situação própria",
@@ -304,6 +310,8 @@ def n1():
         verificar("N1 administrador vê a ação Nova movimentação separada da navegação",
                   pagina.locator(".fin-nav").count() == 1
                   and pagina.get_by_text("Nova movimentação").count() == 1)
+        verificar("N1 a página chama o CSS versionado (à prova de cache antigo)",
+                  "css/base.css?v=" in pagina.content())
         _evidencia(pagina, "depois-resumo-desktop")
 
 
@@ -354,19 +362,19 @@ def n4():
     with _operador() as op:
         pagina = op.abrir(f"/financeiro?{JANELA}")
         corpo = pagina.inner_text("body")
-        verificar("N4 página 1 de 2 exibindo 1–25 de 37",
-                  "exibindo 1–25 de 37" in corpo)
+        verificar("N4 página 1 de 2 exibindo 1–25 de 38",
+                  "exibindo 1–25 de 38" in corpo)
         pagina.click(".fin-paginacao a:has-text('Próxima')")
         pagina.wait_for_url("**pagina=2**")
         corpo = pagina.inner_text("body")
-        verificar("N4 página 2 exibe as 12 restantes (26–37)",
-                  "exibindo 26–37 de 37" in corpo)
+        verificar("N4 página 2 exibe as 13 restantes (26–38)",
+                  "exibindo 26–38 de 38" in corpo)
         verificar("N4 filtros preservados ao paginar (de/ate continuam na URL)",
                   DE in pagina.url and ATE in pagina.url)
         pagina.click(".fin-paginacao a:has-text('100/pág')")
         pagina.wait_for_url("**por=100**")
-        verificar("N4 página inteira com 100 mostra as 37 linhas",
-                  len(pagina.locator(".fin-somente-desktop tbody tr").all()) == 37)
+        verificar("N4 página inteira com 100 mostra as 38 linhas",
+                  len(pagina.locator(".fin-somente-desktop tbody tr").all()) == 38)
 
 
 @cenario("N5 aba A receber / A pagar separa obrigações do fiado em aberto")
@@ -394,13 +402,22 @@ def n6():
         scroll = pagina.evaluate("document.documentElement.scrollWidth")
         verificar("N6 nenhuma barra de rolagem horizontal na visão geral",
                   scroll <= SMARTPHONE[0], f"scrollWidth={scroll}")
+        corpo = pagina.inner_text("body")
+        verificar("N6 o valor grande aparece com ponto de milhar também no celular",
+                  "R$ 1.234.745,89" in corpo)
+        estouro = pagina.evaluate("""() => [...document.querySelectorAll(
+              '.fin-cards .stat-valor')]
+              .filter(e => e.scrollWidth > e.clientWidth + 1)
+              .map(e => e.textContent.trim())""")
+        verificar("N6 o valor grande cabe dentro do cartão (sem cortar o número)",
+                  estouro == [], f"estouram: {estouro}")
         verificar("N6 tabela desktop oculta; linhas do celular presentes",
                   not pagina.locator(".fin-somente-desktop").first.is_visible()
                   and pagina.locator("details.fin-linha").count() == 25)
+        _evidencia(pagina, "depois-resumo-smartphone", pagina_inteira=True)
         pagina.locator("details.fin-linha").first.locator("summary").click()
         _esperar_texto(pagina, "Natureza")
         verificar("N6 linha expande e mostra natureza, conta e situação", True)
-        _evidencia(pagina, "depois-resumo-smartphone")
         pagina.locator("details.fin-linha").first.click()  # recolhe
         linha2 = pagina.locator("details.fin-linha").nth(1)
         linha2.locator("summary").click()
@@ -433,6 +450,21 @@ def n7():
                   alvos.issubset(vistos_ids), f"faltaram {sorted(alvos - vistos_ids)}")
         verificar("N7 Tab alcança links e botões (abas, Filtrar, Ver)",
                   {"a", "button"}.issubset(vistos_tags), f"{sorted(vistos_tags)}")
+
+
+@cenario("N8 larguras intermediárias: o valor grande nunca estoura o cartão nem a página")
+def n8():
+    for largura, altura in ((1366, 768), (1024, 768), (820, 1180), (768, 1024), (412, 915)):
+        with _operador(largura=largura, altura=altura) as op:
+            pagina = op.abrir(f"/financeiro?{JANELA}")
+            scroll = pagina.evaluate("document.documentElement.scrollWidth")
+            estouro = pagina.evaluate("""() => [...document.querySelectorAll(
+                  '.fin-cards .stat-valor, .fin-contas .stat-valor')]
+                  .filter(e => e.scrollWidth > e.clientWidth + 1)
+                  .map(e => e.textContent.trim())""")
+            verificar(f"N8 {largura}px: sem rolagem horizontal e sem número cortado",
+                      scroll <= largura and not estouro,
+                      f"scrollWidth={scroll} estouram={estouro}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════

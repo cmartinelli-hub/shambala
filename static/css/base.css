@@ -4936,8 +4936,25 @@ td.acoes { white-space: nowrap; text-align: right; }
 }
 .fin-aviso-ok { background: #e8f6ee; border-color: #9fd4b2; }
 
-.fin-cards .stat-valor { font-size: 1.6rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Os valores não podem quebrar linha (número com ponto de milhar é uma
+   unidade só), então a fonte se ajusta à largura do cartão — sem isso, um
+   "R$ 1.234.567,89" estoura o cartão no celular e gera rolagem horizontal. */
+.fin-cards { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.fin-cards .card-stat { min-width: 0; container-type: inline-size; }
+.fin-cards .stat-valor {
+    font-size: clamp(1.1rem, 4.5vw, 1.6rem);
+    font-size: min(1.6rem, 8.6cqi);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
 .fin-valor-menor { font-size: 1.05rem; }
+.fin-contas { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.fin-contas .card-stat { min-width: 0; container-type: inline-size; }
+.fin-contas .stat-valor {
+    font-size: min(1.05rem, 6.2cqi);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
 .fin-entrada { color: #1da851; }
 .fin-saida { color: #d23b3b; }
 .fin-pendente { color: #b07a00; }
@@ -4959,10 +4976,19 @@ td.acoes { white-space: nowrap; text-align: right; }
 .fin-tab-ativa { background: var(--cor-primaria); color: #fff; }
 .fin-tab-ativa:hover { background: var(--cor-primaria); }
 
-.fin-atalhos { display: flex; gap: .4rem; align-items: center; padding: .5rem 0; font-size: .9rem; }
+.fin-atalhos {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .15rem;
+    white-space: nowrap;
+    font-size: .9rem;
+}
 .fin-atalhos a { color: var(--cor-primaria); }
 
 .fin-tabela { font-variant-numeric: tabular-nums; }
+/* em larguras estreitas o extrato rola dentro de si, nunca na página inteira */
+.fin-rolo { max-width: 100%; overflow-x: auto; }
 .fin-tabela td, .fin-tabela th { vertical-align: top; }
 .fin-col-valor { text-align: right; white-space: nowrap; }
 .fin-data { white-space: nowrap; }
@@ -4996,7 +5022,8 @@ td.acoes { white-space: nowrap; text-align: right; }
     .fin-somente-desktop { display: none; }
     .fin-somente-mobile { display: block; }
     .fin-acoes { align-items: stretch; width: 100%; }
-    .fin-cards .stat-valor { font-size: 1.35rem; }
+    .fin-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .fin-cards .stat-valor { font-size: min(1.35rem, 8.6cqi); }
     .fin-linha {
         background: var(--cor-superficie);
         border-radius: var(--raio);
@@ -5014,4 +5041,7 @@ td.acoes { white-space: nowrap; text-align: right; }
     .fin-linha-desc { flex: 1; min-width: 0; overflow-wrap: anywhere; }
     .fin-linha-corpo { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: .6rem 0; font-size: .85rem; }
     .fin-linha-corpo dt { color: var(--cor-texto-suave); }
+}
+@media (max-width: 480px) {
+    .fin-cards { grid-template-columns: minmax(0, 1fr); }
 }

@@ -1,6 +1,8 @@
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+import os
+
 
 class _TemplatesCompat(Jinja2Templates):
     """Aceita a assinatura antiga (nome, dict) e a nova (request, nome, dict)."""
@@ -18,6 +20,8 @@ class _TemplatesCompat(Jinja2Templates):
 
 
 templates = _TemplatesCompat(directory="templates")
+
+_PASTA_ESTATICA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
 def _data_br(valor: str) -> str:
@@ -56,9 +60,19 @@ def _moeda(valor) -> str:
     return f"{sinal}R$ {milhar},{frac}"
 
 
+def _asset_url(caminho: str) -> str:
+    """/static/<caminho>?v=<mtime> — evita que o navegador reutilize CSS antigo."""
+    try:
+        versao = int(os.stat(os.path.join(_PASTA_ESTATICA, caminho)).st_mtime)
+    except OSError:
+        versao = 0
+    return f"/static/{caminho}?v={versao}"
+
+
 templates.env.filters["data_br"] = _data_br
 templates.env.filters["data_hora_br"] = _data_hora_br
 templates.env.filters["moeda"] = _moeda
+templates.env.globals["asset_url"] = _asset_url
 
 
 def _obter_config_centro() -> dict:

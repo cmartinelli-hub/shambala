@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Carteirinhas — {{ cartoes|length }} trabalhador{{ 'es' if cartoes|length != 1 }}</title>
-    <link rel="stylesheet" href="/static/css/carteirinha.css">
+    <link rel="stylesheet" href="{{ asset_url('css/carteirinha.css') }}">
     {% from "trabalhadores/_cartao.html" import cartao as cc %}
 </head>
 <body>
