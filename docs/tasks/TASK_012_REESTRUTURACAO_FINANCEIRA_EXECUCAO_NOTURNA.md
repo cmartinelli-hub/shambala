@@ -1,6 +1,12 @@
 # TASK_012 — Reestruturação financeira: execução noturna por etapas
 
-Status: pronta para execução pelo Qoder.
+Status: **parcialmente concluída** — etapas §2 a §6 entregues com prova e
+aplicadas no DEV (§9); pendentes: homologação autenticada do dono, 43
+recebimentos de fiado do legado sem destino, decisão sobre vendas/sangrias
+legadas, FIN-08 histórico e publicação. Relatório completo, evidências e
+limitações em `docs/investigacoes/TASK_012_RESULTADO_REESTRUTURACAO_FINANCEIRA.md`
+(§10 roteiro de conferência, §11 herdado × retomada, §12 estado final).
+Originalmente pronta para execução pelo Qoder.
 Autorização: implementar, testar e documentar autonomamente as etapas abaixo durante a noite. Entregar resultado revisável ao dono pela manhã. Não é autorização para publicar nem para declarar o financeiro inteiro homologado.
 Referências: TASK_005 (diagnóstico FIN-01–09), TASK_006–011 e respectivos relatórios/revisões. Conferir o estado real antes de editar; o resumo desta ordem não substitui a investigação do código.
 

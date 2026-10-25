@@ -431,6 +431,10 @@ GET       /financeiro                   ← Visão Geral (TASK_011): abas, perí
 GET       /financeiro/lancamento/{id}   ← detalhe somente-leitura (?volta= validado, só /financeiro?…)
 GET/POST  /financeiro/nova              ← registrar movimento
 GET       /financeiro/mensalidades      ← controle de mensalidades
+POST      /financeiro/mensalidades/gerar ← geração manual (era GET até a TASK_012 §3)
+GET       /financeiro/relatorios        ← recorte com filtros validados (TASK_012 §5)
+GET       /financeiro/fiados            ← fiado por trabalhador (original/recebido/saldo)
+GET       /financeiro/mensalidades/relatorio ← mês por competência|vencimento|pagamento
 POST      /financeiro/{id}/pagar        ← marcar como pago
 POST      /financeiro/{id}/cancelar     ← cancelar movimento
 ```
@@ -451,6 +455,17 @@ POST      /financeiro/{id}/cancelar     ← cancelar movimento
   nota na tela quando há filtros extras). Fiado em aberto (`vendas_pdv`
   `forma_pagamento='fiado' AND NOT fiado_pago AND status='concluida'`) é grupo
   próprio, explicitamente FORA do indicador "A receber".
+- **TASK_012 §5 (2026-10-25)**: o saldo de fiado exibido é
+  `max(0, total − fiado_credito_usado − alocado)`, calculado SÓ por
+  `servico_fiado` (`linha_de_saldo`, `fiados_em_aberto_para_consulta`,
+  `saldo_por_trabalhador`, `historico_fiado`) — nenhuma tela tem fórmula própria.
+  Totais do recorte ≠ totais da página (a lista corta em 50, os números não).
+  Dívida sem alocação registrada é marcada (`sem_alocacao`) e mantém o valor de
+  face: legado não é distribuído por estimativa. Cada cartão traz um `<details>`
+  "O que conta"; relatórios separam **Recebido / Pago / A receber / A pagar /
+  Cancelados**; o relatório de mensalidades tem seletor `data_uso`
+  (comp|venc|pag) dizendo QUAL data o mês filtra; `Σ` por conta é o acumulado
+  até a data final, declarado como tal (não é saldo bancário).
 - Linha de conta `areceber` com status pago: preservada no banco, rotulada
   "Registro histórico — conferir origem", excluída dos totais de dinheiro.
   Conta `legado` exibida como "Conta Antiga (origem histórica)".

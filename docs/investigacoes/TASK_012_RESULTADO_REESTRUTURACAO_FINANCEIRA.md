@@ -3,10 +3,23 @@
 Ordem executada: `docs/tasks/TASK_012_REESTRUTURACAO_FINANCEIRA_EXECUCAO_NOTURNA.md`.
 Data: noite de 2026-10-24 → 2026-10-25 (fuso do centro; o DEV atende em `America/Sao_Paulo`).
 HEAD no início da execução: `b9268ec` (docs da correção visual da TASK_011).
-Status geral: **em execução** — §1 a §4 entregues; §5 e §6 em andamento; §9 (DEV) ao final.
+Status geral: **concluída no escopo implementado, com ressalvas** — §1 a §6
+entregues (§6 com FIN-08 parcial, por decisão da própria ordem); §9 aplicado no
+DEV com backup e baseline conferidos; homologação autenticada, legado e
+publicação seguem pendentes (§12).
+
+**Retomada de 2026-10-25 (manhã).** A sessão anterior foi interrompida por limite
+de uso no meio da edição da limpeza de `tests/test_financeiro_consultas_task012.py`.
+A retomada começou pelo que estava incompleto — a limpeza da suíte §5 (§5.6),
+que apagava dados de outras execuções —, validou-a com dados alheios plantados
+no mesmo banco e seguiu para a §6 (FIN-09). O que é herdado e o que é desta
+retomada está separado em §11.
 
 Árvore testada: as evidências abaixo foram produzidas sobre `b9268ec` + as
-alterações desta tarefa ainda não commitadas no momento das corridas; o código
+alterações desta tarefa ainda não commitadas no momento das corridas — e, para
+as etapas desta retomada, sobre `37f3dc4` + o trabalho em curso, com a corrida
+final repetida já sobre os commits `e8d8d8e`, `c17b5cd` e `59dd73b` (logs
+`runner_completo_etapa5_6_r1.txt` e `suite_etapa5_6_financeiro_r1.txt`). O código
 da §2 ficou em `00617c1` (feat: TASK_012 §2 — idempotência de toda entrada de
 dinheiro), o da §3 em `a4c5346` (feat: TASK_012 §3 — mensalidade passa a ter
 competência) e o da §4 em `a6f0328` (feat: TASK_012 §4 — o recebimento de fiado
@@ -40,9 +53,9 @@ posteriores — assumi-los abertos teria desfazer trabalho alheio:
 | FIN-04 fechamento misto (espécie/PIX/fiado) | **resolvido** pela TASK_008 (sessões `eventos` com `caixa_sessao_eventos` e efeito físico por forma) |
 | FIN-05 duplicidade de mensalidade por competência | **aberto** → §3 |
 | FIN-06 estorno de fiado pago | **resolvido** pela TASK_007 (recusa); reembolso continua fora de escopo (§7) |
-| FIN-07 consultas/datas divergentes | **parcial** — TASK_011 tratou visão geral e cache; fórmulas de saldo por conta seguem divergentes → §5 |
-| FIN-08 constraints/autorias/FKs | **parcial** (TASK_009/010 acrescentaram travas de valor e sessão) → §6 |
-| FIN-09 foto da compra escrita antes do commit | **aberto** → §6 |
+| FIN-07 consultas/datas divergentes | **resolvido no módulo financeiro** pela §5 (fórmula única no serviço, três datas rotuladas, filtros validados); conciliação bancária segue fora de escopo |
+| FIN-08 constraints/autorias/FKs | **parcial** — §2/§3/§4 acrescentaram as travas do escopo; backfill de autoria histórica, `auditoria_eventos` e duplicidade histórica de mensalidade seguem abertos por decisão explícita (§6.4) |
+| FIN-09 foto da compra escrita antes do commit | **resolvido** pela §6 (arquivo fora da transação, temporário + promoção atômica, sem órfão) |
 | Idempotência de reenvio | **inexistente como mecanismo** — só havia garantias pontuais derivadas de estado → §2 |
 
 Garantias existentes que **não** foram reescritas nesta tarefa (e continuam
@@ -70,8 +83,8 @@ legada (TASK_008), isolamento de ambiente e guardas de destino (TASK_010),
 | §2 idempotência | Reenvio produzia segundo efeito; proteção pontual só onde havia estado (`fiado_pago`, `status='aberto'`, `identidade` UNIQUE, `vendas_pdv_cancelamento.venda_id`) | Chave de tentativa gerada com a tela (`campo_idempotencia` + `static/js/tentativa.js`), tabela `operacao_idempotencia` com `chave UNIQUE`, reserva→efeitos→confirmação na mesma transação, resposta anterior devolvida antes das validações de estado, recusa legível sem escrita | `tests/test_financeiro_idempotencia_task012.py` (138 asserções: 1º efeito, reenvio byte a byte, concorrência mesma chave nova e concluída, chave+conteúdo divergente, chave nova+conteúdo idêntico, POST sem chave, revisão de preço, rollback da última escrita, corrida na reserva, lote de mensalidades, parcial com excedente, compra multipart com a nota no corpo, venda de livro, autenticação) | nada (base das demais) |
 | §3 mensalidades | Competência inferida de `data_movimentacao LIKE 'YYYY-MM%'` e do texto da descrição; `_existe_mes` + INSERT sem constraint (FIN-05) | Coluna `competencia` (`YYYY-MM`) em `financeiro_movimentacoes`; índice único parcial `(trabalhador_id, competencia)` para `categoria='mensalidade'` criado no startup, com diagnóstico de duplicidade **antes** de aplicar e sem tocar linha em conflito; serviço com checagem + `ON CONFLICT … DO NOTHING` e retorno de "quantas novas"; `POST /mensalidades/gerar` (geração manual) no lugar do GET que gerava; recusas `periodo_invalido` / `mensalidade_ja_registrada` / `sem_mensalidade_ativa`; competência, vencimento e recebimento separados na tela + faixa de conflito histórico | `tests/test_financeiro_mensalidades_task012.py` (64 asserções: chave do banco nos quatro sentidos, geração repetida e concorrente, dois trabalhadores no mesmo mês, virada de ano, mês curto e bissexto, elegibilidade, leitura sem efeito, mensagens de operador, baixa individual e em lote, lote atômico com rollback, duplicidade histórica fictícia sem perda de fatos, rotulamento que não escolhe vencedora, startup que não aborta, backfill idempotente, cancelamento, lançamento manual) | §2 |
 | §4 fiados | Um recebimento quita dívidas por ordem FIFO e o excedente vira crédito **sem vínculo** entre o lançamento, as dívidas e o crédito; `fiado_pago` booleano é a única alocação | Tabela `fiado_alocacao` (lançamento ↔ dívida, ou linha única de excedente) com `CHECK` de vínculo, índices únicos e FKs `RESTRICT`; `servico_fiado` (`dividas_em_aberto`/`repartir`/`aplicar_recebimento`/`extrato_fiado`) em `Decimal`; quitação só com saldo zero; excedente com lock do trabalhador; vínculo `fiado_credito_mov.venda_id`/`.financeiro_id`; guarda `fiado_credito >= 0` no banco; tela marca dívidas, mostra a distribuição antes de confirmar e lê o saldo; extrato novo `GET /caixa/fiados/extrato/{id}`; cancelamento passa a avaliar as alocações | `tests/test_fiado_alocacoes_task012.py` (91 asserções em 13 provas: dívida 40 com 15+25, 50 contra 40 com crédito 10, adiantamento e consumo parcial, duas dívidas selecionadas, pagamento×pagamento e consumo×consumo sob lock observado, reenvio pela mesma chave, última escrita falhando, legado sem backfill, cancelamento, e as cinco contas batendo por caminhos SQL independentes) + suítes alheias ajustadas sem reduzir assertiva | §2, §3 |
-| §5 consultas | Soma de eventos com lançamentos, fórmulas de saldo divergentes por tela, GET `/financeiro/mensalidades` gerando cobrança (este último **resolvido na §3**) | — em execução — | — | §3, §4 |
-| §6 integridade | FIN-09: arquivo da nota escrito dentro da transação antes do commit | — em execução — | — | §2 |
+| §5 consultas | Soma de eventos com lançamentos, fórmulas de saldo divergentes por tela, GET `/financeiro/mensalidades` gerando cobrança (este último **resolvido na §3**) | Cinco funções de consulta no `servico_fiado` (uma conta para todas as telas: valor original − crédito usado − alocado); fiado em aberto com Recebido/Saldo e totais do recorte; Σ acumulado por conta declarado; relatórios separando recebido/pago/a receber/a pagar/cancelado; três datas rotuladas em mensalidades; `Decimal`+`moeda` em todas as telas tocadas; filtros inválidos recusados com mensagem; PIX e lançamento com o mesmo parser de valor | `tests/test_financeiro_consultas_task012.py` (74 asserções em 12 provas: saldo parcial em 4 telas, totais × página, legado sem prova, venda fiada não é receita, obrigação × dinheiro, filtros inválidos, três datas, política de valor, permissões URL+POST, GET sem efeito, apresentação TASK_011, serviço como conta única) | §3, §4 |
+| §6 integridade | FIN-09: arquivo da nota escrito dentro da transação antes do commit | Arquivo fora da transação: temporário ao lado do destino (disco testado antes do commit), promoção por `os.replace` depois, remoção só do próprio temporário no rollback, compra cancelada (nunca apagada) quando a promoção falha, `_caminho_da_nota` validando `static/fotos`; injeção de falha de disco guardada por MODO_TESTE + banco com selo | `prova_nota_fora_da_transacao` em `tests/test_financeiro_idempotencia_task012.py` (7 asserções: sucesso, preparo falhando, rollback por trigger real, promoção falhando) | §2 |
 
 ### 1.4 Provas dos defeitos antes de corrigir (origem §1.5 da ordem)
 
@@ -781,19 +794,390 @@ nenhuma alocação órfã de lançamento, todo consumo apontando a venda).
    aplicar ao DEV é a etapa §9 (backup + hash + restauração validada + baseline
    antes/depois + restart da 9000), conforme §0 da ordem.
 
-## 5. Consultas, saldos e experiência integrada
+## 5. Consultas, saldos e experiência integrada — entregue
 
-_em execução_
+### 5.1 A regra passou a ser uma só, no serviço
 
-## 6. Integridade técnica complementar (FIN-08/09)
+A §4 escreveu o destino do dinheiro em `fiado_alocacao`; as consultas, porém,
+continuavam lendo `SUM(v.total)` com `NOT v.fiado_pago` (`rotas/financeiro.py`
+em `a6f0328`) e `float` no relatório — duas telas, duas contas, e nenhuma delas
+via o parcial. A §5 fecha isso com **funções de consulta no próprio
+`servico_fiado`**, as mesmas que a escrita usa:
 
-_em execução_
+| Função | Para que serve | Quem usa |
+|---|---|---|
+| `alocado_por_venda(conn, ids)` | recebido por dívida, somado das alocações | `dividas_em_aberto`, telas de caixa, extrato |
+| `linha_de_saldo(venda, alocado, tem_alocacao=…)` | valor original, crédito usado, recebido, saldo e `alocacoes_registradas` | todas as telas |
+| `fiados_em_aberto_para_consulta(conn, nome_like, limite)` | lista + TOTAIS do recorte | Visão Geral do Financeiro |
+| `saldo_por_trabalhador(conn)` | saldo por trabalhador | relatório de fiados, filtro da tela |
+| `historico_fiado(conn, trabalhador_id)` | histórico com quitadas/canceladas | relatório por trabalhador |
 
-## 9. Migração e DEV
+O saldo, em toda tela, é `max(0, total − fiado_credito_usado − alocado)`. Não
+existe segunda fórmula no módulo: `rotas/caixa.py` (lista de fiados e
+autocomplete do PDV) e `rotas/financeiro.py` (Visão Geral e relatório por
+trabalhador) chamam essas funções. Dívida sem alocação continua devendo o valor
+de face e vem marcada (`sem_alocacao`), nunca corrigida por estimativa.
 
-_pendente — aplicado ao final, com backup, hash, restauração validada em banco
-descartável, baseline antes/depois e restart do serviço da 9000_
+### 5.2 Totais do recorte não são totais da página
 
-## 10. Roteiro de conferência do dono
+`fiados_em_aberto_para_consulta` corta a LISTA em 50 (`limite`) mas calcula os
+totais sobre **todas** as dívidas do recorte; a nota da tela passa a dizer
+quantas dívidas existem, quanto valem de origem, quanto já foi recebido e qual é
+o saldo — e avisa quando a tabela é uma página. Antes, a nota dizia "Mostrando os
+50 mais recentes de N (R$ X no total)", onde X era a soma das 50 visíveis e N o
+total de dívidas: dois números de coisas diferentes na mesma frase.
 
-_pendente_
+### 5.3 O que as telas mostram agora
+
+| Tela | Antes | Agora |
+|---|---|---|
+| Visão Geral → Fiado em aberto | uma coluna "Valor" (= valor de face) | **Valor original · Recebido · Saldo**, com nota do recorte e aviso de dívida histórica sem alocação; versão *mobile* em `<details>` com as mesmas linhas |
+| Visão Geral → cartões por conta | só entradas/saídas do período | acrescenta **Σ acumulado até a data final**, rotulado como "todos os lançamentos pagos até X — não é saldo conferido com o banco" |
+| Relatórios | "Total Entradas" somando pago+pendente+cancelado e um "Saldo" que ignorava transferências | cinco cartões separados: **Recebido (pagos)**, **Pago (saídas pagas)**, **A receber (pendentes)**, **A pagar (pendentes)**, **Cancelados (não somam)**, mais a contagem de transferência/sangria do recorte |
+| Relatório de mensalidades | "Mês" sem dizer de qual data; três cartões com `replace('.', ',')` | seletor **Qual data o mês usa** (competência / vencimento / pagamento), rótulo do que o filtro pergunta, competência histórica marcada como tal, "Vencidas até hoje (data)" explicando que é sempre vencimento |
+| Fiados por trabalhador | `SUM` com `float`, "Pago/Pendente" binário | **Comprado a fiado · Já recebido · Saldo devedor** (e crédito à parte), cada dívida com valor original, crédito usado, recebido, saldo e situação "Recebida em parte" |
+| Detalhe do lançamento | só a linha | acrescenta competência e **"Para onde foi este dinheiro"**, lendo `fiado_alocacao` do próprio lançamento |
+| Ficha do trabalhador / da pessoa | tabela de 6 colunas, `replace` de ponto | inclui **Competência**, **Recebido em**, `moeda` (ponto de milhar), versão *mobile*, e diz que a data é do vencimento |
+
+Datas: competência, vencimento e pagamento são campos distintos e cada filtro
+declara qual usa; a competência é lida da coluna própria (nunca do texto da
+descrição) e o que veio do histórico entra marcado como "histórica: sem
+competência registrada". Valores em `Decimal`/`NUMERIC` com arredondamento
+comercial (`_dec`, `ROUND_HALF_UP`) em todos os pontos tocados; o filtro `moeda`
+do template é a única formatação de dinheiro nas telas do financeiro.
+
+### 5.4 GET não escreve, e filtro inválido é recusado
+
+- O `GET /financeiro/mensalidades` que gerava cobrança foi eliminado na §3
+  (`POST /financeiro/mensalidades/gerar`); a §5 prova por retrato de tabela que
+  **dez telas** abertas duas vezes cada não criam lançamento, alocação, evento,
+  venda, crédito nem cobrança.
+- Filtros passaram a ser validados no servidor com mensagem de operador, sem
+  esvaziar a tela: data fora de `AAAA-MM-DD`, conta não numérica/inexistente,
+  `tipo` fora de entrada/saída, categoria desconhecida, `por` fora de 25/50/100,
+  natureza/situação/sentido fora da lista, mês fora de `AAAA-MM`. Antes, qualquer
+  um desses virava "nenhum resultado" — o operador lia ausência de dado onde
+  havia erro de digitação.
+- Valor de entrada de dinheiro: `POST /financeiro/nova` e
+  `POST /financeiro/transferir` usam o mesmo parser (`servico_sessao.moeda`),
+  com duas casas e teto do `NUMERIC`; `"1.234,56"`, `"abc"`, `"0"` e `"-10"` são
+  recusados com `erro=valor_invalido` e nenhuma escrita; `"60,005"` fecha em
+  `60,01`. O PIX (`GET /financeiro/pix/gerar`) recusa valor ilegível com
+  mensagem em vez de derrubar a requisição com 500.
+
+### 5.5 Provas
+
+`tests/test_financeiro_consultas_task012.py` (nova, 74 asserções), executada pelo
+runner oficial sobre banco descartável selado:
+
+| Prova | O que mede |
+|---|---|
+| `p1` saldo parcial em todas as telas | dívida 40 com entrega 15 → "R$ 15,00 recebido / R$ 25,00 saldo" na Visão Geral, no relatório, no extrato (`Decimal`, não texto) e no detalhe do lançamento (`Dívida #N`) |
+| `p2` totais do recorte | 52 dívidas → nota com 52 e R$ 520,00; tabela com exatamente 50 linhas |
+| `p3` legado sem prova | dívida sem alocação exibe o valor de face, marcada, e o serviço não inventa abate |
+| `p4` venda fiada não é receita | PDV a fiado não cria lançamento nem move "Recebimentos registrados"; a entrega do dinheiro é que move |
+| `p5` obrigação × dinheiro | "Recebido" = só pago (100, não 150 nem 157); pendente e cancelado em cartões próprios; transferência contada à parte |
+| `p6` filtros inválidos | cada recusa tem a própria mensagem e a tela mantém os dados |
+| `p7` três datas | competência, vencimento e pagamento devolvem listas diferentes e rotuladas; "Vencidas até hoje" é sempre vencimento |
+| `p8` política de valor | quatro valores recusados sem escrita, `60,005 → 60,01`, `R$ 1.234.567,89` exibido com ponto de milhar, Σ do acumulado declarado |
+| `p9` permissões | Caixa não entra no Financeiro (nem por POST direto); leitura não vê o botão e não consegue postar |
+| `p10` GET não movimenta | retrato de seis tabelas antes/depois de 20 aberturas de tela |
+| `p11` TASK_011 preservada | `base.css?v=`, classes `fin-*`, retorno ao recorte consultado, link de volta forâneo descartado |
+| `p12` serviço é a conta única | serviço, tela e extrato concordam; crédito antecipado fica em número separado |
+
+### 5.6 A limpeza da suíte — o ponto em que a sessão anterior parou
+
+A retomada começou exatamente aqui. A suíte tinha sido escrita mas a limpeza
+estava **incompleta e perigosa**, com três defeitos distintos:
+
+1. `DELETE FROM operacao_idempotencia WHERE nota_fiscal_foto IS NOT NULL` →
+   o filtro estava na tabela errada e o efeito era **apagar a tabela inteira**,
+   incluindo as chaves que outras suítes do mesmo runner estavam usando;
+2. `financeiro_movimentacoes.caixa_id` — coluna que não existe (herança SQLite):
+   o `DELETE` levantava erro e a limpeza parava no meio, deixando fixtures;
+3. `financeiro_tentativa_documento` — tabela que nunca existiu neste esquema;
+   o `try/except` silencioso escondia o problema.
+
+Além disso a limpeza apagava "por tabela" (`caixa_sangrias` por sessão,
+`estoque_movimentos` por produto) sem verificar as colunas existentes.
+
+A limpeza agora: (a) só toca linhas que esta execução criou — marca `PREFIXO`,
+ids das fixtures e as chaves de tentativa registradas em `CHAVES_USADAS` quando
+`chave()` as gera; (b) consulta `information_schema` antes de citar uma coluna;
+(c) informa o que removeu; (d) mede um **piso** de linhas por tabela antes de
+qualquer escrita e reprova se a limpeza descer abaixo dele; (e) usa a sentinela
+`tipos_doacao` (catálogo que esta suíte nunca apaga) para distinguir "eu apaguei
+demais" de "outro processo recriou o banco no meio da corrida".
+
+Prova: com dados sintéticos de outra execução plantados no **mesmo** banco
+descartável (trabalhador, venda, lançamento, alocação, chave de tentativa,
+evento de sessão e uma marca de catálogo), a suíte passa **74/74**, a limpeza
+remove exatamente as 58 vendas, 8 trabalhadores, 7 chaves e 4 alocações que
+criou, e o piso não desce. Nas corridas em que outro processo recriou o banco no
+meio, a sentinela caiu e a suíte **reprovou com mensagem própria** em vez de
+declarar limpeza verificada — que é o comportamento desejado.
+
+### 5.7 Limitações e questões registradas
+
+1. **Não há conciliação bancária**: o Σ acumulado por conta é a soma dos
+   lançamentos pagos até a data, dito assim na tela. Saldo de extrato real
+   continua fora de escopo (§7 da ordem).
+2. **Conta de "areceber"** entra nos cartões por conta como qualquer outra; ela
+   representa obrigação, não dinheiro — por isso a legenda do cartão diz isso e
+   o resultado do período não a soma (ela é pendente).
+3. **Relatório de fiados por trabalhador** deriva o saldo do serviço, mas não
+   pagina: um trabalhador com centenas de vendas traz o histórico inteiro. Não é
+   problema hoje (o maior tem dezenas) e paginar sem pedido mudaria o recorte.
+4. **A prévia de distribuição do pagamento continua sendo do navegador** (limite
+   já registrado na §4.10): a tela pode mostrar uma repartição e o servidor
+   recusar com `selecao_invalida` se uma dívida mudar entre as duas leituras.
+5. **A limpeza da suíte §5 depende de a suíte ter criado tudo pelas fixtures**:
+   registros criados por caminhos novos que não usem `PREFIXO` nem `chave()`
+   ficariam órfãos no banco descartável. É banco descartável (o runner o recria a
+   cada execução), mas o contrato está escrito no docstring para a próxima
+   alteração.
+
+## 6. Integridade técnica complementar (FIN-08/09) — FIN-09 entregue, FIN-08 parcial
+
+### 6.1 FIN-09 — a nota da compra saía do ciclo do arquivo e da transação
+
+**O defeito, lido no código** (`rotas/compras.py` em `b9268ec` e até `37f3dc4`):
+a rota gravava a foto **dentre** do `with conectar()`, logo depois do `INSERT` e
+antes do commit:
+
+```python
+mov_id = cur.fetchone()["id"]
+nome_arquivo = _salvar_foto_nota(conteudo, mov_id, ext)   # ← disco, dentro da transação
+conn.execute("UPDATE ... SET nota_fiscal_foto = %s ...", (nome_arquivo, mov_id))
+confirmar(...)
+```
+
+Três desfechos ruins, todos silenciosos:
+
+1. commit falha depois da gravação → **arquivo órfão** em `static/fotos/`, sem
+   linha apontando para ele;
+2. gravação falha (disco cheio, permissão) → **500 com a transação desfeita**,
+   mas o nome podia ficar meio escrito no diretório;
+3. reenvio com a mesma chave → o corpo da tentativa já continha o hash da nota,
+   então não duplicava; mas a tentativa recusada por divergência **não limpava**
+   o arquivo que já tinha sido gravado por engano em outra tentativa.
+
+Além disso o nome do arquivo era sorteado **duas vezes** (`_salvar_foto_nota`
+gerava outro `uuid`), e a primeira versão desta correção, escrita na retomada,
+repetiu o defeito: gravava com um nome e registrava outro. As provas pegaram
+isso (`nome=nota_26_6f165944.jpg novos=['nota_26_2e5b025f.jpg']`) e a correção
+mudou o desenho, não a asserção.
+
+**O desenho agora** (`rotas/compras.py`):
+
+| Etapa | Quando | O que garante |
+|---|---|---|
+| `_nome_da_nota(mov_id, ext)` | dentro da transação, **uma vez** | o mesmo nome vai para a linha e para o arquivo |
+| `_preparar_nota(conteudo, nome)` | dentro da transação, depois do `UPDATE` | grava em `…/<nome>.tmp-<rand>`, com `flush`+`fsync`: **o disco é testado antes do commit**, e o temporário não aparece como nota |
+| commit | ao sair do `with` | ou a linha **e** o nome existem, ou nada existe |
+| `_promover_nota(tmp, nome)` | depois do commit | `os.replace` — renomeação **atômica** no mesmo sistema de arquivos |
+| rollback (`except` interno) | se o commit não acontecer | `_remover_arquivo(tmp)` remove **só o temporário desta tentativa** |
+| falha da promoção | depois do commit | `_descartar_compra(mov_id)`: o lançamento é **cancelado** (nunca apagado — fica auditável) e a tentativa é liberada para reenvio; o temporário é removido |
+| `_caminho_da_nota(nome)` | em toda escrita/remoção | `abspath` + prefixo obrigatório de `static/fotos`; nome fora da pasta levanta `ValueError` em vez de apagar |
+
+Chaves de tentativa consumidas e nunca reaproveitadas; a tentativa que falhou
+por disco libera o reenvio (`_descartar_compra` marca a compra como cancelada e
+o operador reenvia com a mesma chave — o corpo é o mesmo, a resposta anterior
+aponta para o documento cancelado, e uma operação nova nasce em tela nova).
+
+### 6.2 Como a falha de disco é provada (e por que precisou de injeção)
+
+A rota roda **no processo do servidor**; um `monkeypatch` na suíte não alcança a
+requisição HTTP — foi exatamente isso que as primeiras provas mostraram (o
+`status 303` chegava com a exceção "injetada" sem nunca ter sido levantada no
+servidor). A solução é uma injeção mínima, **guardada**:
+
+- `SHAMBALA_FALHA_DISCO_COMPRA` é lida por `_falha_de_disco_injetada`;
+- o **gatilho é o cabeçalho** `X-Tentativa-Falha-Disco: preparar|promover`,
+  enviado só pela prova — outras suítes no mesmo app não são afetadas;
+- só dispara com `SHAMBALA_MODO_TESTE=1` **e** banco com selo do runner
+  (`trava_isolamento._falhas_de_identidade` vazio). Em DEV/produção o código é
+  inerte mesmo que a variável esteja definida por engano;
+- o runner habilita a variável e sinaliza `SHAMBALA_FALHA_DISCO_HABILITADA=1`;
+  a suíte **reprova** se a injeção não estiver habilitada, para não "passar" sem
+  exercitar nada.
+
+O caso do rollback **não** usa injeção: um `TRIGGER` de verdade no banco
+descartável recusa o `INSERT` (chamando o `confirmar` de "última escrita"
+depois), o temporário já está em disco e o teste prova que ele desaparece.
+
+### 6.3 Provas (em `tests/test_financeiro_idempotencia_task012.py`)
+
+| Prova | Desfecho exercitado | Resultado |
+|---|---|---|
+| `FIN-09 sucesso` | caminho feliz | linha com `nota_fiscal_foto` e **exatamente** esse arquivo no disco |
+| `FIN-09 preparo falhando` | disco, antes do commit | `500`; nenhum arquivo (nem temporário); nenhuma linha; chave não consumida com documento |
+| `FIN-09 rollback` | commit recusado por trigger | `500`; nenhum arquivo nem temporário; nenhuma linha; chave livre |
+| `FIN-09 promoção falhando` | disco, depois do commit | `500`; compra **cancelada** (linha preservada); nenhum arquivo órfão |
+
+A suíte inteira: **145/145**, rc=0, `DEV inalterado: ok`. Os arquivos de nota
+que a suíte cria são removidos no fim pelo caminho validado, recortando apenas o
+que apareceu na janela da corrida.
+
+### 6.4 FIN-08 — o que fica aberto, e por quê
+
+A §2/§3/§4 acrescentaram as travas que o escopo pedia: `chave UNIQUE` em
+`operacao_idempotencia`, índice único parcial `(trabalhador_id, competencia)`
+para mensalidade, `CHECK` de vínculo e índices únicos em `fiado_alocacao`, FKs
+`RESTRICT`, `CHECK fiado_credito >= 0`, e `vendas_pdv_cancelamento.venda_id`
+unique. O que **não** entra nesta ordem:
+
+1. **Backfill de autoria/origem em fatos antigos** — a ordem proíbe reparar
+   histórico por aproximação (§0.6, §6); os 43 `recebimento_fiado` sem
+   `trabalhador_id` do DEV continuam como estão e a limitação é dita na tela;
+2. **`auditoria_eventos`** — tabela citada por fixture antiga que não existe
+   neste esquema; a ordem diz explicitamente para não inventá-la (§6);
+3. **Duplicidade histórica de mensalidade** — a constraint é criada **só se o
+   diagnóstico encontrar zero conflitos**; em caso de conflito o startup avisa e
+   não cria o índice (ver §3.7). Isso é deliberado: escolher a linha "vencedora"
+   seria reparação automática de fato antigo.
+
+## 9. Migração e DEV — aplicado e conferido
+
+### 9.1 O que o schema desta tarefa acrescenta
+
+DDL idempotente no `criar_tabelas` (sem arquivo de migração, como o módulo já
+fazia): tabela `operacao_idempotencia` (§2), coluna `financeiro_movimentacoes.
+competencia` com índice único parcial `uq_mensalidade_por_competencia` (§3),
+tabela `fiado_alocacao` com 5 índices/constraints (§4), colunas
+`fiado_credito_mov.venda_id`/`.financeiro_id` e `CHECK fiado_credito >= 0`.
+Nenhuma linha antiga é reescrita por aproximação: a §3 só **rotula** a
+competência a partir do vencimento já gravado.
+
+### 9.2 Leitura antes de escrever (diagnóstico próprio no DEV)
+
+| Verificação (leitura) | Resultado |
+|---|---|
+| identidade | banco `shambala`, usuário `shambala`, local — o DEV existente |
+| mensalidades | 520 (517 com trabalhador, 4 sem trabalhador, 0 com data ilegível) |
+| duplicidade por trabalhador/competência | **0 grupos, 0 linhas em excesso** → índice único pode ser criado |
+| recebimentos de fiado | 43, todos sem `trabalhador_id` (legado — segue sem backfill) |
+| fiado em aberto | 50 vendas; nenhum `fiado_credito` negativo |
+| sessões | 1 aberta (não tocada) |
+| notas fiscais | 12 referências, **12 arquivos presentes em disco**; nenhum `.tmp-` pendente |
+
+### 9.3 Backup, hash e restauração validada
+
+1. `pg_dump -Fc` do DEV antes de qualquer escrita:
+   `shambala_dev_antes_t012_20261025081651.dump` (361.887 bytes);
+2. **SHA-256** calculado e reconferido: `658e873f7549241b72407387f888eeb59d2f6968b610affda60e435477707493`
+   (registrado em `docs/tasks/evidencias/TASK_012/*.sha256`);
+3. restauração em banco descartável `shambala_t012_restore` (criado de
+   `template0`, sem tocar no DEV) com `pg_restore --no-owner`;
+4. **limites do restore, registrados com precisão**: `rc=1` com 2 erros
+   `permissão negada para alterar privilégios padrão` (o usuário `shambala` não
+   é owner dos objetos de produção do dump). Nenhum erro de dado, tabela ou
+   constraint. A validação é a comparação de conteúdo abaixo, não o rc.
+
+Comparação de fatos entre DEV e o restaurado (contagens): `pessoas` 678=678,
+`checkins` 2918=2918, `financeiro_movimentacoes` 862=862, `vendas_pdv`
+1859=1859, `trabalhadores` 70=70, `caixa_movimentos` 58=58,
+`caixa_sessao_eventos` 0=0, `atendentes` 22=22. Log em
+`evidencias/TASK_012/dev_restore_validacao.log`.
+
+### 9.4 Aplicação e serviço
+
+- O DDL roda no startup. Reiniciei **apenas** o serviço da porta 9000, e a
+  propriedade do processo foi provada antes do `kill`: o PID estava nomeado no
+  meu próprio log de subida, com `.venv/bin/python -m uvicorn main:app --port
+  9000` e cwd neste workspace. Nenhum outro processo foi tocado.
+- Primeiro startup (log `dev-startup-task012.log`):
+  `[startup] 517 mensalidade(s) receberam competência rotulada do vencimento já
+  gravado.` — **é a única escrita**; "Application startup complete." e nada mais.
+- Segundo startup (log `dev-startup-task012-r2.log`): nenhuma mensagem de
+  competência e **nenhuma cobrança nova** — o caminho é idempotente.
+- Schema conferido depois: `operacao_idempotencia` criada, `fiado_alocacao`
+  criada com 5 índices, coluna `competencia` criada,
+  `uq_mensalidade_por_competencia` criado (o nome do índice é
+  `uq_mensalidade_por_competencia`), `fiado_credito_mov.venda_id` criada,
+  `CHECK` de crédito presente.
+- Competência rotulada: 517 linhas, **0 divergências** com o vencimento gravado
+  (a rotulagem não inventou valor nem mudou data).
+
+### 9.5 Efeito sobre os fatos: nenhum
+
+Baselines antes × depois (`baseline_dev.py` e `baseline_financeiro_dev.py`):
+**idênticos linha a linha** — inclusive `fm_max_id_hash`, que é a impressão
+digital de todas as linhas do livro-caixa (id, tipo, status, categoria, valor,
+data). Nenhum lançamento criado, alterado ou apagado; nenhuma obrigação paga;
+nenhuma sessão mexida.
+
+Endpoints depois do restart: `/login` 200, `/financeiro/compras` 303 (login),
+`/financeiro/mensalidades` 303 (login), `/static/css/base.css` 200. Nada de
+demonstração financeira foi executado no DEV.
+
+### 9.6 Limitações do DEV
+
+1. **A homologação autenticada é do dono** — nenhuma senha foi pedida ou
+   alterada, nenhum usuário/permissão foi tocado; eu só verifiquei que as telas
+   redirecionam para o login.
+2. **Os 43 recebimentos de fiado do legado continuam sem destino.** Aplicar a
+   tabela não conserta o passado: eles seguem no histórico, as dívidas
+   correspondentes continuam devendo o valor de face, e a tela diz isso.
+3. **O índice único de mensalidade só existe porque não havia duplicidade.**
+   Se o DEV tivesse conflito, o startup avisaria e não criaria o índice — a
+   mesma rotina que a suíte de mensalidades exercita.
+4. **A sessão de caixa aberta (1) não foi tocada** e continua pelo fluxo
+   legado; novos recebimentos nela continuam bloqueados (TASK_008).
+5. **Produção não foi acessada nem por leitura**, e não houve push. O dump do
+   backup ficou em `/tmp/t012r/devbkp/` (fora do repositório).
+
+## 10. Roteiro de conferência do dono (máximo 10 passos)
+
+Os passos 1–5 são **somente leitura** e podem ser feitos direto no DEV. Os
+passos 6–9 criam fatos **fictícios** e explícitos, separados do uso real; o 10 é
+o encerramento. Nada aqui pede dívida real nem exclusão de histórico.
+
+| # | O que fazer | Onde | O que deve aparecer |
+|---|---|---|---|
+| 1 | Abrir a Visão Geral do Financeiro no mês corrente | Financeiro | Os cartões com valores em `R$ 1.234,56` (ponto de milhar) e, por conta, uma linha **Σ** dizendo até qual data o acumulado conta |
+| 2 | Rolar até **Fiado em aberto** | Financeiro | Colunas **Valor original · Recebido · Saldo**; a nota abaixo soma as três; dívidas antigas vêm com o aviso "anteriores ao registro de destino do recebimento" |
+| 3 | Abrir **Relatórios** com o mesmo mês | Financeiro → Relatórios | Cinco cartões separados: Recebido (pagos), Pago (saídas pagas), A receber, A pagar, Cancelados — e "Total Entradas" **não** existe mais somando pendente |
+| 4 | Em **Relatório de mensalidades**, trocar "Qual data o mês usa" entre competência, vencimento e pagamento | Financeiro → Relatório de mensalidades | A lista muda conforme a pergunta, o título diz qual data está em uso e linhas antigas aparecem como "histórica: sem competência registrada" |
+| 5 | Abrir a ficha de um trabalhador com fiado | Financeiro → Fiados → trabalhador | **Comprado a fiado · Já recebido · Saldo devedor** (o crédito do trabalhador aparece em cartão separado) e cada venda com Recebido/Saldo |
+| 6 | *(fictício)* Cadastrar um trabalhador de teste, ex. "Teste TASK_012" | Trabalhadores | Ele passa a aparecer nas listas — **anote o nome**, é o que identifica o registro |
+| 7 | *(fictício)* Lançar uma compra a fiado de R$ 40,00 para esse trabalhador e receber R$ 15,00 escolhendo a dívida | Caixa → PDV / Caixa → Fiados | Antes de confirmar, a tela mostra a distribuição; depois, a dívida fica **R$ 25,00 de saldo com R$ 15,00 recebido** (nem quitada, nem devendo 40) |
+| 8 | *(fictício)* Receber mais R$ 50,00 contra a mesma dívida | Caixa → Fiados | A dívida zera e os R$ 10,00 de excedente viram **crédito** do trabalhador; "Recebimentos" sobe só R$ 50,00 (crédito não é receita nova) |
+| 9 | *(fictício)* Abrir o detalhe do lançamento do recebimento | Financeiro → visão de lançamentos | A seção **"Para onde foi este dinheiro"** mostra a dívida abatida e o valor, ligados ao recebimento |
+| 10 | Encerrar os registros de teste (o trabalhador "Teste TASK_012" e seus lançamentos) | conforme a rotina do módulo | O rótulo `Teste TASK_012` é o que garante que só o fictício sai; **não** use isto em dívida real |
+
+## 11. O que é herdado e o que veio na retomada
+
+| Item | Origem |
+|---|---|
+| §1 levantamento, matriz e evidências da idempotência (`416bf46`) | sessão anterior |
+| §2 idempotência de toda entrada de dinheiro (`00617c1`) | sessão anterior |
+| §3 mensalidade com competência (`a4c5346`, docs `cf4d8da`) | sessão anterior |
+| §4 destino do recebimento de fiado (`a6f0328`, docs `37f3dc4`) | sessão anterior |
+| Código da §5 (rotas, `servico_fiado`, templates) e a suíte `test_financeiro_consultas_task012.py` | escritos na sessão anterior; **não reescritos** aqui |
+| Limpeza da suíte §5 | **incompleta** pela interrupção; concluída nesta retomada (§5.6) |
+| Provas da §5 (74 asserções) | **executadas pela primeira vez** nesta retomada — a sessão anterior não chegou a rodá-las |
+| §6 / FIN-09 (`rotas/compras.py`, prova de ciclo de arquivo, injeção guardada) | **desta retomada** |
+| Abaixamento do M7 (`test_cancelamento_vendas`) e "—" na linha cancelada | **desta retomada** |
+| Registro de chaves em `CHAVES_USADAS` nas duas suítes da TASK_012 | **desta retomada** |
+| §5, §6, §9, §10 e §11 do relatório | **desta retomada** |
+
+Não reverti, reorganizei nem reescrevi nenhuma das entregas herdadas: os
+commits `00617c1`, `a4c5346` e `a6f0328` estão intactos no histórico e as suas
+suítes rodam verdes.
+
+## 12. Estado final e limitações remanescentes
+
+**Concluída no escopo implementado, com ressalvas registradas** — as etapas 2 a
+6 da ordem foram entregues com prova; a §6 tem FIN-08 parcial por decisão da
+própria ordem (§6.4).
+
+| Pendência | Natureza |
+|---|---|
+| Homologação autenticada no DEV | do dono (passos 6–9 do roteiro) |
+| 43 recebimentos de fiado sem trabalhador | legado; tela de destino histórico seria trabalho novo (questão registrada na §4.10) |
+| Vendas/sangrias legadas permitidas | decisão do dono continua pendente (§7 da ordem) |
+| Reembolso de fiado pago, estorno após sessão fechada, reabertura de caixa | excluídos pela ordem (§7) |
+| Conciliação bancária / importação de extratos | fora do escopo |
+| Suítes não financeiras com falha de ambiente | `test_codigo_trabalhador`, `test_terminal_leitor`, `test_gestao_correcoes_navegador`, `test_financeiro_visaogeral_navegador_task011` — todas falham por escrita em `/home/claudio/Documentos/...` (`Read-only file system`) e/ou Chromium sem diretório de perfil; nenhuma toca o financeiro |
+| Publicação | fora do escopo (sem push) |
