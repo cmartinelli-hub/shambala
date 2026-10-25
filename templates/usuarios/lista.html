@@ -8,7 +8,7 @@
         <h1>Usuários do Sistema</h1>
         <p class="subtitulo">{{ usuarios|length }} usuário{{ 's' if usuarios|length != 1 }} cadastrado{{ 's' if usuarios|length != 1 }}</p>
     </div>
-    <a href="/cadastros/usuarios/novo" class="btn btn-primario">➕ Novo usuário</a>
+    <a href="/cadastros/usuarios/novo" class="btn btn-primario">{{ icone("plus") }} Novo usuário</a>
 </div>
 
 {% if usuarios %}
@@ -19,7 +19,7 @@
             <div class="usuario-avatar">{{ u.nome_completo[:1]|upper }}</div>
             <div class="usuario-info">
                 <h3 class="usuario-nome">{{ u.nome_completo }}</h3>
-                <span class="usuario-login">👤 {{ u.nome_usuario }}</span>
+                <span class="usuario-login">{{ icone("user") }} {{ u.nome_usuario }}</span>
             </div>
             <span class="usuario-badge {% if u.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
                 {{ 'Ativo' if u.ativo else 'Inativo' }}
@@ -27,17 +27,17 @@
         </div>
         <div class="usuario-contato">
             {% if u.telefone %}
-            <span class="usuario-telefone">📞 {{ u.telefone }}</span>
+            <span class="usuario-telefone">{{ icone("phone") }} {{ u.telefone }}</span>
             {% endif %}
             {% if u.email %}
-            <span class="usuario-email">✉️ {{ u.email }}</span>
+            <span class="usuario-email">{{ icone("mail") }}️ {{ u.email }}</span>
             {% endif %}
             {% if u.grupos_nome %}
-            <span class="usuario-grupos">🔒 {{ u.grupos_nome }}</span>
+            <span class="usuario-grupos">{{ icone("lock") }} {{ u.grupos_nome }}</span>
             {% endif %}
         </div>
         <div class="usuario-acoes">
-            <a href="/cadastros/usuarios/{{ u.id }}/editar" class="btn btn-sm btn-editar">✏️ Editar</a>
+            <a href="/cadastros/usuarios/{{ u.id }}/editar" class="btn btn-sm btn-editar">{{ icone("pencil") }}️ Editar</a>
             <form method="post" action="/cadastros/usuarios/{{ u.id }}/toggle-ativo" class="usuario-form-toggle">
                 <button type="submit" class="btn-toggle {% if u.ativo %}btn-desativar{% else %}btn-ativar{% endif %}">
                     {{ 'Desativar' if u.ativo else 'Ativar' }}
@@ -49,7 +49,7 @@
 </div>
 {% else %}
 <div class="vazio">
-    <div class="vazio-icone">👤</div>
+    <div class="vazio-icone">{{ icone("user") }}</div>
     <h3>Nenhum usuário cadastrado</h3>
     <p>Clique em "+ Novo usuário" para começar.</p>
 </div>

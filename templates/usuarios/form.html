@@ -17,7 +17,7 @@
 
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}
@@ -25,7 +25,7 @@
 <form method="post" class="form-moderno">
     <!-- Dados da conta -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">👤 Dados da Conta</h2>
+        <h2 class="form-secao-titulo">{{ icone("user") }} Dados da Conta</h2>
         <div class="form-grid">
             <div class="form-campo form-campo-largo">
                 <label for="nome_completo">Nome completo *</label>
@@ -53,7 +53,7 @@
 
     <!-- Contato -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">📞 Contato</h2>
+        <h2 class="form-secao-titulo">{{ icone("phone") }} Contato</h2>
         <div class="form-grid">
             <div class="form-campo">
                 <label for="telefone">Telefone</label>
@@ -74,7 +74,7 @@
 
     <!-- Grupos -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">🔒 Grupos de Acesso</h2>
+        <h2 class="form-secao-titulo">{{ icone("lock") }} Grupos de Acesso</h2>
         {% if grupos %}
         <div class="form-grupos-grid">
             {% for g in grupos %}
@@ -98,7 +98,7 @@
 
     <!-- Agendas do médium que este usuário gerencia -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">📅 Agendas do Médium</h2>
+        <h2 class="form-secao-titulo">{{ icone("calendar-days") }} Agendas do Médium</h2>
         <p class="form-grupo-desc" style="margin-bottom:.5rem;">Agendas que este usuário gerencia. Marca o que ele vê e lança em <strong>Agenda do Médium</strong> — sem nenhum marcado, a tela fica vazia.</p>
         {% if mediuns %}
         <div class="form-grupos-grid">
@@ -120,7 +120,7 @@
 
     <!-- Botões de ação -->
     <div class="form-acoes">
-        <button type="submit" class="btn btn-primario btn-grande">💾 Salvar</button>
+        <button type="submit" class="btn btn-primario btn-grande">{{ icone("save") }} Salvar</button>
         <a href="/cadastros/usuarios" class="btn btn-secundario">Cancelar</a>
     </div>
 </form>

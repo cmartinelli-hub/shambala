@@ -220,10 +220,13 @@ def n1():
         pagina = op.abrir(f"/checkin-trabalhador?data={CENAS['hoje']}")
         assert "Gestão do dia" in pagina.locator("h1").inner_text()
         assert CENAS["hoje_br"] in pagina.locator(".subtitulo").inner_text()
-        assert "✔ 2 presentes" in pagina.inner_text("body"), "contador de presentes"
+        # TASK_015: o ✔ virou ícone Lucide (decorativo); o FATO verificado é o mesmo —
+        # o contador de presentes na gestão do dia.
+        assert "2 presentes" in pagina.inner_text("body"), "contador de presentes"
         assert "QR" in _card(pagina, "Alice Chegada QR").inner_text()
         assert "Recepção" in _card(pagina, "Bruno Recepcao").inner_text()
-        assert "⏳ Sem registro" in _card(pagina, "Carla Sem Registro").inner_text()
+        # TASK_015: o ⏳ virou ícone; o estado verificado continua "Sem registro".
+        assert "Sem registro" in _card(pagina, "Carla Sem Registro").inner_text()
         assert _card(pagina, "Carla Sem Registro").locator(".btn-trab-presente").count() == 1, \
             "ativo sem registro deveria permitir a chegada"
         assert pagina.locator(".trab-checkin-card:has-text('Dami Inativo')").count() == 0, \
@@ -244,7 +247,7 @@ def n2():
         dani = pagina.locator(".trab-checkin-card:has-text('Dami Inativo')")
         assert dani.count() == 1, "inativo COM registro na data deve aparecer"
         assert "inativo (histórico)" in dani.inner_text(), "situação identificada"
-        assert "✔ Presente — 09:00 · Recepção" in dani.inner_text()
+        assert "Presente — 09:00 · Recepção" in dani.inner_text()
         _evidencia(pagina, "n2-passado-somente-leitura-desktop")
 
 
@@ -284,7 +287,7 @@ def n4():
         with conectar() as conn:
             registrar_chegada(conn, _id_por_nome("Carla Sem Registro"))
         pagina.click("#trab-checkin-atualizar")
-        _esperar_texto(pagina, "✔ Presente")
+        _esperar_texto(pagina, "Presente")
         carla = _card(pagina, "Carla Sem Registro")
         limite = time.time() + 8
         while time.time() < limite and "Presente" not in carla.inner_text():
@@ -442,7 +445,7 @@ def n8():
     with _operador() as op:
         pagina = op.abrir(f"/cadastros/trabalhadores/{tid}/presenca")
         corpo = pagina.inner_text("body")
-        assert "✎ ajustado" in corpo, "faltou o selo de lançamento ajustado"
+        assert "ajustado" in corpo, "faltou o selo de lançamento ajustado"
         assert "ORIGEM" in corpo.upper() and "QR" in corpo, "faltou a origem do registro"
         assert "Histórico de alterações" in corpo, "admin não vê o histórico"
         assert "prova de ficha" in corpo and "Correção de horário" in corpo

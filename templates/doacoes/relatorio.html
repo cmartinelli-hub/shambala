@@ -102,7 +102,7 @@
                 </td>
                 <td>
                     {% if d.entregue %}
-                        <span style="color:#1da851">✅ Entregue</span>
+                        <span style="color:#1da851">{{ icone("circle-check") }} Entregue</span>
                     {% else %}
                         <span style="color:#ffa400">⏳ Pendente</span>
                     {% endif %}
@@ -116,7 +116,7 @@
     {% endif %}
 </div>
 
-<button onclick="window.print()" class="btn btn-primario" style="margin-top:1rem">🖨️ Imprimir</button>
+<button onclick="window.print()" class="btn btn-primario" style="margin-top:1rem">{{ icone("printer") }} Imprimir</button>
 
 <style>
 @media print {

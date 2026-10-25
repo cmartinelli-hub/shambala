@@ -6,7 +6,7 @@
 
 <div class="cabecalho-secao">
     <div>
-        <h1>💾 Backup em Pendrive ou HD Externo</h1>
+        <h1>{{ icone("save") }} Backup em Pendrive ou HD Externo</h1>
         <p class="subtitulo">Configure backup automático em dispositivos removíveis</p>
     </div>
 </div>
@@ -14,11 +14,11 @@
 {% if request.query_params.get('erro') %}
 <div class="alerta alerta-erro">
     {% if request.query_params['erro'] == 'dispositivo_invalido' %}
-        ⚠️ Dispositivo inválido. Use o formato /dev/sdXN (ex: /dev/sdb1)
+        {{ icone("triangle-alert") }} Dispositivo inválido. Use o formato /dev/sdXN (ex: /dev/sdb1)
     {% elif request.query_params['erro'] == 'montagem_invalida' %}
-        ⚠️ Caminho de montagem inválido. Não use /, /etc, /root ou caminhos com ../
+        {{ icone("triangle-alert") }} Caminho de montagem inválido. Não use /, /etc, /root ou caminhos com ../
     {% else %}
-        ⚠️ Erro ao salvar configuração
+        {{ icone("triangle-alert") }} Erro ao salvar configuração
     {% endif %}
 </div>
 {% endif %}
@@ -26,7 +26,7 @@
 <!-- Formulário de Configuração -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">🔧</span>
+        <span class="config-card-icon">{{ icone("wrench") }}</span>
         <div>
             <h2>Configurar Dispositivo</h2>
             <p class="config-card-desc">Especifique qual dispositivo USB e onde montá-lo no sistema</p>
@@ -70,8 +70,8 @@
         </div>
 
         <div class="config-acoes">
-            <button type="submit" class="btn btn-primario">💾 Salvar Configuração</button>
-            <button type="button" id="btn-testar" class="btn btn-secundario">🔍 Testar Conexão</button>
+            <button type="submit" class="btn btn-primario">{{ icone("save") }} Salvar Configuração</button>
+            <button type="button" id="btn-testar" class="btn btn-secundario">{{ icone("search") }} Testar Conexão</button>
         </div>
     </form>
 </div>
@@ -79,7 +79,7 @@
 <!-- Status do Dispositivo -->
 <div class="config-card" id="card-status" style="display: none;">
     <div class="config-card-header">
-        <span class="config-card-icon">📊</span>
+        <span class="config-card-icon">{{ icone("chart-column") }}</span>
         <div>
             <h2>Status do Dispositivo</h2>
         </div>
@@ -92,14 +92,14 @@
 <!-- Botão de Backup Manual -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">⚡</span>
+        <span class="config-card-icon">{{ icone("zap") }}</span>
         <div>
             <h2>Executar Backup Agora</h2>
             <p class="config-card-desc">Faça um backup manual a qualquer momento</p>
         </div>
     </div>
     <button id="btn-executar" type="button" class="btn btn-sucesso btn-grande">
-        🚀 Executar Backup Agora
+        {{ icone("rocket") }} Executar Backup Agora
     </button>
     <div id="progresso-backup" style="display: none; margin-top: 1rem;">
         <div class="progresso-barra">
@@ -112,7 +112,7 @@
 <!-- Histórico de Backups -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">📜</span>
+        <span class="config-card-icon">{{ icone("scroll-text") }}</span>
         <div>
             <h2>Histórico de Backups</h2>
             <p class="config-card-desc">Últimos 20 backups realizados</p>
@@ -137,9 +137,9 @@
                     <td>{{ item.data_backup }}</td>
                     <td>
                         {% if item.status == 'sucesso' %}
-                            <span class="badge badge-sucesso">✓ Sucesso</span>
+                            <span class="badge badge-sucesso">{{ icone("check") }} Sucesso</span>
                         {% else %}
-                            <span class="badge badge-erro">✕ Erro</span>
+                            <span class="badge badge-erro">{{ icone("x") }} Erro</span>
                         {% endif %}
                     </td>
                     <td>
@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const espacoDisp = (dados.espaco_disponivel_mb / 1024).toFixed(2);
                 statusConteudo.innerHTML = `
                     <div style="color: #166534;">
-                        <p><strong>✓ Dispositivo montado com sucesso!</strong></p>
+                        <p><strong>{{ icone("check") }} Dispositivo montado com sucesso!</strong></p>
                         <p>Espaço usado: ${espacoUsado} GB</p>
                         <p>Espaço disponível: ${espacoDisp} GB</p>
                     </div>
@@ -387,7 +387,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 statusConteudo.innerHTML = `
                     <div style="color: #991b1b;">
-                        <p><strong>✕ Erro ao conectar</strong></p>
+                        <p><strong>{{ icone("x") }} Erro ao conectar</strong></p>
                         <p>${dados.erro}</p>
                     </div>
                 `;
@@ -396,7 +396,7 @@ document.addEventListener('DOMContentLoaded', function() {
             statusConteudo.innerHTML = `<p style="color: red;">Erro: ${err.message}</p>`;
         } finally {
             btnTestar.disabled = false;
-            btnTestar.textContent = '🔍 Testar Conexão';
+            btnTestar.textContent = '{{ icone("search") }} Testar Conexão';
         }
     });
 
@@ -417,11 +417,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const dados = await resp.json();
 
             if (dados.sucesso) {
-                progressoTexto.textContent = `✓ Backup concluído! ${dados.tamanho_mb.toFixed(2)}MB salvos`;
+                progressoTexto.textContent = `{{ icone("check") }} Backup concluído! ${dados.tamanho_mb.toFixed(2)}MB salvos`;
                 progressoBackup.querySelector('.progresso-fill').style.width = '100%';
                 setTimeout(() => location.reload(), 2000);
             } else {
-                progressoTexto.textContent = `✕ Erro: ${dados.erro}`;
+                progressoTexto.textContent = `{{ icone("x") }} Erro: ${dados.erro}`;
                 progressoBackup.style.backgroundColor = '#fef2f2';
             }
         } catch (err) {

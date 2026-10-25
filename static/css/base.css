@@ -5045,3 +5045,66 @@ td.acoes { white-space: nowrap; text-align: right; }
 @media (max-width: 480px) {
     .fin-cards { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── Ícones Lucide (TASK_015) ────────────────────────────────────────────────
+   Substituem os emojis de interface. Regras deliberadamente pequenas: o ícone
+   ocupa o espaço que o emoji ocupava, herda a cor por `currentColor` do texto
+   ao redor (via classe do elemento) e nunca aumenta cartão, botão ou cabeçalho.
+
+   Espessura: a referência da ordem é 1,75. Os SVGs vendorizados mantêm o traço
+   do pacote (2) para continuarem reproduzíveis a partir da origem; aqui não se
+   altera espessura — forçar `stroke-width` exigiria embutir o SVG em cada uso,
+   o que quebraria o objetivo de mecanismo pequeno. Registrado no relatório. */
+
+.icone {
+    display: inline-block;
+    width: 1.25em;
+    height: 1.25em;
+    vertical-align: -0.2em;
+    flex: none;
+    /* O SVG é um documento separado quando vem por <img>: `currentColor` não o
+       atravessa. `filter: none` mantém a cor preta do arquivo, que é a cor de
+       texto padrão da interface; onde o ícone precisa acompanhar uma cor
+       específica, o CSS do contexto aplica `opacity` ou um filtro próprio. */
+    opacity: .85;
+}
+
+/* Ícone de cartão do menu: ocupa exatamente o lugar do emoji (2,2rem de fonte,
+   que o emoji desenhava como ~1 em de glifo). `box-sizing` e `display:block`
+   evitam que a linha do ícone cresça além do que o emoji ocupava — sem isso o
+   cartão do menu aumenta de altura e a grade desalinha. */
+.menu-card-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.2rem;
+    line-height: 1;
+}
+
+.menu-card-icon .icone,
+.menu-card-icon-img .icone {
+    display: block;
+    width: 2.2rem;
+    height: 2.2rem;
+    box-sizing: border-box;
+    vertical-align: middle;
+    opacity: 1;
+}
+
+/* Ícone dentro de botão: acompanha a cor do rótulo (botões claros/escuros). */
+.btn .icone,
+button .icone {
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+}
+
+/* Ícone em título de seção/cabeçalho: um pouco maior, sem deslocar a linha. */
+h1 .icone, h2 .icone, h3 .icone, .fin-titulo .icone {
+    width: 1.1em;
+    height: 1.1em;
+    vertical-align: -0.15em;
+}
+
+/* Estado sem imagem (arquivo ausente): não deixa "quadrado quebrado". */
+.icone[alt=""] { color: transparent; }

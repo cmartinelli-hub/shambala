@@ -146,7 +146,7 @@ Resultado do período com transferências excluídas está na Visão Geral.</p>
                 </td>
                 <td>
                     {% if m.nota_fiscal_foto %}
-                    <a href="/static/fotos/{{ m.nota_fiscal_foto }}" title="Ver nota fiscal">📷</a>
+                    <a href="/static/fotos/{{ m.nota_fiscal_foto }}" title="Ver nota fiscal">{{ icone("camera") }}</a>
                     {% endif %}
                 </td>
             </tr>

@@ -908,7 +908,13 @@ def k13(ctx):
     assert "cc-papel" not in html and "cc-foto" not in html, "sobrou estrutura antiga"
     assert "/static/fotos/" not in html and "foto-placeholder" not in html, \
         "carteirinha ainda referencia foto"
-    assert_eq(html.count("<img"), 2, "cartão deveria ter exatamente 2 imagens (estrela e QR)")
+    # TASK_015: a página tem o botão "Imprimir" com ícone Lucide (um <img>), então
+    # contar <img> na PÁGINA deixou de isolar o cartão. O contrato é sobre o
+    # CARTÃO: estrela + QR, e nada de foto.
+    cartao = re.search(r'<div class="cartao".*?</div>\s*</div>\s*</div>', html, re.S)
+    assert cartao, "não achei o bloco do cartão"
+    assert_eq(cartao.group(0).count("<img"), 2,
+              "cartão deveria ter exatamente 2 imagens (estrela e QR)")
 
     for vedado in ("123.456.789-01", "9999999", "(11) 4444-5555", "angela@exemplo.teste",
                    "77.77", "55.50", "fiado", "mensalidade"):

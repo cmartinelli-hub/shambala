@@ -7,54 +7,54 @@
 <div class="cabecalho-secao">
     <div>
         <h1>Dia de Trabalho</h1>
-        <p class="subtitulo">📅 {{ dia.data | data_br }} — {{ mediuns_dia|length }} médium{{ 's' if mediuns_dia|length != 1 }} presente{{ 's' if mediuns_dia|length != 1 }}</p>
+        <p class="subtitulo">{{ icone("calendar-days") }} {{ dia.data | data_br }} — {{ mediuns_dia|length }} médium{{ 's' if mediuns_dia|length != 1 }} presente{{ 's' if mediuns_dia|length != 1 }}</p>
     </div>
     <div class="acoes-cabecalho">
-        <a href="/dia/checkin" class="btn btn-primario">✅ Check-in</a>
-        <a href="/dia/dashboard" class="btn btn-secundario">🗂️ Dashboard</a>
-        <a href="/cadastros/pessoas/novo" class="btn btn-secundario">➕ Pessoa</a>
+        <a href="/dia/checkin" class="btn btn-primario">{{ icone("circle-check") }} Check-in</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">{{ icone("folder-open") }} Dashboard</a>
+        <a href="/cadastros/pessoas/novo" class="btn btn-secundario">{{ icone("plus") }} Pessoa</a>
     </div>
 </div>
 
 <!-- Todas as filas unificadas -->
 <div class="dia-filas-secao">
-    <h2 class="dia-secao-titulo">📋 Filas do Dia</h2>
+    <h2 class="dia-secao-titulo">{{ icone("clipboard-list") }} Filas do Dia</h2>
     <div class="dia-filas-grid">
         <!-- Filas gerais -->
         <a href="/dia/passe" class="fila-card">
-            <span class="fila-icon">🧘</span>
+            <span class="fila-icon">{{ icone("heart-handshake") }}</span>
             <span class="fila-nome">Passe</span>
             {% if passe_aguardando > 0 %}
             <span class="fila-badge fila-aguardando">{{ passe_aguardando }}</span>
             {% elif passe_realizado > 0 %}
-            <span class="fila-badge fila-realizado">{{ passe_realizado }} ✓</span>
+            <span class="fila-badge fila-realizado">{{ passe_realizado }} {{ icone("check") }}</span>
             {% endif %}
         </a>
         {% if reiki_ativo %}
         <a href="/dia/reiki" class="fila-card">
-            <span class="fila-icon">🙌</span>
+            <span class="fila-icon">{{ icone("heart-handshake") }}</span>
             <span class="fila-nome">Reiki</span>
             {% if reiki_aguardando > 0 %}
             <span class="fila-badge fila-aguardando">{{ reiki_aguardando }}</span>
             {% elif reiki_realizado > 0 %}
-            <span class="fila-badge fila-realizado">{{ reiki_realizado }} ✓</span>
+            <span class="fila-badge fila-realizado">{{ reiki_realizado }} {{ icone("check") }}</span>
             {% endif %}
         </a>
         {% endif %}
         <a href="/dia/acolhimento" class="fila-card">
-            <span class="fila-icon">🤝</span>
+            <span class="fila-icon">{{ icone("handshake") }}</span>
             <span class="fila-nome">Fraterno</span>
             {% if acolh_aguardando > 0 %}
             <span class="fila-badge fila-aguardando">{{ acolh_aguardando }}</span>
             {% elif acolh_realizado > 0 %}
-            <span class="fila-badge fila-realizado">{{ acolh_realizado }} ✓</span>
+            <span class="fila-badge fila-realizado">{{ acolh_realizado }} {{ icone("check") }}</span>
             {% endif %}
         </a>
 
         <!-- Filas por médium -->
         {% for m in filas_mediuns %}
         <a href="/dia/mediuns/{{ m.id }}" class="fila-card fila-medium {% if m.fim %}fila-fim{% endif %}">
-            <span class="fila-icon">🧑‍⚕️</span>
+            <span class="fila-icon">{{ icone("user") }}‍{{ icone("stethoscope") }}</span>
             <span class="fila-nome">
                 {{ m.nome_completo }}
                 {% if m.vagas_restantes is not none %}
@@ -64,7 +64,7 @@
             {% if m.aguardando > 0 %}
             <span class="fila-badge fila-aguardando">{{ m.aguardando }}</span>
             {% elif m.atendidos > 0 %}
-            <span class="fila-badge fila-realizado">{{ m.atendidos }} ✓</span>
+            <span class="fila-badge fila-realizado">{{ m.atendidos }} {{ icone("check") }}</span>
             {% endif %}
         </a>
         {% endfor %}
@@ -74,7 +74,7 @@
 <!-- Adicionar médium -->
 <div class="dia-add-medium">
     <details>
-        <summary>➕ Adicionar médium presente</summary>
+        <summary>{{ icone("plus") }} Adicionar médium presente</summary>
         <form method="post" action="/dia/adicionar-medium" class="form-add-medium">
             <div class="add-medium-campos">
                 <div class="add-medium-campo">
@@ -109,7 +109,7 @@
 
 <!-- Estatísticas (colapsáveis, no fim) -->
 <details class="dia-stats-details">
-    <summary>📊 Estatísticas do dia</summary>
+    <summary>{{ icone("chart-column") }} Estatísticas do dia</summary>
     <div class="dia-stats-grid">
         <a href="/dia/lista?tipo=checkins" class="stat-card">
             <span class="stat-numero">{{ total_checkins }}</span>
@@ -156,7 +156,7 @@
 <div class="dia-acoes-footer">
     <form method="post" action="/dia/encerrar"
           onsubmit="return confirm('Encerrar o dia de hoje? Esta ação não pode ser desfeita.')">
-        <button type="submit" class="btn btn-perigo">🔒 Encerrar dia</button>
+        <button type="submit" class="btn btn-perigo">{{ icone("lock") }} Encerrar dia</button>
     </form>
 </div>
 {% endblock %}

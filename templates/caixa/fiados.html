@@ -90,7 +90,7 @@
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
         <a href="/caixa/pdv" class="btn btn-primario btn-sm">← Voltar ao PDV</a>
-        <a href="/caixa/vendas" class="btn btn-secundario btn-sm">📋 Vendas do dia</a>
+        <a href="/caixa/vendas" class="btn btn-secundario btn-sm">{{ icone("clipboard-list") }} Vendas do dia</a>
     </div>
 </div>
 
@@ -121,34 +121,34 @@
 {% if _cancelado_ok %}
 <div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
      padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
-    ✅ Venda de fiado #{{ _cancelado_ok }} cancelada: os efeitos comprováveis foram
+    {{ icone("circle-check") }} Venda de fiado #{{ _cancelado_ok }} cancelada: os efeitos comprováveis foram
     revertidos e a dívida atual foi ajustada. Motivo, autor e instante estão no registro.
 </div>
 {% endif %}
 {% if _erro == 'sem_permissao' %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
-    ⛔ Apenas administradores podem cancelar lançamentos de fiado.
+    {{ icone("ban") }} Apenas administradores podem cancelar lançamentos de fiado.
 </div>
 {% elif _erro == 'nao_encontrada' %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
-    ⛔ Venda não encontrada ou já processada.
+    {{ icone("ban") }} Venda não encontrada ou já processada.
 </div>
 {% else %}
 {% set _msgs = {
-    'sessao_necessaria': '⛔ Recebimento em espécie exige escolher a sessão aberta na barra de destino acima.',
-    'sessao_invalida': '⛔ A sessão escolhida não está aberta agora — nada foi registrado.',
-    'conta_invalida': '⛔ Falta uma conta válida de destino para a forma escolhida.',
+    'sessao_necessaria': '{{ icone("ban") }} Recebimento em espécie exige escolher a sessão aberta na barra de destino acima.',
+    'sessao_invalida': '{{ icone("ban") }} A sessão escolhida não está aberta agora — nada foi registrado.',
+    'conta_invalida': '{{ icone("ban") }} Falta uma conta válida de destino para a forma escolhida.',
     'ja_pago': 'Esta dívida já consta como paga — nada foi registrado.',
     'sem_divida': 'Este trabalhador não tem dívidas de fiado em aberto.',
-    'valor_invalido': '⛔ Valor inválido.',
-    'selecao_invalida': '⛔ Alguma das dívidas marcadas não está mais em aberto. '
+    'valor_invalido': '{{ icone("ban") }} Valor inválido.',
+    'selecao_invalida': '{{ icone("ban") }} Alguma das dívidas marcadas não está mais em aberto. '
                         'Recarregue a lista e confira a seleção — nada foi registrado.',
-    'sem_saldo': '⛔ As dívidas marcadas já foram cobertas — não há saldo a receber. '
-                 'Para antecipar dinheiro sem dívida use “➕ Crédito”.',
-    'venda_nao_encontrada': '⛔ Venda de fiado não encontrada.',
-    'trabalhador_nao_encontrado': '⛔ Trabalhador não encontrado.',
+    'sem_saldo': '{{ icone("ban") }} As dívidas marcadas já foram cobertas — não há saldo a receber. '
+                 'Para antecipar dinheiro sem dívida use o botão “Crédito”.',
+    'venda_nao_encontrada': '{{ icone("ban") }} Venda de fiado não encontrada.',
+    'trabalhador_nao_encontrado': '{{ icone("ban") }} Trabalhador não encontrado.',
     'tentativa_sem_chave': mensagens_tentativa['tentativa_sem_chave'],
     'tentativa_conflito': mensagens_tentativa['tentativa_conflito'],
     'tentativa_em_andamento': mensagens_tentativa['tentativa_em_andamento'],
@@ -163,7 +163,7 @@
 
 {# ── Barra de destino do dinheiro (TASK_008) ── #}
 <div class="card-form" style="margin-bottom:1.2rem;padding:.8rem 1rem">
-    <div style="font-weight:700;font-size:.9rem;margin-bottom:.5rem">📥 Destino do dinheiro recebido</div>
+    <div style="font-weight:700;font-size:.9rem;margin-bottom:.5rem">{{ icone("download") }} Destino do dinheiro recebido</div>
     <div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;font-size:.85rem">
         <label style="font-weight:600">Sessão para espécie (gaveta):</label>
         <select id="dest-sessao" style="padding:.35rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:.85rem">
@@ -199,7 +199,7 @@
 <div class="card-form" style="margin-bottom:1.5rem">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:.8rem;gap:.5rem">
         <div>
-            <h3 style="margin:0;font-size:1.1rem">👤 {{ grupo.trabalhador_nome }}</h3>
+            <h3 style="margin:0;font-size:1.1rem">{{ icone("user") }} {{ grupo.trabalhador_nome }}</h3>
             {% if grupo.trabalhador_cpf %}
             <span style="font-size:.85rem;color:var(--cor-texto-suave)">CPF: {{ grupo.trabalhador_cpf }}</span>
             {% endif %}
@@ -237,9 +237,9 @@
                 face — nada foi abatido por presunção.</div>
             {% endif %}
             <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn btn-sm btn-primario" onclick="togglePagar({{ tid }}, {{ grupo.total }})">💰 Receber Pagamento</button>
-                <button class="btn btn-sm btn-secundario" onclick="toggleCredito({{ tid }})">➕ Crédito</button>
-                <a class="btn btn-sm btn-secundario" href="/caixa/fiados/extrato/{{ tid }}">📄 Extrato</a>
+                <button class="btn btn-sm btn-primario" onclick="togglePagar({{ tid }}, {{ grupo.total }})">{{ icone("wallet") }} Receber Pagamento</button>
+                <button class="btn btn-sm btn-secundario" onclick="toggleCredito({{ tid }})">{{ icone("plus") }} Crédito</button>
+                <a class="btn btn-sm btn-secundario" href="/caixa/fiados/extrato/{{ tid }}">{{ icone("file-text") }} Extrato</a>
             </div>
         </div>
     </div>
@@ -252,7 +252,7 @@
                   onsubmit="return handlePagarDivida(event, this, {{ grupo.total }})">
                 {{ campo_idempotencia() }}
                 <div style="font-weight:700;margin-bottom:.6rem;font-size:.95rem">
-                    💰 Receber pagamento de {{ grupo.trabalhador_nome }}
+                    {{ icone("wallet") }} Receber pagamento de {{ grupo.trabalhador_nome }}
                 </div>
 
                 <div style="margin-bottom:.6rem">
@@ -293,7 +293,7 @@
                            value="{{ "%.2f"|format(grupo.total) }}"
                            oninput="atualizarReparticao(this.form)"
                            style="width:120px;padding:.35rem .5rem;border:2px solid #f9a825;border-radius:var(--raio);font-size:1rem;font-weight:700">
-                    <button class="btn btn-primario" type="submit" style="padding:.35rem .9rem">✅ Confirmar</button>
+                    <button class="btn btn-primario" type="submit" style="padding:.35rem .9rem">{{ icone("circle-check") }} Confirmar</button>
                     <button class="btn btn-secundario" type="button"
                             onclick="togglePagar({{ tid }}, 0)" style="padding:.35rem .7rem">Cancelar</button>
                 </div>
@@ -324,7 +324,7 @@
                    style="width:100px;padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
             <input type="text" name="descricao" placeholder="Descrição (opcional)"
                    style="flex:1;min-width:120px;padding:.3rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.85rem">
-            <button class="btn btn-sm btn-primario" type="submit">💾 Salvar</button>
+            <button class="btn btn-sm btn-primario" type="submit">{{ icone("save") }} Salvar</button>
             <button class="btn btn-sm btn-secundario" type="button" onclick="toggleCredito({{ tid }})">Cancelar</button>
         </form>
     </div>
@@ -366,11 +366,11 @@
                                 <option value="especie">Espécie</option>
                                 <option value="pix">PIX</option>
                             </select>
-                            <button class="btn btn-sm btn-secundario">💰 Quitar o saldo (R$ {{ "%.2f"|format(v.saldo) }})</button>
+                            <button class="btn btn-sm btn-secundario">{{ icone("wallet") }} Quitar o saldo (R$ {{ "%.2f"|format(v.saldo) }})</button>
                         </form>
-                        <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">🖨 Imprimir</a>
+                        <a href="/caixa/vendas/{{ v.id }}/comprovante?via=caixa" target="_blank" class="btn btn-sm btn-secundario">{{ icone("printer") }} Imprimir</a>
                         {% if e_admin %}
-                        <a href="/caixa/vendas/{{ v.id }}/cancelar" class="btn btn-sm btn-perigo">🗑 Cancelar</a>
+                        <a href="/caixa/vendas/{{ v.id }}/cancelar" class="btn btn-sm btn-perigo">{{ icone("trash-2") }} Cancelar</a>
                         {% endif %}
                     </td>
                 </tr>
@@ -386,7 +386,7 @@
 <div class="modal-overlay" id="modal-pix-fiado" style="display:none" onclick="if(event.target===this)fecharModalPixFiado()">
     <div class="modal-box">
         <div class="modal-header">
-            <h3>📱 Pagamento PIX — Fiado</h3>
+            <h3>{{ icone("smartphone") }} Pagamento PIX — Fiado</h3>
             <button type="button" class="modal-close" onclick="fecharModalPixFiado()">&times;</button>
         </div>
         <div class="modal-body" style="text-align:center">
@@ -401,7 +401,7 @@
         </div>
         <div class="modal-footer">
             <button class="btn btn-secundario" onclick="fecharModalPixFiado()">← Voltar</button>
-            <button class="btn btn-primario" id="btn-confirmar-pix-fiado" style="flex:2">✅ Confirmar Pagamento</button>
+            <button class="btn btn-primario" id="btn-confirmar-pix-fiado" style="flex:2">{{ icone("circle-check") }} Confirmar Pagamento</button>
         </div>
     </div>
 </div>
@@ -424,9 +424,9 @@ async function imprimirReciboFiado() {
             body: bytes,
             headers: {'Content-Type': 'application/octet-stream'}
         });
-        if (msg) msg.textContent = '✅ Pagamento registrado! 2 vias impressas.';
+        if (msg) msg.textContent = '{{ icone("circle-check") }} Pagamento registrado! 2 vias impressas.';
     } catch(e) {
-        if (msg) msg.textContent = '✅ Pagamento registrado. Agente não respondeu — verifique se está rodando.';
+        if (msg) msg.textContent = '{{ icone("circle-check") }} Pagamento registrado. Agente não respondeu — verifique se está rodando.';
     }
 }
 window.addEventListener('load', imprimirReciboFiado);
@@ -518,7 +518,7 @@ function atualizarReparticao(form) {
     alvo.innerHTML = (linhas.length || rodape)
         ? `<div class="reparticao-titulo">Distribuição deste dinheiro:</div><ul>${linhas.join('')}${rodape}</ul>`
         : `<div class="reparticao-titulo">Nenhuma dívida marcada — o valor inteiro viraria crédito. `
-        + `Use “➕ Crédito” para isso.</div>`;
+        + `Use o botão “Crédito” para isso.</div>`;
 }
 
 function handlePagarDivida(event, form, total) {

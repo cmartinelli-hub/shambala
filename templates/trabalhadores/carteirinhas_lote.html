@@ -11,17 +11,17 @@
     <a class="btn carteirinha-voltar" href="/cadastros/trabalhadores">← Voltar</a>
     <h1>{{ cartoes|length }} carteirinha{{ 's' if cartoes|length != 1 }} · {{ folhas|length }} folha{{ 's' if folhas|length != 1 }} A4</h1>
     <span class="aviso-escala">10 cartões por folha (2 × 5) · imprimir em escala 100%, sem “ajustar à página”</span>
-    <button type="button" class="btn btn-primario" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+    <button type="button" class="btn btn-primario" onclick="window.print()">{{ icone("printer") }} Imprimir / Salvar PDF</button>
 </div>
 
 {% if inativos or sem_codigo %}
 <div class="carteirinha-avisos">
     {% if inativos %}
-    <p>🚫 Não impressos (inativos — bloqueado nesta versão; reative no cadastro se for o caso):
+    <p>{{ icone("ban") }} Não impressos (inativos — bloqueado nesta versão; reative no cadastro se for o caso):
         {{ inativos|join(', ') }}</p>
     {% endif %}
     {% if sem_codigo %}
-    <p>🔢 Não impressos (sem código atual — use “Gerar código” ou “Preparar códigos que faltam”):
+    <p>{{ icone("hash") }} Não impressos (sem código atual — use “Gerar código” ou “Preparar códigos que faltam”):
         {{ sem_codigo|join(', ') }}</p>
     {% endif %}
 </div>

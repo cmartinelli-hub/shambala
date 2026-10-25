@@ -4,7 +4,7 @@
 {% block conteudo %}
 <div class="cabecalho-secao">
     <h2>Caixas</h2>
-    <a href="/caixa/produtos" class="btn btn-secundario btn-sm">🛒 Produtos</a>
+    <a href="/caixa/produtos" class="btn btn-secundario btn-sm">{{ icone("shopping-cart") }} Produtos</a>
 </div>
 
 <div class="card-form" style="max-width:480px;margin-bottom:2rem">
@@ -61,7 +61,7 @@
                     </option>
                     {% endfor %}
                 </select>
-                <button type="submit" class="btn btn-sm btn-secundario" title="Salvar chave PIX">💾</button>
+                <button type="submit" class="btn btn-sm btn-secundario" title="Salvar chave PIX" aria-label="Salvar chave PIX">{{ icone("save") }}</button>
             </form>
         </td>
         <td>

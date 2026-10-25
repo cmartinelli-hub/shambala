@@ -12,12 +12,12 @@
 
 {% if request.query_params.get('erro') %}
 <div style="margin-bottom:1rem;padding:.6rem .75rem;background:#fee;border:1px solid #c00;border-radius:4px;color:#c00;font-size:.9rem">
-    ⚠️ {{ request.query_params.get('erro') }}
+    {{ icone("triangle-alert") }} {{ request.query_params.get('erro') }}
 </div>
 {% endif %}
 {% if request.query_params.get('msg') %}
 <div style="margin-bottom:1rem;padding:.6rem .75rem;background:#efe;border:1px solid #0a0;border-radius:4px;color:#0a0;font-size:.9rem">
-    ✓ {{ request.query_params.get('msg') }}
+    {{ icone("check") }} {{ request.query_params.get('msg') }}
 </div>
 {% endif %}
 
@@ -73,9 +73,9 @@
                 <td>{{ loop.index }}</td>
                 <td><strong style="font-size:1.2rem">{{ c.codigo_atendimento }}</strong></td>
                 <td>{{ c.nome_completo }}
-                    {% if c.prioridade %} ⚑{% endif %}
-                    {% if c.deficiencia %} ♿{% endif %}
-                    {% if idoso %} ★{% endif %}
+                    {% if c.prioridade %} {{ icone("flag") }}{% endif %}
+                    {% if c.deficiencia %} {{ icone("accessibility") }}{% endif %}
+                    {% if idoso %} {{ icone("star") }}{% endif %}
                 </td>
                 <td>{{ c.hora_checkin }}</td>
                 <td>

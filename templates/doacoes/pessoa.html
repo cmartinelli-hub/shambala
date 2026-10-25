@@ -19,7 +19,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem">
                 <strong>{{ d.data_entrega|data_br }}</strong>
                 <span style="font-size:0.85rem; color:{{ '#1da851' if d.entregue else '#ffa400' }}; font-weight:600">
-                    {% if d.entregue %}✅ Entregue{% else %}⏳ Pendente{% endif %}
+                    {% if d.entregue %}{{ icone("circle-check") }} Entregue{% else %}⏳ Pendente{% endif %}
                 </span>
             </div>
             {% if d.itens_list %}

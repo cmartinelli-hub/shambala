@@ -11,7 +11,7 @@
     <a class="btn carteirinha-voltar" href="/cadastros/trabalhadores/{{ cartao.id }}/editar">← Voltar</a>
     <h1>Carteirinha de {{ cartao.nome }}</h1>
     <span class="aviso-escala">Código {{ cartao.codigo }} · imprimir em escala 100%, sem “ajustar à página”</span>
-    <button type="button" class="btn btn-primario" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+    <button type="button" class="btn btn-primario" onclick="window.print()">{{ icone("printer") }} Imprimir / Salvar PDF</button>
 </div>
 
 <div class="folha">

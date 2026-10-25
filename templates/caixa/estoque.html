@@ -3,11 +3,11 @@
 
 {% block conteudo %}
 <div class="cabecalho-secao">
-    <h2>📦 Controle de Estoque</h2>
+    <h2>{{ icone("package") }} Controle de Estoque</h2>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <a href="/caixa/produtos" class="btn btn-secundario btn-sm">← Produtos</a>
-        <a href="/caixa/estoque/entrada" class="btn btn-primario btn-sm">➕ Entrada</a>
-        <a href="/caixa/estoque/perda" class="btn btn-sm" style="background:#c0392b;color:#fff">⚠ Perda</a>
+        <a href="/caixa/estoque/entrada" class="btn btn-primario btn-sm">{{ icone("plus") }} Entrada</a>
+        <a href="/caixa/estoque/perda" class="btn btn-sm" style="background:#c0392b;color:#fff">{{ icone("triangle-alert") }} Perda</a>
     </div>
 </div>
 
@@ -48,7 +48,7 @@
     <div style="background:#fff;border-radius:var(--raio);padding:1.5rem;max-width:600px;width:90%;max-height:80vh;overflow-y:auto">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
             <h3 id="modal-titulo" style="margin:0">Movimentações</h3>
-            <button onclick="fecharModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer">✕</button>
+            <button onclick="fecharModal()" style="background:none;border:none;font-size:1.5rem;cursor:pointer" aria-label="Fechar">{{ icone("x") }}</button>
         </div>
         <div id="modal-corpo">
             <p style="color:var(--cor-texto-suave)">Carregando…</p>

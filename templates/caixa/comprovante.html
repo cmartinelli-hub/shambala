@@ -187,17 +187,17 @@
                 headers: {'Content-Type': 'application/octet-stream'}
             });
             if (ra.ok) {
-                btn.textContent = '✓ Impresso';
+                btn.textContent = 'Impresso';
             } else {
                 const j = await ra.json().catch(() => ({}));
                 msg.textContent = j.erro || 'Erro ao imprimir.';
                 btn.disabled = false;
-                btn.textContent = '🖨 Reimprimir';
+                btn.textContent = 'Reimprimir';
             }
         } catch (e) {
             msg.textContent = 'Agente não respondeu — verifique se o agente de impressão está rodando.';
             btn.disabled = false;
-            btn.textContent = '🖨 Reimprimir';
+            btn.textContent = 'Reimprimir';
         }
     }
 

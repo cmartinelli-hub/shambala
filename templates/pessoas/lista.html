@@ -9,17 +9,17 @@
         <p class="subtitulo">{{ pessoas|length }} pessoa{{ 's' if pessoas|length != 1 }} cadastrada{{ 's' if pessoas|length != 1 }}</p>
     </div>
     <div class="acoes-cabecalho">
-        <a href="/cadastros/pessoas/novo" class="btn btn-primario">➕ Nova pessoa</a>
-        <a href="/dia/dashboard" class="btn btn-secundario">📊 Dashboard</a>
+        <a href="/cadastros/pessoas/novo" class="btn btn-primario">{{ icone("plus") }} Nova pessoa</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">{{ icone("chart-column") }} Dashboard</a>
     </div>
 </div>
 
 <form method="get" class="barra-busca-form">
     <div class="busca-wrapper">
-        <span class="busca-icone">🔍</span>
+        <span class="busca-icone">{{ icone("search") }}</span>
         <input type="text" name="busca" value="{{ busca }}" placeholder="Buscar por nome…" autofocus class="busca-input">
         {% if busca %}
-        <a href="/cadastros/pessoas" class="btn btn-limpar">✕</a>
+        <a href="/cadastros/pessoas" class="btn btn-limpar">{{ icone("x") }}</a>
         {% endif %}
     </div>
     <button type="submit" class="btn btn-primario">Buscar</button>
@@ -40,7 +40,7 @@
             <div class="pessoa-nome">{{ p.nome_completo }}</div>
             <div class="pessoa-contato">
                 {% if p.telefone %}
-                <span class="pessoa-telefone">📞 {{ p.telefone }}</span>
+                <span class="pessoa-telefone">{{ icone("phone") }} {{ p.telefone }}</span>
                 {% else %}
                 <span class="pessoa-sem-contato">Sem telefone</span>
                 {% endif %}
@@ -52,7 +52,7 @@
 </div>
 {% else %}
 <div class="vazio">
-    <div class="vazio-icone">👥</div>
+    <div class="vazio-icone">{{ icone("users") }}</div>
     <h3>{% if busca %}Nenhum resultado para "{{ busca }}"{% else %}Nenhuma pessoa cadastrada{% endif %}</h3>
     <p>{% if busca %}Tente buscar com outro termo.{% else %}Clique em "+ Nova pessoa" para começar.{% endif %}</p>
 </div>

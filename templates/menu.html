@@ -14,73 +14,73 @@
 <div class="menu-grid">
     {% if e_admin or permissoes.get('dia.painel') %}
     <a href="/dia" class="menu-card">
-        <span class="menu-card-icon">📋</span>
+        <span class="menu-card-icon">{{ icone("calendar-days") }}</span>
         <span class="menu-card-label">Dia de Trabalho</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('cadastros.pessoas') %}
     <a href="/cadastros/pessoas" class="menu-card">
-        <span class="menu-card-icon">👥</span>
+        <span class="menu-card-icon">{{ icone("users") }}</span>
         <span class="menu-card-label">Pessoas</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('agenda') %}
     <a href="/agenda" class="menu-card">
-        <span class="menu-card-icon">📅</span>
+        <span class="menu-card-icon">{{ icone("calendar-days") }}</span>
         <span class="menu-card-label">Agenda</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('agenda.medium') %}
     <a href="/agenda/medium" class="menu-card">
-        <span class="menu-card-icon">📋</span>
+        <span class="menu-card-icon">{{ icone("calendar-days") }}</span>
         <span class="menu-card-label">Agenda do Médium</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('relatorios') %}
     <a href="/relatorios" class="menu-card">
-        <span class="menu-card-icon">📊</span>
+        <span class="menu-card-icon">{{ icone("chart-column") }}</span>
         <span class="menu-card-label">Relatórios</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('checkin.trabalhadores') %}
     <a href="/checkin-trabalhador" class="menu-card">
-        <span class="menu-card-icon">✅</span>
+        <span class="menu-card-icon">{{ icone("scan-line") }}</span>
         <span class="menu-card-label">Check-in Trabalhadores</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('financeiro') %}
     <a href="/financeiro" class="menu-card">
-        <span class="menu-card-icon">💰</span>
+        <span class="menu-card-icon">{{ icone("wallet") }}</span>
         <span class="menu-card-label">Financeiro</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('financeiro.compras') %}
     <a href="/financeiro/compras" class="menu-card">
-        <span class="menu-card-icon">🧾</span>
+        <span class="menu-card-icon">{{ icone("shopping-basket") }}</span>
         <span class="menu-card-label">Compras</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('doacoes') %}
     <a href="/doacoes" class="menu-card">
-        <span class="menu-card-icon">📦</span>
+        <span class="menu-card-icon">{{ icone("heart-handshake") }}</span>
         <span class="menu-card-label">Doações</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('biblioteca') %}
     <a href="/biblioteca" class="menu-card">
-        <span class="menu-card-icon">📚</span>
+        <span class="menu-card-icon">{{ icone("book-open") }}</span>
         <span class="menu-card-label">Biblioteca</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('mala.direta') %}
     <a href="/mala-direta" class="menu-card">
-        <span class="menu-card-icon">✉️</span>
+        <span class="menu-card-icon">{{ icone("mail") }}️</span>
         <span class="menu-card-label">Mala Direta</span>
     </a>
     {% endif %}
     {% if e_admin or permissoes.get('caixa') %}
     <a href="/caixa/pdv" class="menu-card">
-        <span class="menu-card-icon">🛒</span>
+        <span class="menu-card-icon">{{ icone("store") }}</span>
         <span class="menu-card-label">Caixa / PDV</span>
     </a>
     {% endif %}
@@ -89,14 +89,14 @@
 {% if e_admin %}
 <!-- Administração -->
 <div class="menu-secao-admin">
-    <h2 class="menu-secao-titulo">🔐 Administração</h2>
+    <h2 class="menu-secao-titulo">{{ icone("shield") }} Administração</h2>
     <div class="menu-grid">
         <a href="/cadastros/usuarios" class="menu-card menu-card-admin">
-            <span class="menu-card-icon">🔑</span>
+            <span class="menu-card-icon">{{ icone("contact-round") }}</span>
             <span class="menu-card-label">Usuários</span>
         </a>
         <a href="/cadastros/permissoes" class="menu-card menu-card-admin">
-            <span class="menu-card-icon">🔒</span>
+            <span class="menu-card-icon">{{ icone("lock") }}</span>
             <span class="menu-card-label">Permissões</span>
         </a>
         <a href="/cadastros/trabalhadores" class="menu-card menu-card-admin">
@@ -108,7 +108,7 @@
             <span class="menu-card-label">Médiuns</span>
         </a>
         <a href="/configuracoes" class="menu-card menu-card-admin">
-            <span class="menu-card-icon">⚙️</span>
+            <span class="menu-card-icon">{{ icone("settings") }}️</span>
             <span class="menu-card-label">Configurações</span>
         </a>
     </div>

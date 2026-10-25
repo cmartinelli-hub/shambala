@@ -9,7 +9,7 @@
 
 {% if cancelado %}
 <div style="background:#e8f7ee;border:1px solid #1da851;border-radius:var(--raio);padding:.6rem 1rem;margin-bottom:1rem;color:#0d6b33">
-    ✔ Venda #{{ cancelado }} cancelada. Os efeitos comprováveis foram revertidos e o registro
+    {{ icone("check") }} Venda #{{ cancelado }} cancelada. Os efeitos comprováveis foram revertidos e o registro
     (motivo, autor, instante) está na própria linha abaixo e no comprovante.
 </div>
 {% endif %}
@@ -40,9 +40,9 @@
     {% for p in por_pgto %}
     <div style="background:var(--cor-superficie);border-radius:var(--raio);box-shadow:var(--sombra);padding:.7rem 1.1rem;min-width:130px">
         <div style="font-size:.75rem;color:var(--cor-texto-suave);margin-bottom:.2rem">
-            {% if p.forma_pagamento == 'especie' %}💵 Espécie
-            {% elif p.forma_pagamento == 'pix' %}📱 PIX
-            {% elif p.forma_pagamento == 'fiado' %}📝 Fiado
+            {% if p.forma_pagamento == 'especie' %}{{ icone("banknote") }} Espécie
+            {% elif p.forma_pagamento == 'pix' %}{{ icone("smartphone") }} PIX
+            {% elif p.forma_pagamento == 'fiado' %}{{ icone("notebook-pen") }} Fiado
             {% else %}{{ p.forma_pagamento }}{% endif %}
         </div>
         <div style="font-size:1.1rem;font-weight:700">R$ {{ "%.2f"|format(p.total) }}</div>
@@ -72,9 +72,9 @@
         <td>{{ v.id }}</td>
         <td>{{ v.caixa_nome }}</td>
         <td>
-            {% if v.forma_pagamento == 'especie' %}💵 Espécie
-            {% elif v.forma_pagamento == 'pix' %}📱 PIX
-            {% elif v.forma_pagamento == 'fiado' %}📝 Fiado
+            {% if v.forma_pagamento == 'especie' %}{{ icone("banknote") }} Espécie
+            {% elif v.forma_pagamento == 'pix' %}{{ icone("smartphone") }} PIX
+            {% elif v.forma_pagamento == 'fiado' %}{{ icone("notebook-pen") }} Fiado
             {% else %}{{ v.forma_pagamento }}{% endif %}
         </td>
         <td><strong>R$ {{ "%.2f"|format(v.total) }}</strong></td>

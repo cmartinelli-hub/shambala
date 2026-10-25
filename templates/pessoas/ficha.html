@@ -4,7 +4,7 @@
 {% block conteudo %}
 {% if request.query_params.get('erro') %}
 <div class="alerta alerta-erro" style="margin-bottom:1rem;padding:1rem;background:#fee;border:1px solid #c00;border-radius:4px;color:#c00">
-    ⚠️ {{ request.query_params.get('erro') }}
+    {{ icone("triangle-alert") }} {{ request.query_params.get('erro') }}
 </div>
 {% endif %}
 
@@ -13,12 +13,12 @@
     <div class="ficha-header-top">
         <a href="/cadastros/pessoas" class="btn-voltar">← Voltar</a>
         <div class="ficha-acoes">
-            <a href="/cadastros/pessoas/{{ pessoa.id }}/editar" class="btn btn-primario">✏️ Editar</a>
-            <a href="/cadastros/pessoas/{{ pessoa.id }}/lacos" class="btn btn-secundario">🔗 Laços</a>
+            <a href="/cadastros/pessoas/{{ pessoa.id }}/editar" class="btn btn-primario">{{ icone("pencil") }}️ Editar</a>
+            <a href="/cadastros/pessoas/{{ pessoa.id }}/lacos" class="btn btn-secundario">{{ icone("link") }} Laços</a>
             {% if e_admin %}
             <form method="post" action="/cadastros/pessoas/{{ pessoa.id }}/remover" style="display:inline"
                   onsubmit="return confirm('Excluir {{ pessoa.nome_completo }}?\n\nEsta ação é permanente e não pode ser desfeita.')">
-                <button type="submit" class="btn" style="background:#dc3545;color:#fff">🗑️ Excluir</button>
+                <button type="submit" class="btn" style="background:#dc3545;color:#fff">{{ icone("trash-2") }}️ Excluir</button>
             </form>
             {% endif %}
         </div>
@@ -35,10 +35,10 @@
             <h1 class="ficha-nome">{{ pessoa.nome_completo }}</h1>
             <div class="ficha-tags">
                 {% if pessoa.prioridade %}
-                <span class="tag tag-prioridade">⚑ Prioritário</span>
+                <span class="tag tag-prioridade">{{ icone("flag") }} Prioritário</span>
                 {% endif %}
                 {% if pessoa.deficiencia %}
-                <span class="tag tag-deficiencia">♿ Deficiência</span>
+                <span class="tag tag-deficiencia">{{ icone("accessibility") }} Deficiência</span>
                 {% endif %}
             </div>
         </div>
@@ -47,7 +47,7 @@
 
 <!-- Dados pessoais -->
 <div class="ficha-secao">
-    <h2 class="ficha-secao-titulo">📋 Dados Pessoais</h2>
+    <h2 class="ficha-secao-titulo">{{ icone("clipboard-list") }} Dados Pessoais</h2>
     <div class="ficha-grid-dados">
         {% if pessoa.data_nascimento %}
         <div class="ficha-dado">
@@ -85,7 +85,7 @@
 <!-- Laços familiares -->
 {% if lacos %}
 <div class="ficha-secao">
-    <h2 class="ficha-secao-titulo">🔗 Laços Familiares</h2>
+    <h2 class="ficha-secao-titulo">{{ icone("link") }} Laços Familiares</h2>
     <div class="ficha-lacos-grid">
         {% for l in lacos %}
         <a href="/cadastros/pessoas/{{ l.relacionada_id }}" class="ficha-laco-card">
@@ -104,7 +104,7 @@
 <!-- Planos de tratamento -->
 {% if planos %}
 <div class="ficha-secao">
-    <h2 class="ficha-secao-titulo">🩺 Planos de Tratamento</h2>
+    <h2 class="ficha-secao-titulo">{{ icone("heart-pulse") }} Planos de Tratamento</h2>
     <div class="ficha-planos-grid">
         {% for p in planos %}
         <div class="ficha-plano-card {% if p.status == 'ativo' %}plano-ativo{% elif p.status == 'alta' %}plano-alta{% else %}plano-cancelado{% endif %}">
@@ -136,7 +136,7 @@
                 <button type="button" class="btn btn-secundario"
                         style="flex:1;font-size:.8rem;padding:.3rem .5rem"
                         onclick="abrirEdicaoPlano({{ p.id }}, {{ p.sessoes_total }}, {{ p.sessoes_realizadas }}, '{{ p.frequencia }}', {{ p.sessoes_com_passe }}, '{{ p.data_inicio }}')">
-                    ✏️ Editar
+                    {{ icone("pencil") }} Editar
                 </button>
                 <form method="post"
                       action="/cadastros/pessoas/{{ pessoa.id }}/planos/{{ p.id }}/alta"
@@ -144,7 +144,7 @@
                       onsubmit="return confirm('Confirmar alta de {{ pessoa.nome_completo }}?\n\nOs agendamentos pendentes serão cancelados.')">
                     <button type="submit" class="btn btn-primario"
                             style="width:100%;font-size:.8rem;padding:.3rem .5rem">
-                        ✅ Dar Alta
+                        {{ icone("circle-check") }} Dar Alta
                     </button>
                 </form>
                 {% if e_admin %}
@@ -154,7 +154,7 @@
                       onsubmit="return confirm('Cancelar o plano de {{ pessoa.nome_completo }}?\n\nOs agendamentos pendentes serão cancelados e para retomar o tratamento será necessário novo acolhimento fraterno.')">
                     <button type="submit" class="btn btn-perigo"
                             style="width:100%;font-size:.8rem;padding:.3rem .5rem">
-                        🚫 Cancelar
+                        {{ icone("ban") }} Cancelar
                     </button>
                 </form>
                 {% endif %}
@@ -169,7 +169,7 @@
 <!-- Modal edição de plano -->
 <div id="modal-plano" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">
     <div style="background:#fff;border-radius:var(--raio);padding:1.5rem;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.2)">
-        <h3 style="margin:0 0 1rem">✏️ Editar Plano de Tratamento</h3>
+        <h3 style="margin:0 0 1rem">{{ icone("pencil") }}️ Editar Plano de Tratamento</h3>
         <form id="form-editar-plano" method="post">
             <div class="campo">
                 <label>Data de início</label>
@@ -207,7 +207,7 @@
             <div style="display:flex;gap:.5rem;margin-top:1rem">
                 <button type="button" onclick="fecharModalPlano()"
                         class="btn btn-secundario" style="flex:1">Cancelar</button>
-                <button type="submit" class="btn btn-primario" style="flex:1">💾 Salvar</button>
+                <button type="submit" class="btn btn-primario" style="flex:1">{{ icone("save") }} Salvar</button>
             </div>
         </form>
     </div>
@@ -235,7 +235,7 @@ document.getElementById('modal-plano').addEventListener('click', function(e) {
 
 <!-- Histórico de atendimentos -->
 <div class="ficha-secao">
-    <h2 class="ficha-secao-titulo">📅 Histórico de Atendimentos</h2>
+    <h2 class="ficha-secao-titulo">{{ icone("calendar-days") }} Histórico de Atendimentos</h2>
     {% if historico %}
     <div class="ficha-historico-timeline">
         {% for h in historico %}
@@ -248,29 +248,29 @@ document.getElementById('modal-plano').addEventListener('click', function(e) {
             <div class="ficha-historico-servicos">
                 {% if h.codigo_passe %}
                 <span class="servico-badge {% if h.passe_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
-                    Passe {{ h.codigo_passe }} {% if h.passe_realizado %}✓{% else %}⏳{% endif %}
+                    Passe {{ h.codigo_passe }} {% if h.passe_realizado %}{{ icone("check") }}{% else %}⏳{% endif %}
                 </span>
                 {% endif %}
                 {% if h.codigo_reiki %}
                 <span class="servico-badge {% if h.reiki_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
-                    Reiki {{ h.codigo_reiki }} {% if h.reiki_realizado %}✓{% else %}⏳{% endif %}
+                    Reiki {{ h.codigo_reiki }} {% if h.reiki_realizado %}{{ icone("check") }}{% else %}⏳{% endif %}
                 </span>
                 {% endif %}
                 {% if h.codigo_acolhimento %}
                 <span class="servico-badge {% if h.acolhimento_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
-                    Fraterno {{ h.codigo_acolhimento }} {% if h.acolhimento_realizado %}✓{% else %}⏳{% endif %}
+                    Fraterno {{ h.codigo_acolhimento }} {% if h.acolhimento_realizado %}{{ icone("check") }}{% else %}⏳{% endif %}
                 </span>
                 {% endif %}
                 {% if h.codigo_atendimento %}
                 <span class="servico-badge {% if h.atendimento_realizado %}servico-realizado{% else %}servico-pendente{% endif %}">
-                    Atendimento {{ h.codigo_atendimento }} {% if h.atendimento_realizado %}✓{% else %}⏳{% endif %}
+                    Atendimento {{ h.codigo_atendimento }} {% if h.atendimento_realizado %}{{ icone("check") }}{% else %}⏳{% endif %}
                 </span>
                 {% if h.medium_nome %}
                 <span class="servico-medium">→ {{ h.medium_nome }}</span>
                 {% endif %}
                 {% endif %}
                 {% if h.observacao_acolhimento %}
-                <div class="servico-observacao">📝 {{ h.observacao_acolhimento }}</div>
+                <div class="servico-observacao">{{ icone("notebook-pen") }} {{ h.observacao_acolhimento }}</div>
                 {% endif %}
             </div>
         </div>
@@ -280,7 +280,7 @@ document.getElementById('modal-plano').addEventListener('click', function(e) {
                 <span class="ficha-historico-dia">{{ h.data | data_br }}</span>
             </div>
             <div class="ficha-historico-servicos">
-                <span class="servico-badge servico-falta">✗ Falta</span>
+                <span class="servico-badge servico-falta">{{ icone("x") }} Falta</span>
                 {% if h.medium_nome %}
                 <span class="servico-medium">→ {{ h.medium_nome }}</span>
                 {% endif %}
@@ -304,7 +304,7 @@ document.getElementById('modal-plano').addEventListener('click', function(e) {
     </div>
     {% else %}
     <div class="vazio">
-        <div class="vazio-icone">📋</div>
+        <div class="vazio-icone">{{ icone("clipboard-list") }}</div>
         <h3>Nenhum atendimento registrado</h3>
         <p>O histórico aparecerá aqui quando a pessoa for atendida.</p>
     </div>

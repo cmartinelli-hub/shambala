@@ -15,7 +15,7 @@
                 {% if produto and produto.foto_produto %}
                 <img src="{{ produto.foto_produto }}" class="foto-compacta-thumb" id="foto-preview">
                 {% else %}
-                <div class="foto-compacta-placeholder" id="foto-placeholder">📷</div>
+                <div class="foto-compacta-placeholder" id="foto-placeholder">{{ icone("camera") }}</div>
                 <img src="" class="foto-compacta-thumb" id="foto-preview" style="display:none">
                 {% endif %}
                 <input type="file" name="foto" accept="image/*" id="foto-input" style="display:none">
@@ -24,10 +24,10 @@
                 </span>
             </label>
             {% if produto and produto.foto_produto %}
-            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto">✕</button>
+            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto" aria-label="Remover foto">{{ icone("x") }}</button>
             {% endif %}
             <button type="button" class="foto-compacta-remover" id="btn-remover-foto-hidden"
-                    style="display:none" title="Remover foto">✕</button>
+                    style="display:none" title="Remover foto" aria-label="Remover foto">{{ icone("x") }}</button>
         </div>
         <input type="hidden" name="remover_foto" id="remover-foto" value="">
 

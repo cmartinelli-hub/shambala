@@ -17,7 +17,7 @@
 
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}
@@ -25,7 +25,7 @@
 <form method="post" enctype="multipart/form-data" class="form-moderno">
     <!-- Dados pessoais -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">👤 Dados Pessoais</h2>
+        <h2 class="form-secao-titulo">{{ icone("user") }} Dados Pessoais</h2>
 
         <!-- Foto compacta -->
         <div class="foto-compacta">
@@ -35,13 +35,13 @@
                 {% elif registro %}
                 <img src="/cadastros/trabalhadores/foto-placeholder/{{ registro.nome_completo[:1] }}" alt="Foto" class="foto-compacta-thumb" id="foto-thumb">
                 {% else %}
-                <span class="foto-compacta-placeholder" id="foto-thumb-placeholder">📷</span>
+                <span class="foto-compacta-placeholder" id="foto-thumb-placeholder">{{ icone("camera") }}</span>
                 {% endif %}
                 <span class="foto-compacta-texto">{% if registro %}Trocar foto{% else %}Adicionar foto{% endif %}</span>
             </label>
             {% if registro and registro.foto_trabalhador %}
             <input type="checkbox" name="remover_foto" value="1" id="remover-foto-check" style="display:none">
-            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto">🗑️</button>
+            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto">{{ icone("trash-2") }}️</button>
             {% endif %}
             <input type="file" id="foto-input" name="foto" accept="image/*"
                    capture="environment"
@@ -57,10 +57,10 @@
             {% if registro.codigo_atual %}
             <span class="trab-codigo-valor">{{ registro.codigo_atual }}</span>
             <a href="/cadastros/trabalhadores/{{ registro.id }}/carteirinha" target="_blank"
-               class="btn btn-sm btn-secundario">🖨️ Imprimir carteirinha</a>
+               class="btn btn-sm btn-secundario">{{ icone("printer") }} Imprimir carteirinha</a>
             {% elif registro.ativo %}
             <span class="trab-codigo-falta">sem código</span>
-            <a href="#trocar-codigo" class="btn btn-sm btn-secundario">🔢 Gerar código</a>
+            <a href="#trocar-codigo" class="btn btn-sm btn-secundario">{{ icone("hash") }} Gerar código</a>
             {% else %}
             <span class="trab-codigo-falta">sem código (trabalhador inativo)</span>
             {% endif %}
@@ -119,7 +119,7 @@
 
     <!-- Endereço -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">📍 Endereço</h2>
+        <h2 class="form-secao-titulo">{{ icone("map-pin") }} Endereço</h2>
         <div class="form-grid">
             <div class="form-campo form-campo-pequeno">
                 <label for="cep">CEP</label>
@@ -173,7 +173,7 @@
 
     <!-- Financeiro -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">💰 Financeiro</h2>
+        <h2 class="form-secao-titulo">{{ icone("wallet") }} Financeiro</h2>
         <div class="form-grid">
             <div class="form-campo">
                 <label for="valor_mensalidade">Valor mensalidade (R$)</label>
@@ -206,7 +206,7 @@
 
     <!-- Botões de ação -->
     <div class="form-acoes">
-        <button type="submit" class="btn btn-primario btn-grande">💾 Salvar</button>
+        <button type="submit" class="btn btn-primario btn-grande">{{ icone("save") }} Salvar</button>
         <a href="/cadastros/trabalhadores" class="btn btn-secundario">Cancelar</a>
     </div>
 </form>
@@ -214,7 +214,7 @@
 {% if registro %}
 <!-- Código: gerar e trocar são ações separadas do salvamento do cadastro. -->
 <div class="form-secao" id="trocar-codigo">
-    <h2 class="form-secao-titulo">🔢 Código da carteirinha</h2>
+    <h2 class="form-secao-titulo">{{ icone("hash") }} Código da carteirinha</h2>
     <p class="subtitulo">
         O código tem exatamente quatro números (zeros incluídos) e é o conteúdo do QR
         da carteirinha. Inativar preserva o código; reimprimir preserva o código.
@@ -223,7 +223,7 @@
     {% if not registro.codigo_atual and registro.ativo %}
     <form method="post" action="/cadastros/trabalhadores/{{ registro.id }}/codigo/gerar"
           class="trab-codigo-acoes">
-        <button type="submit" class="btn btn-primario">🔢 Gerar código</button>
+        <button type="submit" class="btn btn-primario">{{ icone("hash") }} Gerar código</button>
     </form>
     {% endif %}
 
@@ -236,7 +236,7 @@
             Confirmo que a carteirinha com o código <strong>{{ registro.codigo_atual }}</strong>
             sai de circulação e <strong>não volta a ser usada</strong> — nem por esta pessoa.
         </label>
-        <button type="submit" class="btn btn-atencao">🔁 Trocar código</button>
+        <button type="submit" class="btn btn-atencao">{{ icone("refresh-cw") }} Trocar código</button>
     </form>
     {% endif %}
 </div>

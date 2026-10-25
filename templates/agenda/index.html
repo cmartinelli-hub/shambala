@@ -6,7 +6,7 @@
 
 {% if erro_externo %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro_externo }}</span>
 </div>
 {% endif %}
@@ -17,8 +17,8 @@
         <p class="subtitulo">{{ total_sessoes }} sessão(ões) no período</p>
     </div>
     <div class="acoes-cabecalho">
-        <a href="/cadastros/pessoas/novo?next=/agenda" class="btn btn-primario">➕ Pessoa</a>
-        <a href="/dia/dashboard" class="btn btn-secundario">📊 Dashboard</a>
+        <a href="/cadastros/pessoas/novo?next=/agenda" class="btn btn-primario">{{ icone("plus") }} Pessoa</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">{{ icone("chart-column") }} Dashboard</a>
     </div>
 </div>
 
@@ -64,7 +64,7 @@
         </div>
     </div>
     <div class="filtro-acoes">
-        <button type="submit" class="btn btn-primario">🔍 Filtrar</button>
+        <button type="submit" class="btn btn-primario">{{ icone("search") }} Filtrar</button>
         <a href="/agenda" class="btn btn-secundario">Limpar</a>
     </div>
 </form>
@@ -74,7 +74,7 @@
 <div class="agenda-acoes-rapidas">
     <form method="get" action="/agenda/imprimir" target="_blank" class="form-imprimir">
         <input type="hidden" name="medium_id" value="{{ medium_id }}">
-        <label for="imprimir-dia">📄 Imprimir agenda:</label>
+        <label for="imprimir-dia">{{ icone("file-text") }} Imprimir agenda:</label>
         <input type="date" id="imprimir-dia" name="dia" value="{{ data_de }}">
         <button type="submit" class="btn btn-secundario btn-sm">Imprimir</button>
     </form>
@@ -85,7 +85,7 @@
 {% if medium_id %}
 <div class="agenda-novo-avulso">
     <details>
-        <summary>➕ Novo agendamento avulso</summary>
+        <summary>{{ icone("plus") }} Novo agendamento avulso</summary>
         <form method="post" action="/agenda/novo" id="form-avulso" class="form-avulso">
             <input type="hidden" name="medium_id" value="{{ medium_id }}">
             <input type="hidden" name="data_de"   value="{{ data_de }}">
@@ -139,7 +139,7 @@
 
             <!-- Preview das datas calculadas -->
             <div id="avulso-preview" class="avulso-preview" style="display:none">
-                <strong>📅 Datas que serão agendadas:</strong>
+                <strong>{{ icone("calendar-days") }} Datas que serão agendadas:</strong>
                 <ul id="avulso-datas-lista"></ul>
             </div>
 
@@ -156,7 +156,7 @@
 <!-- Resultados -->
 {% if not por_data %}
 <div class="vazio">
-    <div class="vazio-icone">📅</div>
+    <div class="vazio-icone">{{ icone("calendar-days") }}</div>
     <h3>Nenhuma sessão agendada</h3>
     <p>Ajuste os filtros ou crie um novo agendamento avulso.</p>
 </div>
@@ -165,7 +165,7 @@
 {% for data, sessoes in por_data.items() %}
 <div class="agenda-dia-bloco">
     <h3 class="agenda-dia-titulo">
-        📅 {{ data | data_br }}
+        {{ icone("calendar-days") }} {{ data | data_br }}
         {% if data == hoje %}<span class="agenda-hoje"> — hoje</span>{% endif %}
         <span class="agenda-dia-count">{{ sessoes|length }} sessão(ões)</span>
     </h3>
@@ -183,7 +183,7 @@
                 {% endif %}
             </div>
             <div class="sessao-dados">
-                <span class="sessao-medium">🧘 {{ ag.medium_nome }}</span>
+                <span class="sessao-medium">{{ icone("heart-handshake") }} {{ ag.medium_nome }}</span>
                 <span class="sessao-progresso">
                     Sessão {{ ag.sessoes_realizadas + 1 }}/{{ ag.sessoes_total }}
                     <span class="sessao-freq">({{ ag.frequencia }})</span>
@@ -242,7 +242,7 @@ async function buscar(q) {
         el.appendChild(nome);
         const sub = document.createElement('div');
         sub.style.cssText = 'font-size:.75rem;opacity:.7';
-        sub.textContent = p.medium ? `🩺 ${p.medium}` : 'sem plano ativo';
+        sub.textContent = p.medium ? `{{ icone("heart-pulse") }} ${p.medium}` : 'sem plano ativo';
         el.appendChild(sub);
         el.addEventListener('mouseenter', () => el.style.background = 'var(--cor-fundo)');
         el.addEventListener('mouseleave', () => el.style.background = '');
@@ -256,7 +256,7 @@ function selecionar(id, nome) {
     hiddenId.value = id;
     inputBusca.value = nome;
     divSugestoes.style.display = 'none';
-    divSelecionada.textContent = '✔ ' + nome + ' selecionada';
+    divSelecionada.textContent = '{{ icone("check") }} ' + nome + ' selecionada';
     btnAgendar.disabled = false;
 }
 

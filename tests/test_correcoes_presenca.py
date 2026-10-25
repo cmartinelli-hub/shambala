@@ -606,7 +606,8 @@ def c14(ctx: Ctx):
     assert_eq(st, 200)
     assert "Gestão do dia" in html
     assert "QR" in html and "Zélia Do Terminal" in html, "origem QR traduzida"
-    assert "✔ 1 presente" in html, "contagem de presentes na data"
+    # TASK_015: o ✔ virou ícone Lucide; o FATO verificado é a contagem.
+    assert "1 presente" in html, "contagem de presentes na data"
     assert "Nuno Sem Nada" in html, "ativo sem agenda aparece"
     assert "Ines Esquecida" not in html, "inativo SEM registro na data não aparece"
     assert "Corrigir/lançar nesta data" in html, "admin vê o link de correção"

@@ -98,7 +98,7 @@
 } %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
-    ⚠️ {{ erros.get(erro, 'Erro desconhecido.') }}
+    {{ icone("triangle-alert") }} {{ erros.get(erro, 'Erro desconhecido.') }}
 </div>
 {% endif %}
 
@@ -106,9 +106,9 @@
 <div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
      padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
     {% if geradas|int > 0 %}
-    ✅ {{ geradas }} cobrança(s) nova(s) gerada(s) para este trabalhador.
+    {{ icone("circle-check") }} {{ geradas }} cobrança(s) nova(s) gerada(s) para este trabalhador.
     {% else %}
-    ✅ Nada novo: as mensalidades deste trabalhador já estão geradas para o período.
+    {{ icone("circle-check") }} Nada novo: as mensalidades deste trabalhador já estão geradas para o período.
     {% endif %}
 </div>
 {% endif %}
@@ -116,7 +116,7 @@
 {% if conflito %}
 <div style="background:#fff3cd;border:1px solid #e1a91a;border-radius:var(--raio);
      padding:.6rem 1rem;color:#7a5b00;font-weight:600;margin-bottom:1rem">
-    ⚠️ Conflito histórico nos meses {{ conflito|join(', ') }}: existe mais de um
+    {{ icone("triangle-alert") }} Conflito histórico nos meses {{ conflito|join(', ') }}: existe mais de um
     lançamento para a mesma competência. Nada foi apagado, juntado ou escolhido
     automaticamente — cancele o que sobrar para a guarda do banco valer neste mês.
 </div>
@@ -138,7 +138,7 @@
 
 <div style="background:var(--cor-superficie);border:1px solid var(--cor-borda);border-radius:var(--raio);padding:1rem 1.2rem">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
-        <h3 style="margin:0">👤 {{ trabalhador.nome_completo }}</h3>
+        <h3 style="margin:0">{{ icone("user") }} {{ trabalhador.nome_completo }}</h3>
         <span style="font-size:.9rem;color:var(--cor-texto-suave)">
             Mensalidade: <strong>{{ valor_mensal|moeda }}</strong> — vencimento dia {{ dia_vencimento }}
         </span>
@@ -184,8 +184,8 @@
         <div style="display:flex;align-items:center;gap:.5rem">
             <label style="font-weight:600;font-size:.9rem">Forma:</label>
             <select name="forma_pagamento" id="forma-pagamento" style="padding:.4rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
-                <option value="especie">💵 Espécie</option>
-                <option value="pix">📱 PIX</option>
+                <option value="especie">{{ icone("banknote") }} Espécie</option>
+                <option value="pix">{{ icone("smartphone") }} PIX</option>
             </select>
         </div>
         <div style="display:flex;align-items:center;gap:.5rem">
@@ -218,7 +218,7 @@
 
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:1rem;margin-top:1rem;border-top:1px solid var(--cor-borda);padding-top:1rem">
         <div style="font-size:1rem">Total: <strong style="font-size:1.3rem">R$ <span id="total-resumo">0,00</span></strong></div>
-        <button type="submit" id="btn-receber" class="btn btn-primario" style="padding:.6rem 1.4rem" disabled>💰 Receber</button>
+        <button type="submit" id="btn-receber" class="btn btn-primario" style="padding:.6rem 1.4rem" disabled>{{ icone("wallet") }} Receber</button>
     </div>
 </div>
 </form>
@@ -226,7 +226,7 @@
 <form method="post" action="/financeiro/mensalidades/gerar" style="margin-top:.8rem">
     <input type="hidden" name="trabalhador_id" value="{{ trabalhador.id }}">
     <button type="submit" class="btn btn-secundario" style="padding:.4rem 1rem">
-        🗓 Gerar mensalidades até {{ mes_atual }} + 12
+        {{ icone("calendar-days") }} Gerar mensalidades até {{ mes_atual }} + 12
     </button>
     <span style="font-size:.8rem;color:var(--cor-texto-suave);margin-left:.6rem">
         Idempotente: se o período já está lançado, nada novo é criado.
@@ -235,7 +235,7 @@
 
 {% if pagos_recentes %}
 <div style="margin-top:2rem">
-    <h3 style="margin:0 0 .6rem">✅ Pagos recentes</h3>
+    <h3 style="margin:0 0 .6rem">{{ icone("circle-check") }} Pagos recentes</h3>
     <div style="overflow-x:auto">
     <table class="tabela">
         <thead>
@@ -249,7 +249,7 @@
             <td>{{ pr.data_pagamento|data_br if pr.data_pagamento else '—' }}</td>
             <td>{{ pr.valor|moeda }}</td>
             <td><button class="btn btn-secundario" style="padding:.25rem .6rem;font-size:.85rem"
-                        onclick="reimprimir({{ pr.id }})">🖨 Reimprimir</button></td>
+                        onclick="reimprimir({{ pr.id }})">{{ icone("printer") }} Reimprimir</button></td>
         </tr>
         {% endfor %}
         </tbody>
@@ -263,7 +263,7 @@
 <div class="modal-overlay" id="modal-pix" style="display:none" onclick="if(event.target===this)fecharModalPix()">
     <div class="modal-box">
         <div class="modal-header">
-            <h3>📱 Pagamento PIX — Mensalidades</h3>
+            <h3>{{ icone("smartphone") }} Pagamento PIX — Mensalidades</h3>
             <button type="button" class="modal-close" onclick="fecharModalPix()">&times;</button>
         </div>
         <div class="modal-body" style="text-align:center">
@@ -278,7 +278,7 @@
         </div>
         <div class="modal-footer">
             <button class="btn btn-secundario" onclick="fecharModalPix()">← Voltar</button>
-            <button class="btn btn-primario" id="btn-confirmar-pix" style="flex:2">✅ Confirmar Pagamento</button>
+            <button class="btn btn-primario" id="btn-confirmar-pix" style="flex:2">{{ icone("circle-check") }} Confirmar Pagamento</button>
         </div>
     </div>
 </div>
@@ -458,10 +458,10 @@ async function imprimirSequencia(ids) {
     }
     if (msg) {
         msg.textContent = falha === 0
-            ? `✅ Recebimento concluído! ${ok} recibo(s) impresso(s) — 2 vias cada.`
+            ? `{{ icone("circle-check") }} Recebimento concluído! ${ok} recibo(s) impresso(s) — 2 vias cada.`
             : (ok > 0
-                ? `✅ Recebimento concluído! ${ok} recibo(s) impresso(s); ${falha} falharam — verifique o agente.`
-                : '✅ Recebimento registrado. Agente de impressão não respondeu — verifique se está rodando.');
+                ? `{{ icone("circle-check") }} Recebimento concluído! ${ok} recibo(s) impresso(s); ${falha} falharam — verifique o agente.`
+                : '{{ icone("circle-check") }} Recebimento registrado. Agente de impressão não respondeu — verifique se está rodando.');
     }
 }
 

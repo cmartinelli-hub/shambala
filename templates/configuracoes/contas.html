@@ -57,7 +57,7 @@
                 <form method="post" action="/configuracoes/contas/{{ c.id }}/toggle" style="display:inline">
                     <button type="submit" class="btn btn-sm {% if c.ativo %}btn-primario{% else %}btn-secundario{% endif %}"
                             style="padding:.15rem .4rem;font-size:.75rem">
-                        {% if c.ativo %}✓ Ativo{% else %}✗ Inativo{% endif %}
+                        {% if c.ativo %}{{ icone("check") }} Ativo{% else %}{{ icone("x") }} Inativo{% endif %}
                     </button>
                 </form>
             </td>

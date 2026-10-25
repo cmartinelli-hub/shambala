@@ -68,7 +68,7 @@
                 <form method="post" action="/configuracoes/pix/{{ c.id }}/toggle" style="display:inline">
                     <button type="submit" class="btn btn-sm {% if c.ativa %}btn-primario{% else %}btn-secundario{% endif %}"
                             style="padding:.15rem .4rem;font-size:.75rem">
-                        {% if c.ativa %}✓ Ativa{% else %}✗ Inativa{% endif %}
+                        {% if c.ativa %}{{ icone("check") }} Ativa{% else %}{{ icone("x") }} Inativa{% endif %}
                     </button>
                 </form>
             </td>
@@ -76,11 +76,11 @@
                 <button type="button" class="btn btn-sm btn-secundario"
                         style="padding:.15rem .4rem;font-size:.75rem"
                         onclick="abrirEditar({{ c.id }}, '{{ c.nome|replace("'", "\\'") }}', '{{ c.tipo }}', '{{ c.chave|replace("'", "\\'") }}', '{{ (c.cidade or '')|replace("'", "\\'") }}')">
-                    ✏ Editar
+                    {{ icone("pencil") }} Editar
                 </button>
                 <form method="post" action="/configuracoes/pix/{{ c.id }}/remover" style="display:inline"
                       onsubmit="return confirm('Remover chave PIX {{ c.nome }}?')">
-                    <button type="submit" class="btn btn-perigo btn-sm" style="padding:.15rem .4rem;font-size:.75rem">🗑️</button>
+                    <button type="submit" class="btn btn-perigo btn-sm" style="padding:.15rem .4rem;font-size:.75rem">{{ icone("trash-2") }}️</button>
                 </form>
             </td>
         </tr>

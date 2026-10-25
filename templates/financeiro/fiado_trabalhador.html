@@ -97,7 +97,7 @@ valor de face. Nada foi distribuído por nome, valor aproximado, data nem ordem 
 <div class="card-form" style="margin-bottom:1.5rem">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
         <div>
-            <h3 style="margin:0;font-size:1.1rem">👤 {{ trabalhador_sel.nome_completo }}</h3>
+            <h3 style="margin:0;font-size:1.1rem">{{ icone("user") }} {{ trabalhador_sel.nome_completo }}</h3>
             {% if trabalhador_sel.cpf %}
             <span style="font-size:.85rem;color:var(--cor-texto-suave)">CPF: {{ trabalhador_sel.cpf }}</span>
             {% endif %}

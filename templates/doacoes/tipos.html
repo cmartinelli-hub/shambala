@@ -44,7 +44,7 @@
                 <td>{{ t.descricao or '-' }}</td>
                 <td>
                     {% if t.ativo %}
-                    <span style="color:#1da851">✅ Ativo</span>
+                    <span style="color:#1da851">{{ icone("circle-check") }} Ativo</span>
                     {% else %}
                     <span style="color:#999">⊘ Inativo</span>
                     {% endif %}

@@ -9,14 +9,14 @@
         <p class="subtitulo">Registre a entrada da pessoa no dia de trabalho</p>
     </div>
     <div class="acoes-cabecalho">
-        <a href="/cadastros/pessoas/novo" class="btn btn-primario">➕ Nova Pessoa</a>
-        <a href="/dia/dashboard" class="btn btn-secundario">📊 Dashboard</a>
+        <a href="/cadastros/pessoas/novo" class="btn btn-primario">{{ icone("plus") }} Nova Pessoa</a>
+        <a href="/dia/dashboard" class="btn btn-secundario">{{ icone("chart-column") }} Dashboard</a>
     </div>
 </div>
 
 {% if ok %}
 <div class="checkin-sucesso">
-    <span class="checkin-sucesso-icon">✔</span>
+    <span class="checkin-sucesso-icon">{{ icone("check") }}</span>
     <div>
         <strong>Check-in realizado</strong>
         <span>{{ ok }} registrada com sucesso.</span>
@@ -28,7 +28,7 @@
 <!-- Busca com autocomplete -->
 <div class="checkin-busca-card">
     <div class="checkin-busca-form">
-        <span class="checkin-busca-icon">🔍</span>
+        <span class="checkin-busca-icon">{{ icone("search") }}</span>
         <div style="position:relative;flex:1">
             <input type="text" id="checkin-busca-input"
                    placeholder="Buscar pessoa pelo nome…" autofocus
@@ -47,7 +47,7 @@
         <div class="checkin-pessoa-info">
             <span class="checkin-pessoa-nome">{{ p.nome_completo }}</span>
             {% if p.telefone %}
-            <span class="checkin-pessoa-telefone">📞 {{ p.telefone }}</span>
+            <span class="checkin-pessoa-telefone">{{ icone("phone") }} {{ p.telefone }}</span>
             {% endif %}
         </div>
         <span class="checkin-pessoa-btn">Check-in →</span>
@@ -55,7 +55,7 @@
     {% endfor %}
     {% elif nome %}
     <div class="vazio">
-        <div class="vazio-icone">👤</div>
+        <div class="vazio-icone">{{ icone("user") }}</div>
         <h3>Nenhuma pessoa encontrada para "{{ nome }}"</h3>
         <p><a href="/cadastros/pessoas/novo" class="btn btn-primario">Cadastrar nova pessoa</a></p>
     </div>
@@ -90,7 +90,7 @@ async function buscar(q) {
         // Mostrar vazio nos resultados
         divResultados.innerHTML = `
             <div class="vazio">
-                <div class="vazio-icone">👤</div>
+                <div class="vazio-icone">{{ icone("user") }}</div>
                 <h3>Nenhuma pessoa encontrada para "${q}"</h3>
                 <p><a href="/cadastros/pessoas/novo?next=/dia/checkin" class="btn btn-primario">Cadastrar nova pessoa</a></p>
             </div>`;

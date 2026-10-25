@@ -31,20 +31,20 @@
             <td>{{ loop.index }}</td>
             <td><strong style="font-size:1.2rem">{{ c.codigo_acolhimento }}</strong></td>
             <td>{{ c.nome_completo }}
-                {% if c.prioridade %} ⚑{% endif %}
-                {% if c.deficiencia %} ♿{% endif %}
-                {% if idoso %} ★{% endif %}
+                {% if c.prioridade %} {{ icone("flag") }}{% endif %}
+                {% if c.deficiencia %} {{ icone("accessibility") }}{% endif %}
+                {% if idoso %} {{ icone("star") }}{% endif %}
             </td>
             <td>{{ c.hora_checkin }}</td>
             <td class="acoes">
                 <form method="post" action="/dia/acolhimento/{{ c.id }}/chamar" style="display:inline">
-                    <button type="submit" class="btn btn-primario btn-sm">📢 Chamar</button>
+                    <button type="submit" class="btn btn-primario btn-sm">{{ icone("megaphone") }} Chamar</button>
                 </form>
                 <a href="/dia/fraterno/{{ c.id }}" class="btn btn-primario btn-sm">Atender</a>
-                <a href="/dia/acolhimento/{{ c.id }}/imprimir" class="btn btn-secundario btn-sm">🖨️ Ficha</a>
+                <a href="/dia/acolhimento/{{ c.id }}/imprimir" class="btn btn-secundario btn-sm">{{ icone("printer") }} Ficha</a>
                 <form method="post" action="/dia/acolhimento/{{ c.id }}/cancelar" style="display:inline">
                     <button type="submit" class="btn btn-secundario btn-sm"
-                            onclick="return confirm('Cancelar este acolhimento? A pessoa sairá da fila.')">✕ Cancelar</button>
+                            onclick="return confirm('Cancelar este acolhimento? A pessoa sairá da fila.')">{{ icone("x") }} Cancelar</button>
                 </form>
             </td>
         </tr>
@@ -71,7 +71,7 @@
                 <td>{{ c.nome_completo }}</td>
                 <td>{{ c.hora_checkin }}</td>
                 <td>
-                    <a href="/dia/acolhimento/{{ c.id }}/imprimir" class="btn btn-secundario btn-sm">🖨️ Ficha</a>
+                    <a href="/dia/acolhimento/{{ c.id }}/imprimir" class="btn btn-secundario btn-sm">{{ icone("printer") }} Ficha</a>
                 </td>
             </tr>
             {% endfor %}

@@ -16,12 +16,12 @@
 {% if _erro in mensagens_tentativa %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
-    ⚠️ {{ mensagens_tentativa[_erro] }}
+    {{ icone("triangle-alert") }} {{ mensagens_tentativa[_erro] }}
 </div>
 {% elif _erro in _recusas %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
-    ⚠️ {{ _recusas[_erro] }}
+    {{ icone("triangle-alert") }} {{ _recusas[_erro] }}
 </div>
 {% endif %}
 

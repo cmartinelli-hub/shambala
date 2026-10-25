@@ -13,9 +13,9 @@
     <div>
         <h1>Correção de presença</h1>
         <p class="subtitulo">
-            👤 {{ trabalhador.nome_completo }}
-            {%- if not trabalhador.ativo %} · 🚫 inativo (o histórico continua corrigível){% endif %}
-            — 📅 <strong>{{ data_exibida }}</strong> ({{ dia_nome }})
+            {{ icone("user") }} {{ trabalhador.nome_completo }}
+            {%- if not trabalhador.ativo %} · {{ icone("ban") }} inativo (o histórico continua corrigível){% endif %}
+            — {{ icone("calendar-days") }} <strong>{{ data_exibida }}</strong> ({{ dia_nome }})
         </p>
     </div>
 </div>
@@ -36,12 +36,12 @@
 
 {% if not operacoes %}
 <div class="vazio">
-    <div class="vazio-icone">🔒</div>
+    <div class="vazio-icone">{{ icone("lock") }}</div>
     <h3>Nada a corrigir aqui</h3>
 </div>
 {% elif not pode_escrever %}
 <div class="form-aviso" style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
-    <span>🔒 Você tem a <strong>leitura</strong> das correções (histórico abaixo), mas não a escrita —
+    <span>{{ icone("lock") }} Você tem a <strong>leitura</strong> das correções (histórico abaixo), mas não a escrita —
         o formulário não é exibido. O histórico desta data continua visível para consulta.</span>
 </div>
 {% else %}

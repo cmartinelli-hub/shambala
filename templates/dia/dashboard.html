@@ -199,12 +199,12 @@
 {% block conteudo %}
 {% if request.query_params.get('erro') %}
 <div style="margin-bottom:1rem;padding:.6rem .75rem;background:#fee;border:1px solid #c00;border-radius:4px;color:#c00;font-size:.9rem">
-    ⚠️ {{ request.query_params.get('erro') }}
+    {{ icone("triangle-alert") }} {{ request.query_params.get('erro') }}
 </div>
 {% endif %}
 {% if request.query_params.get('msg') %}
 <div style="margin-bottom:1rem;padding:.6rem .75rem;background:#efe;border:1px solid #0a0;border-radius:4px;color:#0a0;font-size:.9rem">
-    ✓ {{ request.query_params.get('msg') }}
+    {{ icone("check") }} {{ request.query_params.get('msg') }}
 </div>
 {% endif %}
 
@@ -231,7 +231,7 @@
         </div>
         <a href="/dia/checkin" class="btn btn-primario btn-sm">+ Check-in</a>
         <a href="/cadastros/pessoas/novo?next=/dia/dashboard" class="btn btn-primario btn-sm">+ Pessoa</a>
-        <a href="/agenda" class="btn btn-secundario btn-sm">📅 Agenda</a>
+        <a href="/agenda" class="btn btn-secundario btn-sm">{{ icone("calendar-days") }} Agenda</a>
         <a href="/dia" class="btn btn-secundario btn-sm">← Painel</a>
     </div>
 </div>
@@ -253,23 +253,23 @@
                 <form method="post" action="/dia/dashboard/passe/{{ c.id }}/realizado"
                       class="btn-realizado" style="margin:0">
                     <button class="btn btn-secundario btn-xs" title="Marcar como realizado"
-                            onclick="return confirm('Confirmar realizado?')">✓</button>
+                            onclick="return confirm('Confirmar realizado?')" aria-label="Marcar como realizado">{{ icone("check") }}</button>
                 </form>
                 <form method="post" action="/dia/dashboard/passe/{{ c.id }}/cancelar"
                       class="btn-cancelar" style="margin:0">
                     <button class="btn btn-alerta btn-xs" title="Cancelar da fila"
-                            onclick="return confirm('Cancelar este atendimento da fila?')">✕</button>
+                            onclick="return confirm('Cancelar este atendimento da fila?')" aria-label="Cancelar da fila">{{ icone("x") }}</button>
                 </form>
                 <div class="item-codigo">{{ c.codigo }}</div>
                 <div class="item-nome">
                     {{ (c.nome_completo or '').split(' ')[0] }}
-                    {% if c.prioridade %}⚑{% endif %}
-                    {% if c.deficiencia %}♿{% endif %}
-                    {% if idoso %}★{% endif %}
+                    {% if c.prioridade %}{{ icone("flag") }}{% endif %}
+                    {% if c.deficiencia %}{{ icone("accessibility") }}{% endif %}
+                    {% if idoso %}{{ icone("star") }}{% endif %}
                 </div>
                 <form method="post" action="/dia/dashboard/passe/{{ c.id }}/chamar"
                       class="btn-chamar" style="margin:0">
-                    <button class="btn btn-primario btn-xs" title="Chamar no painel">📢 Chamar</button>
+                    <button class="btn btn-primario btn-xs" title="Chamar no painel">{{ icone("megaphone") }} Chamar</button>
                 </form>
             </div>
             {% endfor %}
@@ -294,23 +294,23 @@
                 <form method="post" action="/dia/dashboard/reiki/{{ c.id }}/realizado"
                       class="btn-realizado" style="margin:0">
                     <button class="btn btn-secundario btn-xs" title="Marcar como realizado"
-                            onclick="return confirm('Confirmar realizado?')">✓</button>
+                            onclick="return confirm('Confirmar realizado?')" aria-label="Marcar como realizado">{{ icone("check") }}</button>
                 </form>
                 <form method="post" action="/dia/dashboard/reiki/{{ c.id }}/cancelar"
                       class="btn-cancelar" style="margin:0">
                     <button class="btn btn-alerta btn-xs" title="Cancelar da fila"
-                            onclick="return confirm('Cancelar este atendimento da fila?')">✕</button>
+                            onclick="return confirm('Cancelar este atendimento da fila?')" aria-label="Cancelar da fila">{{ icone("x") }}</button>
                 </form>
                 <div class="item-codigo">{{ c.codigo }}</div>
                 <div class="item-nome">
                     {{ (c.nome_completo or '').split(' ')[0] }}
-                    {% if c.prioridade %}⚑{% endif %}
-                    {% if c.deficiencia %}♿{% endif %}
-                    {% if idoso %}★{% endif %}
+                    {% if c.prioridade %}{{ icone("flag") }}{% endif %}
+                    {% if c.deficiencia %}{{ icone("accessibility") }}{% endif %}
+                    {% if idoso %}{{ icone("star") }}{% endif %}
                 </div>
                 <form method="post" action="/dia/dashboard/reiki/{{ c.id }}/chamar"
                       class="btn-chamar" style="margin:0">
-                    <button class="btn btn-primario btn-xs" title="Chamar no painel">📢 Chamar</button>
+                    <button class="btn btn-primario btn-xs" title="Chamar no painel">{{ icone("megaphone") }} Chamar</button>
                 </form>
             </div>
             {% endfor %}
@@ -336,18 +336,18 @@
                 <form method="post" action="/dia/dashboard/acolhimento/{{ c.id }}/cancelar"
                       class="btn-cancelar" style="margin:0">
                     <button class="btn btn-alerta btn-xs" title="Cancelar da fila"
-                            onclick="return confirm('Cancelar este atendimento da fila?')">✕</button>
+                            onclick="return confirm('Cancelar este atendimento da fila?')" aria-label="Cancelar da fila">{{ icone("x") }}</button>
                 </form>
                 <div class="item-codigo">{{ c.codigo }}</div>
                 <div class="item-nome">
                     {{ (c.nome_completo or '').split(' ')[0] }}
-                    {% if c.prioridade %}⚑{% endif %}
-                    {% if c.deficiencia %}♿{% endif %}
-                    {% if idoso %}★{% endif %}
+                    {% if c.prioridade %}{{ icone("flag") }}{% endif %}
+                    {% if c.deficiencia %}{{ icone("accessibility") }}{% endif %}
+                    {% if idoso %}{{ icone("star") }}{% endif %}
                 </div>
                 <form method="post" action="/dia/dashboard/acolhimento/{{ c.id }}/chamar"
                       class="btn-chamar" style="margin:0">
-                    <button class="btn btn-primario btn-xs" title="Chamar no painel">📢 Chamar</button>
+                    <button class="btn btn-primario btn-xs" title="Chamar no painel">{{ icone("megaphone") }} Chamar</button>
                 </form>
             </div>
             {% endfor %}
@@ -381,23 +381,23 @@
                 <form method="post" action="/dia/dashboard/atendimento/{{ c.id }}/realizado"
                       class="btn-realizado" style="margin:0">
                     <button class="btn btn-secundario btn-xs" title="Marcar como realizado"
-                            onclick="return confirm('Confirmar realizado?')">✓</button>
+                            onclick="return confirm('Confirmar realizado?')" aria-label="Marcar como realizado">{{ icone("check") }}</button>
                 </form>
                 <form method="post" action="/dia/dashboard/atendimento/{{ c.id }}/cancelar"
                       class="btn-cancelar" style="margin:0">
                     <button class="btn btn-alerta btn-xs" title="Cancelar da fila"
-                            onclick="return confirm('Cancelar este atendimento da fila?')">✕</button>
+                            onclick="return confirm('Cancelar este atendimento da fila?')" aria-label="Cancelar da fila">{{ icone("x") }}</button>
                 </form>
                 <div class="item-codigo">{{ c.codigo }}</div>
                 <div class="item-nome">
                     {{ (c.nome_completo or '').split(' ')[0] }}
-                    {% if c.prioridade %}⚑{% endif %}
-                    {% if c.deficiencia %}♿{% endif %}
-                    {% if idoso %}★{% endif %}
+                    {% if c.prioridade %}{{ icone("flag") }}{% endif %}
+                    {% if c.deficiencia %}{{ icone("accessibility") }}{% endif %}
+                    {% if idoso %}{{ icone("star") }}{% endif %}
                 </div>
                 <form method="post" action="/dia/dashboard/atendimento/{{ c.id }}/chamar"
                       class="btn-chamar" style="margin:0">
-                    <button class="btn btn-primario btn-xs" title="Chamar no painel">📢 Chamar</button>
+                    <button class="btn btn-primario btn-xs" title="Chamar no painel">{{ icone("megaphone") }} Chamar</button>
                 </form>
                 <a href="/dia/transferir?medium_id={{ col.medium_id }}"
                    class="btn btn-secundario btn-xs btn-transferir"

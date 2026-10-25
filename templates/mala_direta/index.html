@@ -13,7 +13,7 @@
 
 <!-- Busca geral -->
 <div class="maladireta-busca">
-    <span class="maladireta-busca-icon">🔍</span>
+    <span class="maladireta-busca-icon">{{ icone("search") }}</span>
     <input type="text" id="md-busca" placeholder="Buscar pessoa por nome ou e-mail…"
            class="maladireta-busca-input" autocomplete="off">
     <span class="maladireta-busca-contador" id="md-contador">
@@ -24,10 +24,10 @@
 <!-- Abas de canal -->
 <div class="md-tabs">
     <button class="md-tab md-tab-active" data-tab="tab-email" onclick="mdSwitchTab('tab-email')">
-        ✉️ E-mail <span class="md-tab-count" id="md-tab-email-count">{{ total_email }}</span>
+        {{ icone("mail") }} E-mail <span class="md-tab-count" id="md-tab-email-count">{{ total_email }}</span>
     </button>
     <button class="md-tab" data-tab="tab-whatsapp" onclick="mdSwitchTab('tab-whatsapp')">
-        💬 WhatsApp <span class="md-tab-count" id="md-tab-whatsapp-count">{{ total_telefone }}</span>
+        {{ icone("message-circle") }} WhatsApp <span class="md-tab-count" id="md-tab-whatsapp-count">{{ total_telefone }}</span>
     </button>
 </div>
 
@@ -56,7 +56,7 @@
                     {% endfor %}
                 {% else %}
                     <div class="vazio">
-                        <div class="vazio-icone">✉️</div>
+                        <div class="vazio-icone">{{ icone("mail") }}️</div>
                         <h3>Nenhum e-mail cadastrado</h3>
                     </div>
                 {% endif %}
@@ -81,13 +81,13 @@
                         <input type="checkbox" name="telefones_selecionados" value="{{ p.id }}" class="md-chk-tel" onchange="mdAtualizarTotal()">
                         <div class="md-item-info">
                             <span class="md-item-nome">{{ p.nome_completo }}</span>
-                            <span class="md-item-detalhe">📞 {{ p.telefone }}</span>
+                            <span class="md-item-detalhe">{{ icone("phone") }} {{ p.telefone }}</span>
                         </div>
                     </label>
                     {% endfor %}
                 {% else %}
                     <div class="vazio">
-                        <div class="vazio-icone">💬</div>
+                        <div class="vazio-icone">{{ icone("message-circle") }}</div>
                         <h3>Nenhum telefone cadastrado</h3>
                     </div>
                 {% endif %}
@@ -97,7 +97,7 @@
 
     <!-- Composição da mensagem -->
     <div class="md-mensagem-card">
-        <h2 class="md-mensagem-titulo">✍️ Composição da Mensagem</h2>
+        <h2 class="md-mensagem-titulo">{{ icone("pen-line") }} Composição da Mensagem</h2>
 
         <div class="md-mensagem-campos">
             <div class="md-campo">
@@ -116,18 +116,18 @@
         </div>
 
         <div class="md-resumo">
-            <span class="md-resumo-item">✉️ <strong id="md-resumo-email">0</strong> e-mails</span>
-            <span class="md-resumo-item">💬 <strong id="md-resumo-tel">0</strong> telefones</span>
+            <span class="md-resumo-item">{{ icone("mail") }}️ <strong id="md-resumo-email">0</strong> e-mails</span>
+            <span class="md-resumo-item">{{ icone("message-circle") }} <strong id="md-resumo-tel">0</strong> telefones</span>
         </div>
 
         <div class="md-acoes">
             <button type="submit" name="canal" value="email" class="btn md-btn-email"
                     onclick="return mdVerificar('email')">
-                ✉️ Enviar por E-mail
+                {{ icone("mail") }} Enviar por E-mail
             </button>
             <button type="submit" name="canal" value="whatsapp" class="btn md-btn-whatsapp"
                     onclick="return mdVerificar('whatsapp')">
-                💬 Enviar por WhatsApp
+                {{ icone("message-circle") }} Enviar por WhatsApp
             </button>
         </div>
     </div>

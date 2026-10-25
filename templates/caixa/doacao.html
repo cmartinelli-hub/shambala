@@ -2,7 +2,7 @@
 {% block conteudo %}
 
 <div class="cabecalho-secao">
-    <h2>❤️ Registrar Doação</h2>
+    <h2>{{ icone("heart") }} Registrar Doação</h2>
     <a href="/caixa/pdv" class="btn btn-secundario">← PDV</a>
 </div>
 
@@ -12,7 +12,7 @@
 {% set frm = request.query_params.get('forma', 'especie') %}
 <div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
      padding:.8rem 1.2rem;color:#155724;font-weight:600;margin-bottom:1.2rem">
-    ✅ Doação de R$ {{ val }} via {{ 'PIX' if frm == 'pix' else 'Dinheiro' }} registrada com sucesso!
+    {{ icone("circle-check") }} Doação de R$ {{ val }} via {{ 'PIX' if frm == 'pix' else 'Dinheiro' }} registrada com sucesso!
 </div>
 {% endif %}
 
@@ -26,7 +26,7 @@
 {% if not sessoes %}
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:var(--raio);
      padding:.8rem 1.2rem;color:#856404;margin-bottom:1rem">
-    ⚠️ Nenhuma sessão de caixa aberta — não há gaveta para receber dinheiro físico.
+    {{ icone("triangle-alert") }} Nenhuma sessão de caixa aberta — não há gaveta para receber dinheiro físico.
     Abra uma sessão no PDV ou registre a doação via PIX.
 </div>
 {% endif %}
@@ -36,9 +36,9 @@
     <!-- Toggle forma -->
     <div style="display:flex;gap:.5rem;margin-bottom:1.2rem">
         <button type="button" id="btn-especie" onclick="setForma('especie')"
-                class="btn btn-primario" style="flex:1">💵 Dinheiro</button>
+                class="btn btn-primario" style="flex:1">{{ icone("banknote") }} Dinheiro</button>
         <button type="button" id="btn-pix" onclick="setForma('pix')"
-                class="btn btn-secundario" style="flex:1">📱 PIX</button>
+                class="btn btn-secundario" style="flex:1">{{ icone("smartphone") }} PIX</button>
     </div>
 
     <!-- Formulário dinheiro -->
@@ -79,7 +79,7 @@
                    style="width:100%;padding:.5rem;border:1px solid var(--cor-borda);border-radius:var(--raio)">
         </div>
         <button type="submit" class="btn btn-primario" style="width:100%;margin-top:.8rem;font-size:1rem">
-            💵 Registrar Doação em Dinheiro
+            {{ icone("banknote") }} Registrar Doação em Dinheiro
         </button>
     </form>
 
@@ -116,14 +116,14 @@
 
         <button type="button" id="btn-gerar-qr" onclick="gerarQR()"
                 class="btn btn-secundario" style="width:100%;margin-bottom:.8rem">
-            📱 Gerar QR Code PIX
+            {{ icone("smartphone") }} Gerar QR Code PIX
         </button>
 
         <div id="qr-area" style="display:none;text-align:center;margin-bottom:1rem">
             <img id="qr-img" src="" alt="QR Code" style="max-width:220px;border:1px solid var(--cor-borda);border-radius:var(--raio);padding:.4rem">
             <div id="pix-code" style="font-size:.7rem;word-break:break-all;color:var(--cor-texto-suave);
                  margin-top:.4rem;cursor:pointer" title="Clique para copiar" onclick="copiarPix()"></div>
-            <div id="pix-copiado" style="display:none;font-size:.8rem;color:#1da851;margin-top:.2rem">✅ Copiado!</div>
+            <div id="pix-copiado" style="display:none;font-size:.8rem;color:#1da851;margin-top:.2rem">{{ icone("circle-check") }} Copiado!</div>
         </div>
 
         <form id="form-pix-submit" method="post" action="/caixa/doacao" style="display:none">
@@ -133,7 +133,7 @@
             <input type="hidden" name="descricao" id="f-desc-pix">
             <input type="hidden" name="conta_pix_id" id="f-conta-pix">
             <button type="submit" class="btn btn-primario" style="width:100%;font-size:1rem">
-                ✅ Confirmar Recebimento via PIX
+                {{ icone("circle-check") }} Confirmar Recebimento via PIX
             </button>
         </form>
     </div>
@@ -185,7 +185,7 @@ async function gerarQR() {
         alert('Não foi possível gerar o QR Code. Verifique se há chave PIX configurada.');
     } finally {
         btn.disabled = false;
-        btn.textContent = '📱 Gerar QR Code PIX';
+        btn.textContent = '{{ icone("smartphone") }} Gerar QR Code PIX';
     }
 }
 

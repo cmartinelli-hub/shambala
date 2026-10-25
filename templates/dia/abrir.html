@@ -6,13 +6,13 @@
 <div class="form-header">
     <div>
         <a href="/menu" class="btn-voltar">← Menu</a>
-        <h1 class="form-titulo">📅 Abrir Dia de Trabalho</h1>
+        <h1 class="form-titulo">{{ icone("calendar-days") }} Abrir Dia de Trabalho</h1>
         <p class="subtitulo">{{ hoje | data_br }}</p>
     </div>
 </div>
 
 <div class="form-secao">
-    <h2 class="form-secao-titulo">🧘 Médiuns Presentes</h2>
+    <h2 class="form-secao-titulo">{{ icone("heart-handshake") }} Médiuns Presentes</h2>
     <p class="texto-ajuda">Selecione os médiuns que estarão atendendo hoje:</p>
 
     {% if mediuns %}
@@ -37,19 +37,19 @@
             <input type="checkbox" name="reiki_ativo" value="1"
                    id="reiki-check" class="medium-check-input">
             <div class="medium-check-info">
-                <span class="medium-check-nome">🙌 Atendimento de Reiki ativo hoje</span>
+                <span class="medium-check-nome">{{ icone("heart-handshake") }} Atendimento de Reiki ativo hoje</span>
                 <span class="medium-check-vagas-label">Se marcado, a coluna Reiki aparece no dashboard</span>
             </div>
         </label>
 
         <div class="form-acoes">
-            <button type="submit" class="btn btn-primario btn-grande">✅ Abrir dia</button>
+            <button type="submit" class="btn btn-primario btn-grande">{{ icone("circle-check") }} Abrir dia</button>
             <a href="/menu" class="btn btn-secundario">Cancelar</a>
         </div>
     </form>
     {% else %}
     <div class="vazio">
-        <div class="vazio-icone">🧘</div>
+        <div class="vazio-icone">{{ icone("heart-handshake") }}</div>
         <h3>Nenhum médium ativo cadastrado</h3>
         <p><a href="/cadastros/mediuns/novo" class="btn btn-primario">Cadastrar médium</a></p>
     </div>

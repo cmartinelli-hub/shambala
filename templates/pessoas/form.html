@@ -17,7 +17,7 @@
 
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}
@@ -29,7 +29,7 @@
 
     <!-- Dados Pessoais -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">👤 Dados Pessoais</h2>
+        <h2 class="form-secao-titulo">{{ icone("user") }} Dados Pessoais</h2>
 
         <!-- Foto compacta -->
         <div class="foto-compacta">
@@ -39,13 +39,13 @@
                 {% elif registro %}
                 <img src="/cadastros/pessoas/foto-placeholder/{{ registro.nome_completo[:1] }}" alt="Foto" class="foto-compacta-thumb" id="foto-thumb">
                 {% else %}
-                <span class="foto-compacta-placeholder" id="foto-thumb-placeholder">📷</span>
+                <span class="foto-compacta-placeholder" id="foto-thumb-placeholder">{{ icone("camera") }}</span>
                 {% endif %}
                 <span class="foto-compacta-texto">{% if registro %}Trocar foto{% else %}Adicionar foto{% endif %}</span>
             </label>
             {% if registro and registro.foto_pessoa %}
             <input type="checkbox" name="remover_foto" value="1" id="remover-foto-check" style="display:none">
-            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto">🗑️</button>
+            <button type="button" class="foto-compacta-remover" id="btn-remover-foto" title="Remover foto">{{ icone("trash-2") }}️</button>
             {% endif %}
             <input type="file" id="foto-input" name="foto" accept="image/*"
                    capture="environment"
@@ -96,14 +96,14 @@
 
     <!-- Prioridade e Deficiência -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">🏷️ Prioridade</h2>
+        <h2 class="form-secao-titulo">{{ icone("tag") }}️ Prioridade</h2>
         <div class="form-toggles">
             <label class="form-toggle-card {% if registro and registro.deficiencia %}toggle-ativo{% endif %}">
                 <input type="checkbox" name="deficiencia" value="1"
                        {% if registro and registro.deficiencia %}checked{% endif %}
                        class="form-toggle-input">
                 <div class="form-toggle-conteudo">
-                    <span class="form-toggle-icone">♿</span>
+                    <span class="form-toggle-icone">{{ icone("accessibility") }}</span>
                     <div>
                         <span class="form-toggle-titulo">Deficiência</span>
                         <span class="form-toggle-desc">Pessoa com deficiência</span>
@@ -116,7 +116,7 @@
                        {% if registro and registro.prioridade %}checked{% endif %}
                        class="form-toggle-input">
                 <div class="form-toggle-conteudo">
-                    <span class="form-toggle-icone">⚑</span>
+                    <span class="form-toggle-icone">{{ icone("flag") }}</span>
                     <div>
                         <span class="form-toggle-titulo">Prioritário</span>
                         <span class="form-toggle-desc">Atendimento prioritário</span>
@@ -128,7 +128,7 @@
 
     <!-- Endereço -->
     <div class="form-secao">
-        <h2 class="form-secao-titulo">📍 Endereço</h2>
+        <h2 class="form-secao-titulo">{{ icone("map-pin") }} Endereço</h2>
         <div class="form-grid">
             <div class="form-campo form-campo-pequeno">
                 <label for="cep">CEP</label>
@@ -183,11 +183,11 @@
     <!-- Botões de ação -->
     <div class="form-acoes">
         <button type="submit" id="btn-salvar" name="acao" value="" class="btn btn-primario btn-grande">
-            💾 Salvar
+            {{ icone("save") }} Salvar
         </button>
         {% if not registro %}
         <button type="submit" id="btn-salvar-checkin" name="acao" value="checkin" class="btn btn-sucesso btn-grande">
-            ✅ Salvar + Check-in
+            {{ icone("circle-check") }} Salvar + Check-in
         </button>
         {% endif %}
         <a href="{{ next if next else '/cadastros/pessoas' }}" class="btn btn-secundario">Cancelar</a>

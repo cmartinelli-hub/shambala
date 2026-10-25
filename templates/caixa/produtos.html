@@ -6,9 +6,9 @@
     <h2>Produtos</h2>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <a href="/caixa/pdv" class="btn btn-primario btn-sm">← PDV</a>
-        <a href="/caixa/estoque" class="btn btn-secundario btn-sm">📦 Estoque</a>
-        <a href="/caixa/caixas" class="btn btn-secundario btn-sm">🗂️ Caixas</a>
-        <a href="/caixa/produtos/tabela-precos" target="_blank" class="btn btn-secundario btn-sm">🖨️ Tabela de Preços</a>
+        <a href="/caixa/estoque" class="btn btn-secundario btn-sm">{{ icone("package") }} Estoque</a>
+        <a href="/caixa/caixas" class="btn btn-secundario btn-sm">{{ icone("folder-open") }} Caixas</a>
+        <a href="/caixa/produtos/tabela-precos" target="_blank" class="btn btn-secundario btn-sm">{{ icone("printer") }} Tabela de Preços</a>
         <a href="/caixa/produtos/novo" class="btn btn-primario btn-sm">+ Produto</a>
     </div>
 </div>
@@ -46,7 +46,7 @@
             {% if p.foto_produto %}
             <img src="{{ p.foto_produto }}" style="width:40px;height:40px;border-radius:4px;object-fit:cover">
             {% else %}
-            <div style="width:40px;height:40px;border-radius:4px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:1rem">📷</div>
+            <div style="width:40px;height:40px;border-radius:4px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:1rem">{{ icone("camera") }}</div>
             {% endif %}
         </td>
         <td><strong>{{ p.nome }}</strong></td>
@@ -68,7 +68,7 @@
             </span>
         </td>
         <td style="text-align:center">
-            {% if p.atalho %}<span style="font-size:1.1rem">⭐</span>{% endif %}
+            {% if p.atalho %}<span style="font-size:1.1rem">{{ icone("star") }}</span>{% endif %}
         </td>
         <td>
             {% if p.ativo %}

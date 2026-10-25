@@ -50,6 +50,28 @@ assistindo a uma palestra, e são chamadas pelo código exibido num monitor via 
 
 **Idioma do código:** Português em tudo — variáveis, funções, rotas, tabelas, campos.
 
+### Ícones da interface (TASK_015)
+
+Emojis de interface foram substituídos por **Lucide** (`lucide-static@0.460.0`,
+licença ISC), servidos localmente em `static/icons/*.svg` — sem CDN e sem
+dependência de rede. Convenção para as próximas tarefas:
+
+| Uso | Como |
+|---|---|
+| Template | `{{ icone("wallet") }}` — helper em `templates_config.py` |
+| Nome | o do arquivo em `static/icons/` (ex.: `calendar-days`, `triangle-alert`) |
+| Decorativo (com texto ao lado) | padrão: `alt=""` + `aria-hidden="true"` |
+| Controle **só** com ícone | `{{ icone("x", rotulo="Cancelar") }}` → `aria-label` obrigatório |
+| Classe extra | `{{ icone("check", classe="icone-ok") }}` |
+| Nome inexistente | **levanta erro** na renderização (não some em silêncio) |
+| CSS | `.icone` em `static/css/base.css`; `.menu-card-icon .icone` fixa 2,2rem |
+
+Regras: não reintroduzir emoji como ícone; **não** substituir emoji em conteúdo
+digitado pelo usuário, dados históricos, documentos emitidos (cupom, carteirinha,
+PDF) nem na estrela dourada da identidade. Novo ícone = baixar de
+`https://unpkg.com/lucide-static@<versão>/icons/<nome>.svg` (fixar a versão) e
+registrar em `static/icons/LICENSE.md`.
+
 **Variáveis de ambiente (.env):**
 ```
 SHAMBALA_DB_HOST=localhost

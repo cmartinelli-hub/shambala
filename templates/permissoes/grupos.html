@@ -13,7 +13,7 @@
 <!-- Card de novo grupo -->
 <div class="card-novo-grupo">
     <details>
-        <summary>➕ Novo Grupo</summary>
+        <summary>{{ icone("plus") }} Novo Grupo</summary>
         <form method="post" action="/cadastros/permissoes/novo" class="form-novo">
             <div class="form-campos">
                 <div class="form-campo">
@@ -39,7 +39,7 @@
         <div class="grupo-card-header">
             <div class="grupo-info">
                 <h3 class="grupo-nome">
-                    {% if g.nome == 'Admin' %}🛡️{% endif %}
+                    {% if g.nome == 'Admin' %}{{ icone("shield") }}{% endif %}
                     {{ g.nome }}
                 </h3>
                 {% if g.descricao %}
@@ -48,12 +48,12 @@
             </div>
             <div class="grupo-acoes">
                 <a href="/cadastros/permissoes/{{ g.id }}/editar" class="btn btn-sm btn-editar" title="Editar permissões">
-                    ✏️ Editar
+                    {{ icone("pencil") }} Editar
                 </a>
                 {% if g.nome != 'Admin' %}
                 <form method="post" action="/cadastros/permissoes/{{ g.id }}/remover" class="form-remover"
                       onsubmit="return confirm('Remover grupo «{{ g.nome }}»? Atendentes ficarão sem grupo.')">
-                    <button type="submit" class="btn btn-sm btn-remover" title="Remover grupo">🗑️</button>
+                    <button type="submit" class="btn btn-sm btn-remover" title="Remover grupo">{{ icone("trash-2") }}️</button>
                 </form>
                 {% endif %}
             </div>
@@ -63,17 +63,17 @@
         {% if perms %}
         <div class="grupo-perms-resumo">
             <div class="perm-badge perm-ler">
-                <span class="perm-icone">👁️</span>
+                <span class="perm-icone">{{ icone("eye") }}️</span>
                 <span class="perm-cont">{{ perms.ler }}/{{ perms.total }}</span>
                 <span class="perm-label">Ler</span>
             </div>
             <div class="perm-badge perm-escrever">
-                <span class="perm-icone">✏️</span>
+                <span class="perm-icone">{{ icone("pencil") }}️</span>
                 <span class="perm-cont">{{ perms.escrever }}/{{ perms.total }}</span>
                 <span class="perm-label">Escrever</span>
             </div>
             <div class="perm-badge perm-apagar">
-                <span class="perm-icone">🗑️</span>
+                <span class="perm-icone">{{ icone("trash-2") }}️</span>
                 <span class="perm-cont">{{ perms.apagar }}/{{ perms.total }}</span>
                 <span class="perm-label">Apagar</span>
             </div>

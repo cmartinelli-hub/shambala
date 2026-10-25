@@ -9,36 +9,36 @@
         <p class="subtitulo" id="contador">{{ trabalhadores|length }} trabalhador{{ 'es' if trabalhadores|length != 1 }} cadastrado{{ 's' if trabalhadores|length != 1 }}</p>
     </div>
     <div class="acoes-cabecalho">
-        <a href="/cadastros/trabalhadores/novo" class="btn btn-primario">➕ Novo trabalhador</a>
+        <a href="/cadastros/trabalhadores/novo" class="btn btn-primario">{{ icone("plus") }} Novo trabalhador</a>
         {% if sem_codigo %}
         <form method="post" action="/cadastros/trabalhadores/preparar-codigos" style="display:inline">
             <button type="submit" class="btn btn-secundario"
                     title="Emite código apenas para os ativos que ainda não têm; os já emitidos são preservados.">
-                🔢 Preparar códigos que faltam ({{ sem_codigo }})
+                {{ icone("hash") }} Preparar códigos que faltam ({{ sem_codigo }})
             </button>
         </form>
         {% endif %}
         <a href="/cadastros/trabalhadores/carteirinhas?todos=ativos" target="_blank"
-           class="btn btn-secundario">🖨️ Imprimir todos os ativos</a>
+           class="btn btn-secundario">{{ icone("printer") }} Imprimir todos os ativos</a>
     </div>
 </div>
 
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}
 {% if ok %}
 <div class="form-sucesso">
-    <span>✔</span>
+    <span>{{ icone("check") }}</span>
     <span>{{ ok }}</span>
 </div>
 {% endif %}
 
 {% if trabalhadores %}
 <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
-    <input type="search" id="busca" placeholder="🔍 Buscar por nome, telefone ou e-mail…"
+    <input type="search" id="busca" placeholder="{{ icone("search") }} Buscar por nome, telefone ou e-mail…"
            oninput="filtrar()"
            style="flex:1;min-width:200px;padding:.5rem .75rem;border:1px solid var(--cor-borda);border-radius:var(--raio);font-size:.95rem">
     <select id="filtro-status" onchange="filtrar()"
@@ -61,7 +61,7 @@
     </label>
     <span id="trab-lote-contagem">0 selecionados</span>
     <button type="submit" form="lote-form" class="btn btn-sm btn-secundario">
-        🖨️ Imprimir carteirinhas selecionadas
+        {{ icone("printer") }} Imprimir carteirinhas selecionadas
     </button>
 </div>
 
@@ -82,7 +82,7 @@
                     {{ 'Ativo' if t.ativo else 'Inativo' }}
                 </span>
                 {% if t.codigo %}
-                <span class="trabalhador-codigo" title="Código da carteirinha">🔢 {{ t.codigo }}</span>
+                <span class="trabalhador-codigo" title="Código da carteirinha">{{ icone("hash") }} {{ t.codigo }}</span>
                 {% elif t.ativo %}
                 <span class="trabalhador-codigo trabalhador-codigo-falta" title="Sem código atual">sem código</span>
                 {% endif %}
@@ -95,26 +95,26 @@
         </div>
         <div class="trabalhador-contato">
             {% if t.telefone %}
-            <span class="trabalhador-telefone">📞 {{ t.telefone }}</span>
+            <span class="trabalhador-telefone">{{ icone("phone") }} {{ t.telefone }}</span>
             {% endif %}
             {% if t.email %}
-            <span class="trabalhador-email">✉️ {{ t.email }}</span>
+            <span class="trabalhador-email">{{ icone("mail") }}️ {{ t.email }}</span>
             {% endif %}
             {% if not t.telefone and not t.email %}
             <span class="trabalhador-sem-contato">Sem contato</span>
             {% endif %}
         </div>
         <div class="trabalhador-acoes">
-            <a href="/cadastros/trabalhadores/{{ t.id }}/editar" class="btn btn-sm btn-editar">✏️ Editar</a>
-            <a href="/cadastros/trabalhadores/{{ t.id }}/agenda" class="btn btn-sm btn-dias">📅 Dias</a>
-            <a href="/cadastros/trabalhadores/{{ t.id }}/presenca" class="btn btn-sm btn-presenca">📋 Presença</a>
+            <a href="/cadastros/trabalhadores/{{ t.id }}/editar" class="btn btn-sm btn-editar">{{ icone("pencil") }}️ Editar</a>
+            <a href="/cadastros/trabalhadores/{{ t.id }}/agenda" class="btn btn-sm btn-dias">{{ icone("calendar-days") }} Dias</a>
+            <a href="/cadastros/trabalhadores/{{ t.id }}/presenca" class="btn btn-sm btn-presenca">{{ icone("clipboard-list") }} Presença</a>
             {% if t.ativo %}
                 {% if t.codigo %}
                 <a href="/cadastros/trabalhadores/{{ t.id }}/carteirinha" target="_blank"
-                   class="btn btn-sm btn-carteirinha">🪪 Carteirinha</a>
+                   class="btn btn-sm btn-carteirinha">{{ icone("id-card") }} Carteirinha</a>
                 {% else %}
                 <form method="post" action="/cadastros/trabalhadores/{{ t.id }}/codigo/gerar" class="trabalhador-form-toggle">
-                    <button type="submit" class="btn btn-sm btn-carteirinha">🔢 Gerar código</button>
+                    <button type="submit" class="btn btn-sm btn-carteirinha">{{ icone("hash") }} Gerar código</button>
                 </form>
                 {% endif %}
             {% endif %}

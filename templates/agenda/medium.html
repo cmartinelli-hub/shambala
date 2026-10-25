@@ -52,7 +52,7 @@
 
 <div class="cabecalho-secao">
     <div>
-        <h1>📅 Agenda do Médium</h1>
+        <h1>{{ icone("calendar-days") }} Agenda do Médium</h1>
         <p class="subtitulo">{{ total_sessoes }} atendimento(s) nos próximos 30 dias
             {% if pode_agenda_completa %}
             · <a href="/agenda">agenda completa</a>
@@ -62,18 +62,18 @@
 </div>
 
 {% if msg %}
-<div class="medium-sucesso">✅ {{ msg }}</div>
+<div class="medium-sucesso">{{ icone("circle-check") }} {{ msg }}</div>
 {% endif %}
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}
 
 {% if not mediuns %}
 <div class="form-erro">
-    <span class="form-erro-icone">🔒</span>
+    <span class="form-erro-icone">{{ icone("lock") }}</span>
     <span>Você ainda não tem agenda de médium vinculada. Peça ao administrador para marcar
         as agendas que você gerencia em <strong>Cadastros → Usuários → Agendas do Médium</strong>.</span>
 </div>
@@ -91,7 +91,7 @@
 
 <!-- Lançamento -->
 <div class="medium-form">
-    <h2 style="margin-top:0">📝 Lançar na agenda</h2>
+    <h2 style="margin-top:0">{{ icone("notebook-pen") }} Lançar na agenda</h2>
     <form method="post" action="/agenda/medium/lancar" id="form-lancar">
         <input type="hidden" name="pessoa_id" id="lancar-pessoa-id" value="">
         <div class="medium-grid">
@@ -133,16 +133,16 @@
         </div>
         <div class="medium-status" id="lancar-status"></div>
         <button type="submit" class="btn btn-primario medium-lancar-btn" id="lancar-btn" disabled>
-            ✔ Lançar
+            {{ icone("check") }} Lançar
         </button>
     </form>
 </div>
 
 <!-- Próximos atendimentos -->
-<h2 style="font-size:1.3rem">🗓️ Próximos atendimentos</h2>
+<h2 style="font-size:1.3rem">{{ icone("calendar-days") }}️ Próximos atendimentos</h2>
 {% if not por_data %}
 <div class="vazio">
-    <div class="vazio-icone">📅</div>
+    <div class="vazio-icone">{{ icone("calendar-days") }}</div>
     <h3>Nenhum atendimento agendado</h3>
     <p>Use o formulário acima para lançar a agenda de papel.</p>
 </div>
@@ -159,7 +159,7 @@
         <div class="medium-card">
             <div class="pessoa">{{ ag.pessoas or '—' }}</div>
             <div class="detalhe">
-                🧘 {{ ag.medium_nome }} ·
+                {{ icone("heart-handshake") }} {{ ag.medium_nome }} ·
                 sessão {{ ag.sessoes_realizadas + 1 }}/{{ ag.sessoes_total }}
             </div>
         </div>
@@ -171,7 +171,7 @@
 
 <!-- Atendidos no último dia -->
 {% if dia_anterior %}
-<h2 style="font-size:1.3rem">🕐 Atendidos em {{ dia_anterior.data | data_br }}</h2>
+<h2 style="font-size:1.3rem">{{ icone("clock") }} Atendidos em {{ dia_anterior.data | data_br }}</h2>
 {% if atendidos_dia %}
 <ul class="medium-atendidos">
     {% for a in atendidos_dia %}
@@ -214,7 +214,7 @@ function atualizarSituacao() {
                 elStatus.textContent = `Tem plano ativo com este médium — será acrescentada 1 sessão na data.`;
                 elNovo.style.display = 'none';
             } else {
-                elStatus.textContent = `⚠️ Tem plano ativo com ${s.medium_nome}. Valide com a recepção antes de lançar aqui.`;
+                elStatus.textContent = `{{ icone("triangle-alert") }} Tem plano ativo com ${s.medium_nome}. Valide com a recepção antes de lançar aqui.`;
                 elNovo.style.display = 'none';
             }
         });
@@ -246,7 +246,7 @@ async function buscar(q) {
         el.appendChild(nome);
         const sub = document.createElement('div');
         sub.className = 'medium-sugerido-medium';
-        sub.textContent = p.medium ? `🩺 ${p.medium}` : 'sem plano ativo';
+        sub.textContent = p.medium ? `{{ icone("heart-pulse") }} ${p.medium}` : 'sem plano ativo';
         el.appendChild(sub);
         el.addEventListener('mouseenter', () => el.style.background = 'var(--cor-fundo)');
         el.addEventListener('mouseleave', () => el.style.background = '');

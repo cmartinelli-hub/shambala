@@ -16,7 +16,7 @@
 
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}
@@ -39,7 +39,7 @@
 
 {% if sit.agendamento %}
 <div class="checkin-info-card checkin-agendamento">
-    <span class="checkin-info-icon">📅</span>
+    <span class="checkin-info-icon">{{ icone("calendar-days") }}</span>
     <div>
         <strong>Sessão agendada hoje</strong> com {{ sit.agendamento.medium_nome }}.
         Passe: <strong>{{ 'obrigatório' if sit.agendamento.requer_passe else 'não obrigatório' }}</strong>
@@ -49,7 +49,7 @@
 
 {% elif sit.plano_ativo %}
 <div class="checkin-info-card checkin-plano">
-    <span class="checkin-info-icon">📋</span>
+    <span class="checkin-info-icon">{{ icone("clipboard-list") }}</span>
     <div>
         <strong>Plano ativo</strong> com {{ sit.plano_ativo.medium_nome }}
         ({{ sit.plano_ativo.sessoes_realizadas }}/{{ sit.plano_ativo.sessoes_total }} sessões).
@@ -67,7 +67,7 @@
 
 {% elif sit.sugere_fraterno %}
 <div class="checkin-info-card checkin-fraterno">
-    <span class="checkin-info-icon">🤝</span>
+    <span class="checkin-info-icon">{{ icone("handshake") }}</span>
     <div>
         <strong>Sem plano de tratamento ativo.</strong>
         Verificar necessidade de <strong>Atendimento Fraterno</strong>.
@@ -78,8 +78,8 @@
 {# Consulta rápida: plano de atendimento + agenda do médium #}
 {% if resumo_plano %}
 <div class="checkin-acoes-rapidas">
-    <button type="button" class="checkin-info-btn" onclick="abrirModalInfo('plano')">📋 Ver plano de atendimento</button>
-    <button type="button" class="checkin-info-btn" onclick="abrirModalInfo('agenda')">📅 Agenda do médium</button>
+    <button type="button" class="checkin-info-btn" onclick="abrirModalInfo('plano')">{{ icone("clipboard-list") }} Ver plano de atendimento</button>
+    <button type="button" class="checkin-info-btn" onclick="abrirModalInfo('agenda')">{{ icone("calendar-days") }} Agenda do médium</button>
 </div>
 
 <div id="modal-info" class="checkin-modal" hidden>
@@ -90,7 +90,7 @@
                 <button type="button" id="aba-btn-plano" class="checkin-aba-btn checkin-aba-ativa" onclick="trocarAbaInfo('plano')">Plano de atendimento</button>
                 <button type="button" id="aba-btn-agenda" class="checkin-aba-btn" onclick="trocarAbaInfo('agenda')">Agenda do médium</button>
             </div>
-            <button type="button" class="checkin-modal-fechar" onclick="fecharModalInfo()" aria-label="Fechar">✕</button>
+            <button type="button" class="checkin-modal-fechar" onclick="fecharModalInfo()" aria-label="Fechar">{{ icone("x") }}</button>
         </div>
 
         <div id="aba-conteudo-plano" class="checkin-aba-conteudo">
@@ -167,7 +167,7 @@
     <div class="checkin-senhas-grid">
         <div class="checkin-senha-card">
             <div class="checkin-senha-header">
-                <span class="checkin-senha-icon">🧘</span>
+                <span class="checkin-senha-icon">{{ icone("heart-handshake") }}</span>
                 <label class="checkin-senha-label">
                     Senha — Passe
                     {% if sit.agendamento and sit.agendamento.requer_passe %}
@@ -182,7 +182,7 @@
 
         <div class="checkin-senha-card">
             <div class="checkin-senha-header">
-                <span class="checkin-senha-icon">🙌</span>
+                <span class="checkin-senha-icon">{{ icone("heart-handshake") }}</span>
                 <label class="checkin-senha-label">Senha — Reiki</label>
             </div>
             <input type="text" name="codigo_reiki" class="checkin-senha-input"
@@ -192,7 +192,7 @@
 
         <div class="checkin-senha-card">
             <div class="checkin-senha-header">
-                <span class="checkin-senha-icon">🤝</span>
+                <span class="checkin-senha-icon">{{ icone("handshake") }}</span>
                 <label class="checkin-senha-label">Senha — Fraterno</label>
             </div>
             <input type="text" name="codigo_acolhimento" class="checkin-senha-input"
@@ -203,7 +203,7 @@
         {% if mediuns_hoje %}
         <div class="checkin-senha-card">
             <div class="checkin-senha-header">
-                <span class="checkin-senha-icon">🧑‍⚕️</span>
+                <span class="checkin-senha-icon">{{ icone("user") }}‍{{ icone("stethoscope") }}</span>
                 <label class="checkin-senha-label">Senha — Atendimento</label>
             </div>
             <input type="text" name="codigo_atendimento" class="checkin-senha-input"
@@ -232,7 +232,7 @@
 
     <!-- Acompanhantes -->
     <div class="checkin-acompanhantes">
-        <h3 class="checkin-acomp-titulo">👥 Acompanhantes na sessão</h3>
+        <h3 class="checkin-acomp-titulo">{{ icone("users") }} Acompanhantes na sessão</h3>
         <p class="checkin-acomp-ajuda">Busque pelo nome e clique para adicionar quem compartilha a mesma senha de atendimento.</p>
         <div class="checkin-acomp-busca-wrapper">
             <input type="text" id="acomp-busca" placeholder="Buscar pessoa…"
@@ -244,7 +244,7 @@
 
     <!-- Ações -->
     <div class="form-acoes">
-        <button type="submit" class="btn btn-primario btn-grande">✅ Confirmar check-in</button>
+        <button type="submit" class="btn btn-primario btn-grande">{{ icone("circle-check") }} Confirmar check-in</button>
         <a href="/dia/checkin" class="btn btn-secundario">Cancelar</a>
     </div>
 </form>
@@ -301,7 +301,7 @@ function adicionar(id, nome) {
     chip.innerHTML = `
         ${nome}
         <input type="hidden" name="acompanhante_id" value="${id}">
-        <button type="button" onclick="remover(this, ${id})" class="acomp-chip-btn">✕</button>
+        <button type="button" onclick="remover(this, ${id})" class="acomp-chip-btn" aria-label="Fechar">{{ icone("x") }}</button>
     `;
     divLista.appendChild(chip);
 }

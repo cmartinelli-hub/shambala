@@ -8,7 +8,7 @@
         <h1>Médiuns</h1>
         <p class="subtitulo">{{ mediuns|length }} médium{{ 's' if mediuns|length != 1 }} cadastrado{{ 's' if mediuns|length != 1 }}</p>
     </div>
-    <a href="/cadastros/mediuns/novo" class="btn btn-primario">➕ Novo médium</a>
+    <a href="/cadastros/mediuns/novo" class="btn btn-primario">{{ icone("plus") }} Novo médium</a>
 </div>
 
 {% if mediuns %}
@@ -25,7 +25,7 @@
             </div>
             <div class="medium-info">
                 <h3 class="medium-nome">{{ m.nome_completo }}</h3>
-                <span class="medium-vagas">🎫 {{ m.vagas_dia }} vagas/noite</span>
+                <span class="medium-vagas">{{ icone("ticket") }} {{ m.vagas_dia }} vagas/noite</span>
             </div>
             <span class="medium-badge {% if m.ativo %}badge-ativo{% else %}badge-inativo{% endif %}">
                 {{ 'Ativo' if m.ativo else 'Inativo' }}
@@ -33,18 +33,18 @@
         </div>
         <div class="medium-contato">
             {% if m.telefone %}
-            <span class="medium-telefone">📞 {{ m.telefone }}</span>
+            <span class="medium-telefone">{{ icone("phone") }} {{ m.telefone }}</span>
             {% endif %}
             {% if m.email %}
-            <span class="medium-email">✉️ {{ m.email }}</span>
+            <span class="medium-email">{{ icone("mail") }}️ {{ m.email }}</span>
             {% endif %}
             {% if not m.telefone and not m.email %}
             <span class="medium-sem-contato">Sem contato</span>
             {% endif %}
         </div>
         <div class="medium-acoes">
-            <a href="/cadastros/mediuns/{{ m.id }}/editar" class="btn btn-sm btn-editar">✏️ Editar</a>
-            <a href="/cadastros/mediuns/{{ m.id }}/planos" class="btn btn-sm btn-planos">🩺 Planos</a>
+            <a href="/cadastros/mediuns/{{ m.id }}/editar" class="btn btn-sm btn-editar">{{ icone("pencil") }}️ Editar</a>
+            <a href="/cadastros/mediuns/{{ m.id }}/planos" class="btn btn-sm btn-planos">{{ icone("heart-pulse") }} Planos</a>
             <form method="post" action="/cadastros/mediuns/{{ m.id }}/toggle-ativo" class="medium-form-toggle">
                 <button type="submit" class="btn-toggle {% if m.ativo %}btn-desativar{% else %}btn-ativar{% endif %}">
                     {{ 'Desativar' if m.ativo else 'Ativar' }}

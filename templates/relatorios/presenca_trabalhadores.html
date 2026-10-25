@@ -5,7 +5,7 @@
 <div class="cabecalho-secao">
     <h2>Presenças dos Trabalhadores</h2>
     <a href="/relatorios" class="btn btn-secundario">← Relatórios</a>
-    <button type="button" class="btn btn-secundario" onclick="window.print()" title="Imprimir este relatório">🖨 Imprimir</button>
+    <button type="button" class="btn btn-secundario" onclick="window.print()" title="Imprimir este relatório">{{ icone("printer") }} Imprimir</button>
 </div>
 
 <form method="get" class="barra-busca rel-controles" style="margin-bottom:1.5rem;flex-wrap:wrap;gap:0.5rem">
@@ -51,7 +51,7 @@
 
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}

@@ -78,7 +78,7 @@
                       onsubmit="return confirm('Registrar falta nesta sessão?')">
                     <button type="submit" class="btn btn-secundario btn-sm"
                             style="background:var(--cor-alerta-fundo);color:var(--cor-alerta);border-color:var(--cor-alerta)">
-                        ✗ Faltou
+                        {{ icone("x") }} Faltou
                     </button>
                 </form>
                 {% endif %}

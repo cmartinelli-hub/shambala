@@ -18,7 +18,7 @@
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
         <a href="/caixa/pdv?caixa_id={{ movimento.caixa_id }}" class="btn btn-secundario btn-sm">← PDV</a>
         {% if movimento.status == 'fechado' %}
-        <a href="/caixa/fechar/{{ movimento.id }}/pdf" class="btn btn-primario btn-sm">📄 Exportar PDF</a>
+        <a href="/caixa/fechar/{{ movimento.id }}/pdf" class="btn btn-primario btn-sm">{{ icone("file-text") }} Exportar PDF</a>
         {% endif %}
     </div>
 </div>
@@ -37,7 +37,7 @@
 {% if request.query_params.get('fechado') %}
 <div style="background:#d4edda;border:1px solid #1da851;border-radius:var(--raio);
      padding:.6rem 1rem;color:#155724;font-weight:600;margin-bottom:1rem">
-    ✅ Sessão fechada. O dinheiro contado ficou registrado ao lado do esperado, com a divergência.
+    {{ icone("circle-check") }} Sessão fechada. O dinheiro contado ficou registrado ao lado do esperado, com a divergência.
 </div>
 {% endif %}
 
@@ -220,7 +220,7 @@
             </tr>
         </thead>
         <tbody>
-            {% set mapa_pgto2 = {'especie': '💵 Espécie', 'pix': '📱 PIX', 'fiado': '📝 Fiado'} %}
+            {% set mapa_pgto2 = {'especie': '{{ icone("banknote") }} Espécie', 'pix': '{{ icone("smartphone") }} PIX', 'fiado': '{{ icone("notebook-pen") }} Fiado'} %}
             {% for v in vendas %}
             <tr>
                 <td>{{ v.id }}</td>
@@ -302,7 +302,7 @@
 {% if movimento.status == 'aberto' %}
 <div class="card-form" style="text-align:center;border:2px solid #c0392b">
     <p style="font-size:1rem;margin-bottom:1rem;font-weight:600">
-        🔒 Confira os valores acima antes de fechar o caixa.
+        {{ icone("lock") }} Confira os valores acima antes de fechar o caixa.
     </p>
     <form method="post" action="/caixa/fechar" onsubmit="return confirm('Tem certeza que deseja fechar o caixa? Esta ação não pode ser desfeita.')">
         <input type="hidden" name="caixa_movimento_id" value="{{ movimento.id }}">
@@ -328,7 +328,7 @@
             <input type="text" id="observacao" name="observacao" class="form-input"
                    placeholder="Ex: Caixa fechado, tudo ok..." style="width:100%">
         </div>
-        <button type="submit" class="btn btn-perigo btn-grande">🔒 Fechar Caixa</button>
+        <button type="submit" class="btn btn-perigo btn-grande">{{ icone("lock") }} Fechar Caixa</button>
     </form>
 </div>
 {% elif movimento.dinheiro_contado is not none %}

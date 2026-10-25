@@ -11,9 +11,9 @@
 {% if _erro %}
 <div style="background:#f8d7da;border:1px solid #c0392b;border-radius:var(--raio);
      padding:.6rem 1rem;color:#721c24;font-weight:600;margin-bottom:1rem">
-    {% if _erro == 'valor_invalido' %}⚠️ Informe um valor válido maior que zero.{% endif %}
-    {% if _erro == 'contas_iguais' %}⚠️ Selecione duas contas diferentes.{% endif %}
-    {% if _erro in mensagens_tentativa %}⚠️ {{ mensagens_tentativa[_erro] }}{% endif %}
+    {% if _erro == 'valor_invalido' %}{{ icone("triangle-alert") }} Informe um valor válido maior que zero.{% endif %}
+    {% if _erro == 'contas_iguais' %}{{ icone("triangle-alert") }} Selecione duas contas diferentes.{% endif %}
+    {% if _erro in mensagens_tentativa %}{{ icone("triangle-alert") }} {{ mensagens_tentativa[_erro] }}{% endif %}
 </div>
 {% endif %}
 

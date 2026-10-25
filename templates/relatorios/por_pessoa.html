@@ -80,19 +80,19 @@
             <td style="text-align:center">
                 {% if r.codigo_passe %}
                     {{ r.codigo_passe }}
-                    {% if r.passe_realizado %}✔{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
+                    {% if r.passe_realizado %}{{ icone("check") }}{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
                 {% else %}—{% endif %}
             </td>
             <td style="text-align:center">
                 {% if r.codigo_acolhimento %}
                     {{ r.codigo_acolhimento }}
-                    {% if r.acolhimento_realizado %}✔{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
+                    {% if r.acolhimento_realizado %}{{ icone("check") }}{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
                 {% else %}—{% endif %}
             </td>
             <td style="text-align:center">
                 {% if r.codigo_atendimento %}
                     {{ r.codigo_atendimento }}
-                    {% if r.atendimento_realizado %}✔{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
+                    {% if r.atendimento_realizado %}{{ icone("check") }}{% else %}<span style="color:var(--cor-texto-suave)">pend.</span>{% endif %}
                 {% else %}—{% endif %}
             </td>
             <td>{{ r.medium_nome or '—' }}</td>

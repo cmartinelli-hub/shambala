@@ -24,7 +24,7 @@
         <tr><td style="padding-right:1rem;color:var(--cor-texto-suave)">Data</td><td>{{ venda.data_venda|data_br }}</td></tr>
         <tr><td style="color:var(--cor-texto-suave)">Caixa</td><td>{{ caixa_nome }}</td></tr>
         <tr><td style="color:var(--cor-texto-suave)">Forma</td>
-            <td>{% if venda.forma_pagamento == 'especie' %}💵 Espécie{% elif venda.forma_pagamento == 'pix' %}📱 PIX{% elif venda.forma_pagamento == 'fiado' %}📝 Fiado{% else %}{{ venda.forma_pagamento }}{% endif %}</td></tr>
+            <td>{% if venda.forma_pagamento == 'especie' %}{{ icone("banknote") }} Espécie{% elif venda.forma_pagamento == 'pix' %}{{ icone("smartphone") }} PIX{% elif venda.forma_pagamento == 'fiado' %}{{ icone("notebook-pen") }} Fiado{% else %}{{ venda.forma_pagamento }}{% endif %}</td></tr>
         <tr><td style="color:var(--cor-texto-suave)">Total</td><td><strong>R$ {{ "%.2f"|format(venda.total) }}</strong></td></tr>
         {% if venda.doacao_valor and venda.doacao_valor > 0 %}
         <tr><td style="color:var(--cor-texto-suave)">Doação na venda</td><td>R$ {{ "%.2f"|format(venda.doacao_valor) }}</td></tr>

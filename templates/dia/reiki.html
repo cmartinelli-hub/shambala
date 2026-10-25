@@ -29,17 +29,17 @@
             <td>{{ loop.index }}</td>
             <td><strong style="font-size:1.2rem">{{ c.codigo_reiki }}</strong></td>
             <td>{{ c.nome_completo }}
-                {% if c.prioridade %} ⚑{% endif %}
-                {% if c.deficiencia %} ♿{% endif %}
-                {% if idoso %} ★{% endif %}
+                {% if c.prioridade %} {{ icone("flag") }}{% endif %}
+                {% if c.deficiencia %} {{ icone("accessibility") }}{% endif %}
+                {% if idoso %} {{ icone("star") }}{% endif %}
             </td>
             <td>{{ c.hora_checkin }}</td>
             <td class="acoes">
                 <form method="post" action="/dia/reiki/{{ c.id }}/chamar" style="display:inline">
-                    <button type="submit" class="btn btn-primario btn-sm">📢 Chamar</button>
+                    <button type="submit" class="btn btn-primario btn-sm">{{ icone("megaphone") }} Chamar</button>
                 </form>
                 <form method="post" action="/dia/reiki/{{ c.id }}/realizado" style="display:inline">
-                    <button type="submit" class="btn btn-secundario btn-sm">✓ Realizado</button>
+                    <button type="submit" class="btn btn-secundario btn-sm">{{ icone("check") }} Realizado</button>
                 </form>
             </td>
         </tr>

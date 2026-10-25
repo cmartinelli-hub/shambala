@@ -8,7 +8,7 @@
     <div>
         <h1>Mala Direta — Resultado</h1>
         <p class="subtitulo">
-            {% if canal == "email" %}✉️ E-mail{% else %}💬 WhatsApp{% endif %}
+            {% if canal == "email" %}{{ icone("mail") }} E-mail{% else %}{{ icone("message-circle") }} WhatsApp{% endif %}
             {% if assunto %}— {{ assunto }}{% endif %}
         </p>
     </div>
@@ -22,27 +22,27 @@
     <div class="md-resumo-stats">
         {% if canal == "email" %}
         <div class="md-stat">
-            <span class="md-stat-icon">✉️</span>
+            <span class="md-stat-icon">{{ icone("mail") }}</span>
             <span class="md-stat-num">{{ lista_emails|length }}</span>
             <span class="md-stat-label">Destinatários</span>
         </div>
         {% if enviados %}
         <div class="md-stat md-stat-sucesso">
-            <span class="md-stat-icon">✓</span>
+            <span class="md-stat-icon">{{ icone("check") }}</span>
             <span class="md-stat-num">{{ enviados }}</span>
             <span class="md-stat-label">Enviados</span>
         </div>
         {% endif %}
         {% if falhas %}
         <div class="md-stat md-stat-erro">
-            <span class="md-stat-icon">✕</span>
+            <span class="md-stat-icon">{{ icone("x") }}</span>
             <span class="md-stat-num">{{ falhas|length }}</span>
             <span class="md-stat-label">Falhas</span>
         </div>
         {% endif %}
         {% else %}
         <div class="md-stat">
-            <span class="md-stat-icon">💬</span>
+            <span class="md-stat-icon">{{ icone("message-circle") }}</span>
             <span class="md-stat-num">{{ lista_telefones|length }}</span>
             <span class="md-stat-label">Contatos WhatsApp</span>
         </div>
@@ -54,7 +54,7 @@
 <!-- Resultado E-mail -->
 {% if falhas %}
 <div class="md-erros-card">
-    <h3>⚠️ Falhas no envio</h3>
+    <h3>{{ icone("triangle-alert") }} Falhas no envio</h3>
     <ul>
     {% for f in falhas %}
         <li><strong>{{ f.nome }}</strong> ({{ f.email }}): {{ f.erro }}</li>
@@ -67,7 +67,7 @@
 <!-- Ação SMTP -->
 {% if enviados == 0 %}
 <div class="md-acao-card">
-    <h3>📤 Enviar via SMTP</h3>
+    <h3>{{ icone("upload") }} Enviar via SMTP</h3>
     <form method="post" action="/mala-direta/enviar">
         <input type="hidden" name="assunto" value="{{ assunto }}">
         <input type="hidden" name="mensagem" value="{{ mensagem }}">
@@ -77,7 +77,7 @@
         <input type="hidden" name="acao" value="enviar">
         <button type="submit" class="btn md-btn-email btn-grande"
                 onclick="return confirm('Enviar {{ lista_emails|length }} e-mails via SMTP?')">
-            📤 Enviar {{ lista_emails|length }} e-mails via SMTP
+            {{ icone("upload") }} Enviar {{ lista_emails|length }} e-mails via SMTP
         </button>
     </form>
 </div>
@@ -88,7 +88,7 @@
     <div class="md-copy-item">
         <div class="md-copy-header">
             <span>1. Endereços de e-mail</span>
-            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-emails')">📋 Copiar</button>
+            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-emails')">{{ icone("clipboard-list") }} Copiar</button>
         </div>
         <input type="text" value="{{ emails_str_comma }}" id="md-campo-emails" readonly class="md-copy-input">
     </div>
@@ -96,7 +96,7 @@
     <div class="md-copy-item">
         <div class="md-copy-header">
             <span>2. Assunto</span>
-            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-assunto')">📋 Copiar</button>
+            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-assunto')">{{ icone("clipboard-list") }} Copiar</button>
         </div>
         <input type="text" value="{{ assunto }}" id="md-campo-assunto" readonly class="md-copy-input">
     </div>
@@ -104,14 +104,14 @@
     <div class="md-copy-item">
         <div class="md-copy-header">
             <span>3. Mensagem</span>
-            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-mensagem')">📋 Copiar</button>
+            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-mensagem')">{{ icone("clipboard-list") }} Copiar</button>
         </div>
         <textarea id="md-campo-mensagem" readonly class="md-copy-textarea">{{ mensagem }}</textarea>
     </div>
 
     {% if mailto_link %}
     <div class="md-copy-item md-copy-acao">
-        <a href="{{ mailto_link }}" class="btn md-btn-email">📧 Abrir no cliente de e-mail</a>
+        <a href="{{ mailto_link }}" class="btn md-btn-email">{{ icone("mail") }} Abrir no cliente de e-mail</a>
         <p class="md-dica">Abre seu programa de e-mail com tudo preenchido (funciona melhor com listas curtas).</p>
     </div>
     {% endif %}
@@ -124,7 +124,7 @@
     <div class="md-copy-item">
         <div class="md-copy-header">
             <span>1. Mensagem para copiar</span>
-            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-mensagem-wa')">📋 Copiar</button>
+            <button class="md-btn-copiar" onclick="mdCopiar('md-campo-mensagem-wa')">{{ icone("clipboard-list") }} Copiar</button>
         </div>
         <textarea id="md-campo-mensagem-wa" readonly class="md-copy-textarea">{{ mensagem }}</textarea>
     </div>
@@ -139,12 +139,12 @@
         <div class="md-wa-item">
             <div class="md-wa-info">
                 <span class="md-wa-nome">{{ t.nome }}</span>
-                <span class="md-wa-tel">📞 {{ t.tel_display }}</span>
+                <span class="md-wa-tel">{{ icone("phone") }} {{ t.tel_display }}</span>
             </div>
             <form method="post" action="/mala-direta/whatsapp-abrir" target="_blank" style="display:inline">
                 <input type="hidden" name="numero" value="{{ t.tel_display }}">
                 <input type="hidden" name="mensagem" value="{{ mensagem }}">
-                <button type="submit" class="btn md-btn-whatsapp btn-sm">💬 Abrir</button>
+                <button type="submit" class="btn md-btn-whatsapp btn-sm">{{ icone("message-circle") }} Abrir</button>
             </form>
         </div>
         {% endfor %}
@@ -165,7 +165,7 @@ function mdCopiar(id) {
                     || el.parentElement.querySelector('.md-btn-copiar');
         if (btn) {
             const orig = btn.textContent;
-            btn.textContent = '✓ Copiado!';
+            btn.textContent = 'Copiado!';
             btn.style.background = '#d1fae5';
             btn.style.color = '#065f46';
             setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; }, 2000);

@@ -254,16 +254,16 @@
         {% endif %}
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-        <a href="/caixa/vendas{% if caixa_sel %}?caixa_id={{ caixa_sel.id }}{% endif %}" class="btn btn-secundario btn-sm">📋 Vendas do dia</a>
+        <a href="/caixa/vendas{% if caixa_sel %}?caixa_id={{ caixa_sel.id }}{% endif %}" class="btn btn-secundario btn-sm">{{ icone("clipboard-list") }} Vendas do dia</a>
         {% if movimento %}
-        <a href="/caixa/sangria?caixa_movimento_id={{ movimento.id }}" class="btn btn-secundario btn-sm">💸 Sangria</a>
-        <a href="/caixa/fechar?caixa_movimento_id={{ movimento.id }}" class="btn btn-secundario btn-sm">🔒 Fechar Caixa</a>
+        <a href="/caixa/sangria?caixa_movimento_id={{ movimento.id }}" class="btn btn-secundario btn-sm">{{ icone("banknote") }} Sangria</a>
+        <a href="/caixa/fechar?caixa_movimento_id={{ movimento.id }}" class="btn btn-secundario btn-sm">{{ icone("lock") }} Fechar Caixa</a>
         {% endif %}
-        <a href="/caixa/qrcode" target="_blank" class="btn btn-secundario btn-sm">📺 Segundo monitor</a>
-        <a href="/caixa/produtos" class="btn btn-secundario btn-sm">🛒 Produtos</a>
-        <a href="/caixa/fiados" class="btn btn-secundario btn-sm">📝 Fiados</a>
-        <a href="/financeiro/mensalidades" class="btn btn-secundario btn-sm">🗓 Mensalidades</a>
-        <a href="/caixa/doacao" class="btn btn-secundario btn-sm">❤️ Doação</a>
+        <a href="/caixa/qrcode" target="_blank" class="btn btn-secundario btn-sm">{{ icone("monitor") }} Segundo monitor</a>
+        <a href="/caixa/produtos" class="btn btn-secundario btn-sm">{{ icone("shopping-cart") }} Produtos</a>
+        <a href="/caixa/fiados" class="btn btn-secundario btn-sm">{{ icone("notebook-pen") }} Fiados</a>
+        <a href="/financeiro/mensalidades" class="btn btn-secundario btn-sm">{{ icone("calendar-days") }} Mensalidades</a>
+        <a href="/caixa/doacao" class="btn btn-secundario btn-sm">{{ icone("heart") }} Doação</a>
     </div>
 
 {% if caixa_sel %}
@@ -312,7 +312,7 @@
 {% endif %}
 {% if aviso_divergencia %}
 <div class="pdv-ok" style="background:#fff3cd;border-color:#b8860b;color:#7a5b00">
-    ⚠️ O preço de algum produto mudou desde que a cesta foi montada. Nenhum valor foi gravado.
+    {{ icone("triangle-alert") }} O preço de algum produto mudou desde que a cesta foi montada. Nenhum valor foi gravado.
     Confira o recálculo abaixo e confirme de novo para fechar pelo preço vigente.
 </div>
 {% endif %}
@@ -339,12 +339,12 @@
 {% if precisa_abrir %}
 {# ── Abertura de caixa obrigatória ── #}
 <div class="card-form" style="max-width:480px;margin:2rem auto;text-align:center">
-    <h3 style="margin-bottom:.5rem">🔓 Caixa Fechado</h3>
+    <h3 style="margin-bottom:.5rem">{{ icone("lock-open") }} Caixa Fechado</h3>
     <p style="color:var(--cor-texto-suave);margin-bottom:1.5rem">
         O caixa <strong>{{ caixa_sel.nome }}</strong> precisa ser aberto antes de iniciar as operações.
     </p>
     <a href="/caixa/abrir?caixa_id={{ caixa_sel.id }}" class="btn btn-primario btn-grande">
-        🔓 Abrir Caixa
+        {{ icone("lock-open") }} Abrir Caixa
     </a>
     <br><br>
     <a href="/caixa/pdv" class="btn btn-secundario">← Outro caixa</a>
@@ -403,7 +403,7 @@
 
     {# ── Coluna direita: carrinho + pagamento ── #}
     <div class="pdv-carrinho-wrap">
-        <div class="pdv-carrinho-titulo">🛒 Carrinho</div>
+        <div class="pdv-carrinho-titulo">{{ icone("shopping-cart") }} Carrinho</div>
         <div class="pdv-carrinho-itens" id="pdv-itens">
             <div class="pdv-vazio" id="pdv-vazio">Nenhum item adicionado.</div>
         </div>
@@ -428,14 +428,14 @@
             <div class="pdv-radio-group">
                 <input type="radio" name="pgto" id="pgto-especie" value="especie"
                        {% if sem_sessao %}disabled{% else %}checked{% endif %}>
-                <label for="pgto-especie">💵 Espécie</label>
+                <label for="pgto-especie">{{ icone("banknote") }} Espécie</label>
                 <input type="radio" name="pgto" id="pgto-pix" value="pix"
                        {% if sem_sessao %}checked{% endif %}>
-                <label for="pgto-pix">📱 PIX</label>
+                <label for="pgto-pix">{{ icone("smartphone") }} PIX</label>
                 {% if caixa_sel.usa_produtos != False %}
                 <input type="radio" name="pgto" id="pgto-fiado" value="fiado"
                        {% if sem_sessao %}disabled{% endif %}>
-                <label for="pgto-fiado">📝 Fiado</label>
+                <label for="pgto-fiado">{{ icone("notebook-pen") }} Fiado</label>
                 {% endif %}
             </div>
 
@@ -447,34 +447,34 @@
                 <div id="btn-doacao-wrap" style="display:none;margin-top:.4rem">
                     <button type="button" id="btn-doacao" class="btn btn-secundario"
                             style="width:100%;font-size:.85rem">
-                        ❤️ Deixar troco como doação (R$ <span id="doacao-val-display">0,00</span>)
+                        {{ icone("heart") }} Deixar troco como doação (R$ <span id="doacao-val-display">0,00</span>)
                     </button>
                 </div>
             </div>
 
             <div class="pdv-pix{% if sem_sessao %} ativo{% endif %}" id="painel-pix">
                 <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
-                    <label style="font-size:.85rem;font-weight:600;white-space:nowrap">❤️ Doação (R$)</label>
+                    <label style="font-size:.85rem;font-weight:600;white-space:nowrap">{{ icone("heart") }} Doação (R$)</label>
                     <input type="number" id="pix-doacao" class="pdv-input-valor"
                            step="0.01" min="0" placeholder="0,00"
                            style="width:100px;font-size:.95rem">
                 </div>
                 <button class="btn btn-secundario pdv-btn-pix" id="btn-gerar-pix" type="button">
-                    📱 Gerar QR Code PIX
+                    {{ icone("smartphone") }} Gerar QR Code PIX
                 </button>
             </div>
 
             <div class="pdv-fiado" id="painel-fiado">
                 <label>Trabalhador (comprador a prazo)</label>
                 <button type="button" id="btn-abrir-fiado-modal" class="btn btn-primario pdv-btn-pix">
-                    🔍 Selecionar Trabalhador
+                    {{ icone("search") }} Selecionar Trabalhador
                 </button>
                 <div id="fiado-selecionado" style="display:none;margin-top:.4rem;
                      padding:.4rem;background:#e8f5e9;border-radius:var(--raio);
                      font-size:.9rem;font-weight:600">
                     <span id="fiado-nome"></span>
                     <button type="button" id="fiado-limpar" style="margin-left:.5rem;
-                            background:none;border:none;color:#c0392b;cursor:pointer">✕</button>
+                            background:none;border:none;color:#c0392b;cursor:pointer" aria-label="Fechar">{{ icone("x") }}</button>
                     <div id="fiado-info" style="font-size:.8rem;font-weight:400;margin-top:.3rem"></div>
                 </div>
             </div>
@@ -484,10 +484,10 @@
         <div class="pdv-btn-area">
             <div style="display:flex;gap:.4rem">
                 <button class="btn btn-secundario pdv-btn-finalizar" id="btn-finalizar" disabled style="flex:1">
-                    ✅ Finalizar
+                    {{ icone("circle-check") }} Finalizar
                 </button>
                 <button class="btn btn-primario pdv-btn-finalizar" id="btn-finalizar-sem-impressao" disabled style="flex:1">
-                    🖨️ Finalizar e Imprimir
+                    {{ icone("printer") }} Finalizar e Imprimir
                 </button>
             </div>
         </div>
@@ -511,7 +511,7 @@
 <div class="modal-overlay" id="modal-pix" style="display:none" onclick="if(event.target===this)fecharModal('modal-pix')">
     <div class="modal-box">
         <div class="modal-header">
-            <h3>📱 Pagamento PIX</h3>
+            <h3>{{ icone("smartphone") }} Pagamento PIX</h3>
             <button type="button" class="modal-close" onclick="fecharModal('modal-pix')">&times;</button>
         </div>
         <div class="modal-body" style="text-align:center">
@@ -528,8 +528,8 @@
         </div>
         <div class="modal-footer">
             <button class="btn btn-secundario" onclick="fecharModal('modal-pix')">← Voltar</button>
-            <button class="btn btn-primario" id="btn-finalizar-pix" style="flex:2">✅ Finalizar</button>
-            <button class="btn btn-primario" id="btn-finalizar-imprimir-pix" style="flex:2">🖨️ Finalizar e Imprimir</button>
+            <button class="btn btn-primario" id="btn-finalizar-pix" style="flex:2">{{ icone("circle-check") }} Finalizar</button>
+            <button class="btn btn-primario" id="btn-finalizar-imprimir-pix" style="flex:2">{{ icone("printer") }} Finalizar e Imprimir</button>
         </div>
     </div>
 </div>
@@ -538,7 +538,7 @@
 <div class="modal-overlay" id="modal-fiado" style="display:none" onclick="if(event.target===this)fecharModal('modal-fiado')">
     <div class="modal-box">
         <div class="modal-header">
-            <h3>📝 Fiado — Selecionar Trabalhador</h3>
+            <h3>{{ icone("notebook-pen") }} Fiado — Selecionar Trabalhador</h3>
             <button type="button" class="modal-close" onclick="fecharModal('modal-fiado')">&times;</button>
         </div>
         <div class="modal-body">
@@ -556,14 +556,14 @@
                  font-size:.9rem;font-weight:600">
                 <span id="fiado-nome-modal"></span>
                 <button type="button" id="fiado-limpar-modal" style="margin-left:.5rem;
-                        background:none;border:none;color:#c0392b;cursor:pointer">✕</button>
+                        background:none;border:none;color:#c0392b;cursor:pointer" aria-label="Fechar">{{ icone("x") }}</button>
                 <div id="fiado-info-modal" style="font-size:.8rem;font-weight:400;margin-top:.3rem"></div>
             </div>
         </div>
         <div class="modal-footer">
             <button class="btn btn-secundario" onclick="fecharModal('modal-fiado')">← Voltar</button>
-            <button class="btn btn-primario" id="btn-finalizar-fiado" disabled style="flex:2">✅ Finalizar</button>
-            <button class="btn btn-primario" id="btn-finalizar-imprimir-fiado" disabled style="flex:2">🖨️ Finalizar e Imprimir</button>
+            <button class="btn btn-primario" id="btn-finalizar-fiado" disabled style="flex:2">{{ icone("circle-check") }} Finalizar</button>
+            <button class="btn btn-primario" id="btn-finalizar-imprimir-fiado" disabled style="flex:2">{{ icone("printer") }} Finalizar e Imprimir</button>
         </div>
     </div>
 </div>
@@ -701,7 +701,7 @@ function renderCarrinho() {
             <input class="pdv-item-qty" type="number" min="1" value="${item.quantidade}" data-idx="${idx}">
             <button class="pdv-qty-btn pdv-qty-plus" data-idx="${idx}" title="Aumentar">+</button>
             <span class="pdv-item-sub" id="sub-${idx}">R$ ${fmtVal(item.subtotal)}</span>
-            <button class="pdv-item-rm" data-idx="${idx}" title="Remover">✕</button>`;
+            <button class="pdv-item-rm" data-idx="${idx}" title="Remover" aria-label="Remover">{{ icone("x") }}</button>`;
         el.appendChild(div);
     });
 
@@ -797,7 +797,7 @@ function calcTroco() {
     const troco = recebido - total;
     el.textContent = troco >= 0
         ? `Troco: R$ ${fmtVal(troco)}`
-        : `⚠ Faltam R$ ${fmtVal(-troco)}`;
+        : `{{ icone("triangle-alert") }} Faltam R$ ${fmtVal(-troco)}`;
     el.style.color = troco >= 0 ? '#1da851' : '#c0392b';
     if (troco > 0.005) {
         document.getElementById('doacao-val-display').textContent = fmtVal(troco);
@@ -813,7 +813,7 @@ document.getElementById('btn-doacao').addEventListener('click', () => {
     const troco = recebido - total;
     if (troco <= 0) return;
     document.getElementById('f-doacao-valor').value = troco.toFixed(2);
-    document.getElementById('troco-display').textContent = '❤️ Troco doado!';
+    document.getElementById('troco-display').textContent = '{{ icone("heart") }} Troco doado!';
     document.getElementById('troco-display').style.color = '#e91e63';
     document.getElementById('btn-doacao-wrap').style.display = 'none';
 });
@@ -945,7 +945,7 @@ document.getElementById('btn-abrir-fiado-modal').addEventListener('click', () =>
                 extra += ` crédito: R$ ${fmtVal(t.fiado_credito)}`;
             }
             if (t.fiado_bloqueado) {
-                extra += ' 🔒';
+                extra += ' ' + ICONE_LOCK;
             }
             return `<div class="pdv-sugestao-item" data-idx="${i}">
                 <span>${t.nome}${t.cpf ? ' — ' + t.cpf : ''}</span>
@@ -959,12 +959,12 @@ document.getElementById('btn-abrir-fiado-modal').addEventListener('click', () =>
         if (!item) return;
         const trab = resultados[parseInt(item.dataset.idx)];
         hId.value = trab.id;
-        nome.textContent = `👤 ${trab.nome}${trab.cpf ? ' — CPF: ' + trab.cpf : ''}`;
+        nome.textContent = `{{ icone("user") }} ${trab.nome}${trab.cpf ? ' — CPF: ' + trab.cpf : ''}`;
         // Also update sidebar panel
         const sNome = document.getElementById('fiado-nome');
         const sInfo = document.getElementById('fiado-info');
         const sSel = document.getElementById('fiado-selecionado');
-        if (sNome) sNome.textContent = `👤 ${trab.nome}${trab.cpf ? ' — CPF: ' + trab.cpf : ''}`;
+        if (sNome) sNome.textContent = `{{ icone("user") }} ${trab.nome}${trab.cpf ? ' — CPF: ' + trab.cpf : ''}`;
         // Show info
         let infoParts = [];
         if (trab.fiado_limite > 0) {
@@ -978,7 +978,7 @@ document.getElementById('btn-abrir-fiado-modal').addEventListener('click', () =>
             infoParts.push(`Crédito: R$ ${fmtVal(trab.fiado_credito)}`);
         }
         if (trab.fiado_bloqueado) {
-            infoParts.push('🔒 BLOQUEADO');
+            infoParts.push('{{ icone("lock") }} BLOQUEADO');
             sel.style.border = '1px solid #c0392b';
             sel.style.background = '#f8d7da';
             _fiadoBloqueado = true;
@@ -1088,10 +1088,10 @@ async function imprimirAgente(vendaId) {
             }
         }
         if (msg) msg.textContent = isFiado
-            ? `✅ Venda #${vendaId} registrada! 2 vias impressas (cliente + caixa).`
-            : `✅ Venda #${vendaId} registrada e comanda impressa!`;
+            ? `{{ icone("circle-check") }} Venda #${vendaId} registrada! 2 vias impressas (cliente + caixa).`
+            : `{{ icone("circle-check") }} Venda #${vendaId} registrada e comanda impressa!`;
     } catch(e) {
-        if (msg) msg.textContent = `✅ Venda #${vendaId} registrada. Agente não respondeu — verifique se está rodando.`;
+        if (msg) msg.textContent = `{{ icone("circle-check") }} Venda #${vendaId} registrada. Agente não respondeu — verifique se está rodando.`;
     }
     // Remove query params da URL para evitar re-impressão ao pressionar F5
     if (window.history.replaceState) {

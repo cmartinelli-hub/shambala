@@ -4,7 +4,7 @@
 {% block conteudo %}
 <div class="cabecalho-secao">
     <div>
-        <h2 style="margin:0">📄 Extrato de fiado — {{ trabalhador.nome_completo }}</h2>
+        <h2 style="margin:0">{{ icone("file-text") }} Extrato de fiado — {{ trabalhador.nome_completo }}</h2>
         {% if trabalhador.cpf %}
         <span style="font-size:.85rem;color:var(--cor-texto-suave)">CPF: {{ trabalhador.cpf }}</span>
         {% endif %}
@@ -146,7 +146,7 @@
 {% if legado_sem_prova.n %}
 <div style="background:#fff8e1;border:1px solid #f9a825;border-radius:var(--raio);
      padding:.6rem 1rem;color:#7a5c00;margin-top:1.2rem;font-size:.85rem">
-    ⚠️ {{ legado_sem_prova.n }} lançamento(s) de fiado ({{ legado_sem_prova.valor|moeda }})
+    {{ icone("triangle-alert") }} {{ legado_sem_prova.n }} lançamento(s) de fiado ({{ legado_sem_prova.valor|moeda }})
     são anteriores ao registro de destino e não têm alocação comprovada. Eles continuam
     no financeiro e no extrato geral, mas não são distribuídos entre dívidas por nome,
     valor ou data — por isso não aparecem atribuídos a este trabalhador.

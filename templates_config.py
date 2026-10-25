@@ -69,6 +69,47 @@ def _asset_url(caminho: str) -> str:
     return f"/static/{caminho}?v={versao}"
 
 
+# ── Ícones (TASK_015) ───────────────────────────────────────────────────────
+#
+# Um único ponto para a iconografia: `{{ icone("wallet") }}` devolve a tag <img>
+# apontando para o SVG Lucide vendorizado em static/icons/. Escolhas:
+#
+# - <img> e não SVG embutido: o SVG já está no servidor, o navegador o busca por
+#   URL (com cache do próprio arquivo) e o template não carrega markup de 20
+#   linhas em cada um dos ~200 usos. Também permite `asset_url`, reaproveitando
+#   o versionamento existente contra cache antigo.
+# - `currentColor` NÃO funciona em <img> (é outro documento). Por isso o CSS
+#   aplica `filter` para herdar a cor quando necessário — ver static/css/base.css.
+# - Decorativo por padrão (`alt=""` + `aria-hidden="true"`): quando há texto ao
+#   lado, o ícone não deve ser lido duas vezes. Controle que tem SÓ o ícone passa
+#   `rotulo=` e recebe nome acessível.
+_ICONES_DIR = os.path.join(_PASTA_ESTATICA, "icons")
+
+
+def _icone(nome: str, *, rotulo: str = "", classe: str = ""):
+    """Tag do ícone Lucide servido localmente.
+
+    `nome` é o nome do arquivo em static/icons (ex.: "wallet"). Nome
+    desconhecido é ERRO de desenvolvimento, não silêncio: sem o arquivo o ícone
+    não aparece e ninguém percebe — por isso levantamos na renderização.
+    """
+    from markupsafe import Markup
+    arquivo = f"{nome}.svg"
+    if not os.path.exists(os.path.join(_ICONES_DIR, arquivo)):
+        raise ValueError(f"ícone inexistente: {nome!r} (static/icons/{arquivo})")
+    classes = "icone" + (f" {classe}" if classe else "")
+    if rotulo:
+        acessibilidade = f'alt="{rotulo}" role="img"'
+    else:
+        acessibilidade = 'alt="" aria-hidden="true"'
+    return Markup(
+        f'<img src="{_asset_url("icons/" + arquivo)}" class="{classes}" '
+        f'{acessibilidade} width="24" height="24" loading="lazy" decoding="async">')
+
+
+templates.env.globals["icone"] = _icone
+templates.env.filters["icone"] = _icone
+
 templates.env.filters["data_br"] = _data_br
 templates.env.filters["data_hora_br"] = _data_hora_br
 templates.env.filters["moeda"] = _moeda

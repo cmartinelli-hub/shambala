@@ -27,7 +27,7 @@
     {% if msgs_backup %}
     <div style="margin-top:1.5rem;padding:1rem;background:var(--cor-fundo);border-radius:8px;text-align:left">
         <p style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;color:var(--cor-texto-suave)">
-            💾 Backup realizado
+            {{ icone("save") }} Backup realizado
         </p>
         {% for msg in msgs_backup %}
         <p style="font-size:0.82rem;color:{% if 'falhou' in msg %}var(--cor-perigo){% elif 'nenhum' in msg %}var(--cor-texto-suave){% else %}var(--cor-sucesso, #2a7a2a){% endif %}">
@@ -39,7 +39,7 @@
 
     <div style="margin-top:1.5rem;display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap">
         <form method="post" action="/dia/reabrir" style="display:inline">
-            <button type="submit" class="btn btn-primario">🔓 Reabrir dia</button>
+            <button type="submit" class="btn btn-primario">{{ icone("lock-open") }} Reabrir dia</button>
         </form>
         <a href="/menu" class="btn btn-secundario">← Menu</a>
     </div>

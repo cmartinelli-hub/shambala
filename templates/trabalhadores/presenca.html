@@ -27,7 +27,7 @@
         <input type="text" name="mes" id="mes"
                value="{{ mes_atual }}" placeholder="AAAA-MM" maxlength="7"
                pattern="\d{4}-\d{2}" class="form-input" style="width:140px">
-        <button type="submit" class="btn btn-primario">🔍 Filtrar</button>
+        <button type="submit" class="btn btn-primario">{{ icone("search") }} Filtrar</button>
         <a href="/cadastros/trabalhadores/{{ trabalhador.id }}/presenca" class="btn btn-secundario">Limpar</a>
     </form>
 </div>
@@ -38,13 +38,13 @@
     {% for r in registros %}
     <div class="presenca-card {% if not r.presente %}presenca-ausente{% endif %}">
         <div class="presenca-card-header">
-            <span class="presenca-data">📅 {{ r.data | data_br }}</span>
+            <span class="presenca-data">{{ icone("calendar-days") }} {{ r.data | data_br }}</span>
             <span class="presenca-status {% if r.presente %}status-presente{% else %}status-ausente{% endif %}">
-                {% if r.presente %}✔ Presente{% else %}✕ Ausência registrada{% endif %}
+                {% if r.presente %}{{ icone("check") }} Presente{% else %}{{ icone("x") }} Ausência registrada{% endif %}
             </span>
             {% if r.ajustado %}
             <span class="presenca-status" style="background:#ede7f6;color:#4527a0"
-                  title="Este lançamento já foi corrigido">✎ ajustado</span>
+                  title="Este lançamento já foi corrigido">{{ icone("pencil") }} ajustado</span>
             {% endif %}
         </div>
         {% if r.presente %}
@@ -66,7 +66,7 @@
         {% if pode_corrigir %}
         <div style="margin-top:.5rem">
             <a class="btn btn-pequeno btn-secundario"
-               href="/checkin-trabalhador/{{ trabalhador.id }}/correcao?data={{ r.data }}">✎ Corrigir/lançar nesta data</a>
+               href="/checkin-trabalhador/{{ trabalhador.id }}/correcao?data={{ r.data }}">{{ icone("pencil") }} Corrigir/lançar nesta data</a>
         </div>
         {% endif %}
     </div>
@@ -74,10 +74,10 @@
 </div>
 {% else %}
 <div class="vazio">
-    <div class="vazio-icone">📋</div>
+    <div class="vazio-icone">{{ icone("clipboard-list") }}</div>
     <h3>Nenhum registro para este período</h3>
     <p>Ajuste o filtro ou aguarde novos registros de presença.
-        {% if pode_corrigir %}Faltou lançar algo? Use ✎ Corrigir/lançar na gestão do dia.{% endif %}</p>
+        {% if pode_corrigir %}Faltou lançar algo? Use “Corrigir/lançar” na gestão do dia.{% endif %}</p>
 </div>
 {% endif %}
 

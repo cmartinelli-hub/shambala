@@ -114,22 +114,22 @@
 
         <div class="badges">
             {% if checkin.prioridade %}
-            <span class="badge badge-prio">⚑ Prioridade</span>
+            <span class="badge badge-prio">{{ icone("flag") }} Prioridade</span>
             {% endif %}
             {% if checkin.deficiencia %}
-            <span class="badge badge-def">♿ Deficiência</span>
+            <span class="badge badge-def">{{ icone("accessibility") }} Deficiência</span>
             {% endif %}
             {% if checkin.data_nascimento %}
                 {% set ano_nasc = checkin.data_nascimento[:4] | int %}
                 {% set ano_atual = hoje[:4] | int %}
                 {% if (ano_atual - ano_nasc) >= 70 %}
-                <span class="badge badge-idoso">★ Idoso ({{ ano_atual - ano_nasc }} anos)</span>
+                <span class="badge badge-idoso">{{ icone("star") }} Idoso ({{ ano_atual - ano_nasc }} anos)</span>
                 {% endif %}
             {% endif %}
         </div>
 
         <a class="btn-editar" href="/cadastros/pessoas/{{ checkin.pessoa_id }}/editar?next=/dia/fraterno/{{ checkin.id }}">
-            ✏ Editar cadastro
+            {{ icone("pencil") }} Editar cadastro
         </a>
     </div>
 

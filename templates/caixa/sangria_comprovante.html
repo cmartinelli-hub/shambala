@@ -168,8 +168,8 @@
 </div>
 
 <div class="botoes">
-    <button class="btn-imprimir" onclick="imprimirTermica()">🖨 Imprimir na térmica</button>
-    <button class="btn-imprimir" onclick="window.print()">🖨 Imprimir (navegador)</button>
+    <button class="btn-imprimir" onclick="imprimirTermica()">{{ icone("printer") }} Imprimir na térmica</button>
+    <button class="btn-imprimir" onclick="window.print()">{{ icone("printer") }} Imprimir (navegador)</button>
     <button class="btn-fechar" onclick="window.close()">Fechar</button>
 </div>
 <div id="msg-erro" class="msg-erro"></div>
@@ -192,17 +192,17 @@ async function imprimirTermica() {
             headers: {'Content-Type': 'application/octet-stream'}
         });
         if (ra.ok) {
-            btn.textContent = '✓ Impresso';
+            btn.textContent = 'Impresso';
         } else {
             const j = await ra.json().catch(() => ({}));
             msg.textContent = j.erro || 'Erro ao imprimir.';
             btn.disabled = false;
-            btn.textContent = '🖨 Imprimir na térmica';
+            btn.textContent = 'Imprimir na térmica';
         }
     } catch (e) {
         msg.textContent = 'Agente não respondeu — verifique se está rodando.';
         btn.disabled = false;
-        btn.textContent = '🖨 Imprimir na térmica';
+        btn.textContent = 'Imprimir na térmica';
     }
 }
 </script>

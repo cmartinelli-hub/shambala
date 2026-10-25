@@ -9,7 +9,7 @@
 
 {% if erro %}
 <div class="form-erro">
-    <span class="form-erro-icone">⚠️</span>
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro }}</span>
 </div>
 {% endif %}
@@ -46,7 +46,7 @@
             </td>
             <td>{{ p.sessoes_realizadas }}/{{ p.sessoes_total }}
                 {% if p.sessoes_realizadas >= p.sessoes_total %}
-                <span style="color:var(--cor-sucesso);font-size:.8rem"> ✓ completo</span>
+                <span style="color:var(--cor-sucesso);font-size:.8rem"> {{ icone("check") }} completo</span>
                 {% endif %}
             </td>
             <td>

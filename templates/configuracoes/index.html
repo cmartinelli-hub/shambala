@@ -13,7 +13,7 @@
 <!-- 1. Nome do Centro -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">🏛️</span>
+        <span class="config-card-icon">{{ icone("landmark") }}</span>
         <div>
             <h2>Nome do Centro</h2>
             <p class="config-card-desc">Como o nome aparecerá no topo, na tela de login e na chamada do auditório.</p>
@@ -29,14 +29,14 @@
             </div>
             <div class="config-campo">
                 <label for="centro_logo" class="config-file-label">
-                    <span class="config-file-icon">📁</span>
+                    <span class="config-file-icon">{{ icone("folder") }}</span>
                     <span class="config-file-text">Escolher logo…</span>
                 </label>
                 <input type="file" id="centro_logo" name="logo" accept="image/*,.svg"
                        class="config-file-input">
             </div>
         </div>
-        <button type="submit" class="btn btn-primario btn-sm">💾 Salvar</button>
+        <button type="submit" class="btn btn-primario btn-sm">{{ icone("save") }} Salvar</button>
     </form>
 </div>
 
@@ -47,7 +47,7 @@
             {% if centro_cfg.centro_logo %}
             <img src="/static/logos/{{ centro_cfg.centro_logo }}" alt="Logo atual" class="config-preview-img">
             {% else %}
-            <div class="config-preview-placeholder">🏛️</div>
+            <div class="config-preview-placeholder">{{ icone("landmark") }}</div>
             {% endif %}
         </div>
         <div class="config-preview-info">
@@ -60,7 +60,7 @@
 <!-- 3. Dias de Atendimento -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">📅</span>
+        <span class="config-card-icon">{{ icone("calendar-days") }}</span>
         <div>
             <h2>Dias de Atendimento</h2>
             <p class="config-card-desc">Quais dias da semana o Centro realiza atendimentos. Os agendamentos automáticos sempre recairão nesses dias.</p>
@@ -72,7 +72,7 @@
             <span>{{ dia.descricao }}</span>
             <form method="post" action="/configuracoes/dias/{{ dia.dia_semana }}/remover"
                   onsubmit="return confirm('Remover este dia?')" class="config-dia-remove">
-                <button type="submit" title="Remover">✕</button>
+                <button type="submit" title="Remover" aria-label="Remover">{{ icone("x") }}</button>
             </form>
         </div>
         {% else %}
@@ -94,14 +94,14 @@
 <!-- 4. Backup Remoto -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">💾</span>
+        <span class="config-card-icon">{{ icone("save") }}</span>
         <div>
             <h2>Backup Remoto</h2>
             <p class="config-card-desc">Envie cópias automáticas do backup para um servidor remoto via SSH/SCP ao encerrar o dia.</p>
         </div>
     </div>
     <div class="config-instrucoes">
-        <h4>🔑 Configurando SSH por chave</h4>
+        <h4>{{ icone("key-round") }} Configurando SSH por chave</h4>
         <ol>
             <li><strong>Gere uma chave SSH</strong> (se não existir): <pre>ssh-keygen -t ed25519 -C "shambala-backup"</pre></li>
             <li><strong>Copie a chave pública</strong>: <pre>ssh-copy-id -i ~/.ssh/id_ed25519.pub usuario@servidor</pre>
@@ -140,7 +140,7 @@
                    class="form-input">
         </div>
         <div class="config-form-actions">
-            <button type="submit" class="btn btn-primario">💾 Salvar Backup</button>
+            <button type="submit" class="btn btn-primario">{{ icone("save") }} Salvar Backup</button>
         </div>
     </form>
 </div>
@@ -148,7 +148,7 @@
 <!-- 5. Backup em Pendrive -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">💿</span>
+        <span class="config-card-icon">{{ icone("disc") }}</span>
         <div>
             <h2>Backup em Pendrive ou HD Externo</h2>
             <p class="config-card-desc">Configure backup automático em dispositivos removíveis USB para máxima segurança.</p>
@@ -157,37 +157,37 @@
     <p style="margin: 1rem 0; color: #4b5563;">
         Faça backups periódicos do banco de dados em um pendrive ou HD externo plugado diretamente no servidor.
     </p>
-    <a href="/configuracoes/backup-pendrive" class="btn btn-primario">⚙️ Configurar Backup em Pendrive</a>
+    <a href="/configuracoes/backup-pendrive" class="btn btn-primario">{{ icone("settings") }}️ Configurar Backup em Pendrive</a>
 </div>
 
 <!-- 6. Chave PIX -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">💠</span>
+        <span class="config-card-icon">{{ icone("gem") }}</span>
         <div>
             <h2>Chave PIX</h2>
             <p class="config-card-desc">Chave PIX utilizada para receber pagamentos no Caixa/PDV e no Financeiro.</p>
         </div>
     </div>
-    <a href="/configuracoes/pix" class="btn btn-primario">⚙️ Gerenciar Chaves PIX</a>
+    <a href="/configuracoes/pix" class="btn btn-primario">{{ icone("settings") }}️ Gerenciar Chaves PIX</a>
 </div>
 
 <!-- 7. Contas Financeiras -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">💰</span>
+        <span class="config-card-icon">{{ icone("wallet") }}</span>
         <div>
             <h2>Contas Financeiras</h2>
             <p class="config-card-desc">Gerencie as contas usadas para segregar o dinheiro do centro (Espécie, PIX, Valores a Receber).</p>
         </div>
     </div>
-    <a href="/configuracoes/contas" class="btn btn-primario">⚙️ Gerenciar Contas</a>
+    <a href="/configuracoes/contas" class="btn btn-primario">{{ icone("settings") }}️ Gerenciar Contas</a>
 </div>
 
 <!-- 8. Servidor SMTP -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">✉️</span>
+        <span class="config-card-icon">{{ icone("mail") }}️</span>
         <div>
             <h2>Servidor SMTP</h2>
             <p class="config-card-desc">Configuração para envio de e-mails (mala direta, relatórios, etc).</p>
@@ -230,7 +230,7 @@
                    class="form-input">
         </div>
         <div class="config-form-actions">
-            <button type="submit" class="btn btn-primario">💾 Salvar SMTP</button>
+            <button type="submit" class="btn btn-primario">{{ icone("save") }} Salvar SMTP</button>
         </div>
     </form>
 </div>
@@ -238,7 +238,7 @@
 <!-- 8. Impressora Térmica -->
 <div class="config-card">
     <div class="config-card-header">
-        <span class="config-card-icon">🖨️</span>
+        <span class="config-card-icon">{{ icone("printer") }}</span>
         <div>
             <h2>Impressora Térmica</h2>
             <p class="config-card-desc">Endereço do agente de impressão ESC/POS para emissão de cupons e recibos no PDV.</p>
@@ -257,7 +257,7 @@
             </small>
         </div>
         <div class="config-form-actions">
-            <button type="submit" class="btn btn-primario">💾 Salvar Impressora</button>
+            <button type="submit" class="btn btn-primario">{{ icone("save") }} Salvar Impressora</button>
         </div>
     </form>
 </div>

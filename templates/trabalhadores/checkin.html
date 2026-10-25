@@ -6,14 +6,14 @@
 <div class="cabecalho-secao">
     <div>
         <h1>Gestão do dia — Presença de Trabalhadores</h1>
-        <p class="subtitulo">📅 {{ data_exibida }} — {{ dia_nome }}
+        <p class="subtitulo">{{ icone("calendar-days") }} {{ data_exibida }} — {{ dia_nome }}
             {%- if data == hoje %} (hoje){% endif %} ·
-            ✔ {{ qtd_presentes }} presente{{ 's' if qtd_presentes != 1 }} ·
+            {{ icone("check") }} {{ qtd_presentes }} presente{{ 's' if qtd_presentes != 1 }} ·
             registro pela chegada, sem precisar abrir o dia de atendimento</p>
         {% if pode_ativar_terminal %}
         <div class="terminal-ativar">
             <form method="post" action="/terminal/ativar" onsubmit="return confirm('Ativar o terminal de presença NESTE aparelho? A sua sessão de administração neste navegador será encerrada; para voltar ao sistema é preciso entrar de novo.');">
-                <button type="submit" class="btn btn-terminal-ativar">📷 Ativar terminal de presença neste aparelho</button>
+                <button type="submit" class="btn btn-terminal-ativar">{{ icone("camera") }} Ativar terminal de presença neste aparelho</button>
             </form>
             <p class="terminal-ativar-nota">Use no tablet ou smartphone da entrada. O voluntário apresenta o QR da carteirinha ou digita os quatro números — sem login.</p>
         </div>
@@ -29,7 +29,7 @@
 
 {% if somente_leitura %}
 <div class="form-aviso" style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
-    <span>🔒 {{ data_exibida }} é dia passado — consulta somente leitura.
+    <span>{{ icone("lock") }} {{ data_exibida }} é dia passado — consulta somente leitura.
         Para corrigir ou lançar retroativamente use <strong>Corrigir/lançar</strong>
         {%- if not pode_corrigir %} (exige a permissão de correções){% endif %}.</span>
 </div>
@@ -37,7 +37,7 @@
 
 <div id="trab-checkin-erro-conexao" hidden
      style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">
-    <span>⚠️ Não foi possível atualizar agora — mostrando os últimos dados carregados.</span>
+    <span>{{ icone("triangle-alert") }} Não foi possível atualizar agora — mostrando os últimos dados carregados.</span>
 </div>
 
 <!-- Consulta: formulário GET, funciona sem JavaScript -->
@@ -66,7 +66,7 @@
 
 {% if not lista %}
 <div class="vazio">
-    <div class="vazio-icone">🤝</div>
+    <div class="vazio-icone">{{ icone("handshake") }}</div>
     <h3>Nenhum trabalhador nesta consulta</h3>
     <p>Ajuste a busca/filtros ou cadastre trabalhadores em Cadastros → Trabalhadores.</p>
 </div>
@@ -86,35 +86,35 @@
             <div class="trab-checkin-info">
                 <h3 class="trab-checkin-nome">{{ t.nome_completo }}</h3>
                 {% if not t.ativo %}
-                <span class="trab-checkin-status" style="background:#efebe9;color:#5d4037">🚫 inativo (histórico)</span>
+                <span class="trab-checkin-status" style="background:#efebe9;color:#5d4037">{{ icone("ban") }} inativo (histórico)</span>
                 {% endif %}
                 {% if t.na_agenda %}
-                <span class="trab-checkin-status status-aguardando">📌 agenda deste dia</span>
+                <span class="trab-checkin-status status-aguardando">{{ icone("flag") }} agenda deste dia</span>
                 {% endif %}
                 {% if t.presente is none %}
-                <span class="trab-checkin-status status-aguardando">⏳ Sem registro</span>
+                <span class="trab-checkin-status status-aguardando">{{ icone("clock") }} Sem registro</span>
                 {% elif t.presente %}
-                <span class="trab-checkin-status status-presente">✔ Presente{% if t.hora_chegada %} — {{ t.hora_chegada }}{% endif %}
+                <span class="trab-checkin-status status-presente">{{ icone("check") }} Presente{% if t.hora_chegada %} — {{ t.hora_chegada }}{% endif %}
                     · {{ rotulo_origem(t.origem_chegada) }}</span>
                 {% else %}
-                <span class="trab-checkin-status status-ausente">✕ Ausência registrada</span>
+                <span class="trab-checkin-status status-ausente">{{ icone("x") }} Ausência registrada</span>
                 {% endif %}
             </div>
         </div>
         {% if not somente_leitura and pode_escrever and t.ativo and t.presente is none %}
         <div class="trab-checkin-acoes">
             <form method="post" action="/checkin-trabalhador/{{ t.id }}/presente" style="display:inline">
-                <button type="submit" class="btn btn-trab-presente">✔ Presente</button>
+                <button type="submit" class="btn btn-trab-presente">{{ icone("check") }} Presente</button>
             </form>
             <form method="post" action="/checkin-trabalhador/{{ t.id }}/ausente" style="display:inline">
-                <button type="submit" class="btn btn-trab-ausente">✕ Ausente</button>
+                <button type="submit" class="btn btn-trab-ausente">{{ icone("x") }} Ausente</button>
             </form>
         </div>
         {% endif %}
         {% if pode_corrigir %}
         <div class="trab-checkin-acoes">
             <a class="btn btn-pequeno btn-secundario"
-               href="/checkin-trabalhador/{{ t.id }}/correcao?data={{ data }}">✎ Corrigir/lançar nesta data</a>
+               href="/checkin-trabalhador/{{ t.id }}/correcao?data={{ data }}">{{ icone("pencil") }} Corrigir/lançar nesta data</a>
         </div>
         {% endif %}
     </div>
@@ -164,30 +164,30 @@
             ? '/static/fotos/' + encodeURIComponent(t.foto_trabalhador)
             : '/cadastros/trabalhadores/foto-placeholder/' + encodeURIComponent((t.nome_completo[0] || '?'));
         let selos = '';
-        if (!t.ativo) selos += '<span class="trab-checkin-status" style="background:#efebe9;color:#5d4037">🚫 inativo (histórico)</span>';
-        if (t.na_agenda) selos += '<span class="trab-checkin-status status-aguardando">📌 agenda deste dia</span>';
+        if (!t.ativo) selos += '<span class="trab-checkin-status" style="background:#efebe9;color:#5d4037">{{ icone("ban") }} inativo (histórico)</span>';
+        if (t.na_agenda) selos += '<span class="trab-checkin-status status-aguardando">{{ icone("flag") }} agenda deste dia</span>';
         let estado;
         if (t.presente === null || t.presente === undefined)
-            estado = '<span class="trab-checkin-status status-aguardando">⏳ Sem registro</span>';
+            estado = '<span class="trab-checkin-status status-aguardando">{{ icone("clock") }} Sem registro</span>';
         else if (t.presente)
-            estado = '<span class="trab-checkin-status status-presente">✔ Presente' +
+            estado = '<span class="trab-checkin-status status-presente">{{ icone("check") }} Presente' +
                 (t.hora_chegada ? ' — ' + esc(t.hora_chegada) : '') +
                 ' · ' + esc(ROTULOS_ORIGEM[t.origem_chegada] || 'Não informada') + '</span>';
         else
-            estado = '<span class="trab-checkin-status status-ausente">✕ Ausência registrada</span>';
+            estado = '<span class="trab-checkin-status status-ausente">{{ icone("x") }} Ausência registrada</span>';
 
         let acoes = '';
         if (podeEscrever && t.ativo && (t.presente === null || t.presente === undefined)) {
             acoes += '<div class="trab-checkin-acoes">' +
                 '<form method="post" action="/checkin-trabalhador/' + t.id + '/presente" style="display:inline">' +
-                '<button type="submit" class="btn btn-trab-presente">✔ Presente</button></form> ' +
+                '<button type="submit" class="btn btn-trab-presente">{{ icone("check") }} Presente</button></form> ' +
                 '<form method="post" action="/checkin-trabalhador/' + t.id + '/ausente" style="display:inline">' +
-                '<button type="submit" class="btn btn-trab-ausente">✕ Ausente</button></form></div>';
+                '<button type="submit" class="btn btn-trab-ausente">{{ icone("x") }} Ausente</button></form></div>';
         }
         if (podeCorrigir) {
             acoes += '<div class="trab-checkin-acoes"><a class="btn btn-pequeno btn-secundario" ' +
                 'href="/checkin-trabalhador/' + t.id + '/correcao?data=' + encodeURIComponent(atualData()) +
-                '">✎ Corrigir/lançar nesta data</a></div>';
+                '">{{ icone("pencil") }} Corrigir/lançar nesta data</a></div>';
         }
 
         return '<div class="trab-checkin-card" data-id="' + t.id + '">' +
