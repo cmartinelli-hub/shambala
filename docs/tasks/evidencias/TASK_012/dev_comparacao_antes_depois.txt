@@ -1,0 +1,48 @@
+# Prova de não-interferência no DEV — comparação ANTES × DEPOIS de cada reinício
+#
+# Como cada par é produzido (repare: o ANTES é gerado ANTES do kill do serviço,
+# e o DEPOIS depois do startup completar):
+#   .venv/bin/python3 tests/baseline_dev.py shambala
+#   .venv/bin/python3 tests/baseline_financeiro_dev.py shambala
+# Abaixo vai o diff real de cada par; nenhum arquivo é comparado consigo mesmo.
+
+==================================================================
+## 1. aplicação da migração (DDL + 517 competências)
+   ANTES : dev_baseline_geral_antes.txt
+   DEPOIS: dev_baseline_geral_depois.txt
+   RESULTADO: IDÊNTICO — 0 linhas de diferença (20 linhas comparadas)
+
+==================================================================
+## 2. restart com o código da devolução
+   ANTES : dev_baseline_geral_ANTES_restart2.txt
+   DEPOIS: dev_baseline_geral_apos_restart_final.txt
+   RESULTADO: IDÊNTICO — 0 linhas de diferença (20 linhas comparadas)
+
+==================================================================
+## 2b. idem, financeiro
+   ANTES : dev_baseline_financeiro_ANTES_restart2.txt
+   DEPOIS: dev_baseline_financeiro_apos_restart_final.txt
+   RESULTADO: IDÊNTICO — 0 linhas de diferença (12 linhas comparadas)
+
+==================================================================
+## 3. restart com os limites da recuperação
+   ANTES : dev_baseline_financeiro_ANTES_restart3.txt
+   DEPOIS: dev_baseline_financeiro_restart_limites.txt
+   RESULTADO: IDÊNTICO — 0 linhas de diferença (12 linhas comparadas)
+
+==================================================================
+## 4. restart com a exclusão requisição ativa × recuperação
+   ANTES : dev_baseline_financeiro_ANTES_restart4.txt
+   DEPOIS: dev_baseline_financeiro_restart_exclusao.txt
+   RESULTADO: IDÊNTICO — 0 linhas de diferença (12 linhas comparadas)
+
+==================================================================
+## Agregado de compras em TODOS os retratos (o recuperador não tocou nada)
+   dev_baseline_financeiro_ANTES_restart2.txt           compra: 12 | 528.64
+   dev_baseline_financeiro_ANTES_restart3.txt           compra: 12 | 528.64
+   dev_baseline_financeiro_ANTES_restart4.txt           compra: 12 | 528.64
+   dev_baseline_financeiro_antes.txt                    compra: 12 | 528.64
+   dev_baseline_financeiro_apos_restart_final.txt       compra: 12 | 528.64
+   dev_baseline_financeiro_depois.txt                   compra: 12 | 528.64
+   dev_baseline_financeiro_restart_exclusao.txt         compra: 12 | 528.64
+   dev_baseline_financeiro_restart_limites.txt          compra: 12 | 528.64

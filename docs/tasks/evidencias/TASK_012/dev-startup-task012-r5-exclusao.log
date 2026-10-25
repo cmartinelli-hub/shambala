@@ -6,3 +6,12 @@ INFO:     127.0.0.1:41810 - "GET /login HTTP/1.1" 200 OK
 INFO:     127.0.0.1:41816 - "GET /financeiro HTTP/1.1" 303 See Other
 INFO:     127.0.0.1:41822 - "GET /financeiro/compras HTTP/1.1" 303 See Other
 INFO:     127.0.0.1:41838 - "GET /caixa/fiados HTTP/1.1" 303 See Other
+INFO:     192.168.15.9:54204 - "GET /menu HTTP/1.1" 303 See Other
+INFO:     192.168.15.9:54204 - "GET /login HTTP/1.1" 200 OK
+INFO:     192.168.15.9:54204 - "GET /static/css/base.css?v=1792894836 HTTP/1.1" 304 Not Modified
+INFO:     192.168.15.9:54204 - "POST /login HTTP/1.1" 303 See Other
+INFO:     192.168.15.9:54204 - "GET /menu HTTP/1.1" 200 OK
+INFO:     192.168.15.9:54204 - "GET /static/js/tentativa.js?v=1792897958 HTTP/1.1" 200 OK
+INFO:     192.168.15.9:54204 - "GET /financeiro HTTP/1.1" 200 OK
+INFO:     192.168.15.9:39292 - "GET /financeiro/fiados HTTP/1.1" 200 OK
+INFO:     192.168.15.9:39298 - "GET /financeiro/fiados?trabalhador_id=52 HTTP/1.1" 200 OK

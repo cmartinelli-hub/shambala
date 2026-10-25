@@ -977,7 +977,34 @@ código interno fora da chave. Um efeito colateral precisou de ajuste: a suíte 
 navegador da TASK_011 procurava o título "Vínculos comprovados" e foi atualizada
 para o título novo (as mesmas informações, na língua do operador).
 
-### 5.8 Limitações e questões registradas
+### 5.8 Limpeza das suítes: falha tem de reprovar (devolução do dono)
+
+O log completo do runner mostrou o que o resultado verde escondia:
+`[limpeza] ERRO: ... viola restrição ... fiado_credito_mov_financeiro_id_fkey`
+e, ainda assim, `falhas=0` e `rc=0` na suíte de navegador da TASK_012.
+
+Duas causas: (a) **ordem errada** — `financeiro_movimentacoes` tem DUAS FKs
+`ON DELETE RESTRICT` apontando para ele (`fiado_alocacao.financeiro_id` e
+`fiado_credito_mov.financeiro_id`); a limpeza apagava o lançamento antes de
+`fiado_credito_mov` e o banco recusava; (b) **falha silenciosa** — o `except`
+só imprimia.
+
+Corrigido: a remoção segue o nível de dependência (alocações, crédito e eventos →
+lançamento e venda → trabalhador e sessão), sempre por vínculo registrado da
+própria suíte; a falha de limpeza entra na lista de falhas e derruba o `rc`; e
+há uma **conferência de encerramento** que reprova se sobrar resíduo próprio
+(lançamentos, trabalhadores, venda, sessão) ou se desaparecer a **sentinela de
+outra execução** — um lançamento semeado SEM a marca da suíte. Comparar
+"antes e depois" fora da execução não serviria: o runner recria o banco
+descartável a cada execução.
+
+Provado nos dois sentidos: a suíte roda verde com resíduo próprio zero e a
+sentinela intacta; e injetando cada defeito (limpeza fora da ordem; limpeza que
+apaga o registro alheio) a conferência **reprova** com mensagem própria
+(`limpeza_reprova_quando_falha.txt`). A lição fica registrada: teste que só sabe
+passar não prova nada.
+
+### 5.9 Limitações e questões registradas
 
 1. **Não há conciliação bancária**: o Σ acumulado por conta é a soma dos
    lançamentos pagos até a data, dito assim na tela. Saldo de extrato real
@@ -1179,7 +1206,7 @@ e o temporário em `static/fotos/` identifica a tentativa. O prazo existe porque
 fora dele, "arquivo ausente" deixa de ser prova de interrupção e passa a ser
 histórico — recuperar histórico por heurística é justamente o que a ordem proíbe.
 
-**O recuperador alterou alguma compra no DEV?** Não. Três evidências
+**O recuperador alterou alguma compra no DEV?** Não. Quatro evidências
 independentes:
 1. os logs dos três reinícios (`dev-startup-task012.log`, `-r2`, `-r3-final`) não
    têm nenhuma linha de recuperação — nem "tentativa interrompida", nem
@@ -1190,7 +1217,14 @@ independentes:
 3. rodando o recuperador **em modo leitura** contra o DEV atual: 12 compras pagas
    com nota, **0** com tentativa de idempotência (pré-requisito do limite 1),
    **0** com prova de interrupção e **0** com arquivo ausente. Nenhuma seria
-   tocada nem pelo código novo.
+   tocada nem pelo código novo;
+4. a **comparação antes × depois** de cada reinício, num arquivo só
+   (`evidencias/TASK_012/dev_comparacao_antes_depois.txt`): cinco pares
+   (migração, restart do código da devolução, limites, exclusão, e o financeiro
+   de cada um), cada par com o diff real — todos **IDÊNTICOS, 0 linhas de
+   diferença**. Nenhum arquivo é comparado consigo mesmo, e o agregado
+   `compra: 12 | 528.64` é igual nos oito retratos. Um retrato isolado não prova
+   nada: o que prova é o par.
 
 As 12 notas referenciadas existem em disco (12/12 conferidas), e não há nenhuma
 `.tmp-` pendente em `static/fotos`.
