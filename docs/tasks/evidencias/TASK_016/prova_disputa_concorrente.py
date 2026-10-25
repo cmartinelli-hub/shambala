@@ -160,10 +160,14 @@ def main():
     verificar("D2 o desfecho é íntegro (gravou inteiro OU recusou sem gravar)",
               (r2[0] == "gravou" and gravou == 1) or (r2[0] != "gravou" and gravou == 0),
               f"resultado={r2} gravados={gravou}")
-    if r2[0] == "gravou":
-        verificar("D2 gravou porque a validação e a escrita são a MESMA transação "
-                  "(a conta estava ativa quando validou) e o commit veio antes da "
-                  "inativação", gravou == 1, f"gravados={gravou}")
+    # TASK_016 (coordenação final): o recebimento segura a linha da conta com
+    # FOR UPDATE, então a inativação concorrente ESPERA. O recebimento havia
+    # obtido a trava primeiro → conclui legitimamente. Este é o caso O1 da
+    # prova de ordem (`prova_ordem_travas.py`); o caso oposto (inativação
+    # primeiro) está lá como O2 e termina em recusa.
+    verificar("D2 o recebimento havia obtido a TRAVA da conta primeiro, por isso "
+              "concluiu; a inativação esperou a liberação",
+              r2[0] == "gravou" and gravou == 1, f"{r2} gravados={gravou}")
     with conectar() as conn:
         conn.execute("UPDATE contas_financeiras SET ativo=1 WHERE id=%s", (c2,))
 

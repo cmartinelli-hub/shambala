@@ -1,4 +1,4 @@
-conta de espécie: 2 | sessão: 70 | venda: 179
+conta de espécie: 2 | sessão: 67 | venda: 177
 
 -- estado ANTES do cancelamento
    saldo da conta (A): 1236130.00
@@ -19,7 +19,7 @@ conta de espécie: 2 | sessão: 70 | venda: 179
   ✔ B.5 nenhum lançamento financeiro foi criado para esta venda
 
 -- segunda tentativa de cancelar (deve ser recusada)
-   resposta: 200 http://127.0.0.1:9085/caixa/vendas/179/cancelar
+   resposta: 200 http://127.0.0.1:9087/caixa/vendas/177/cancelar
   ✔ C.1 o segundo cancelamento não é aplicado de novo
   ✔ C.2 continua havendo UMA só compensação
 

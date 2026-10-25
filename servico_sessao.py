@@ -208,10 +208,26 @@ def conta_e_recurso(conta: dict | None) -> bool:
     return bool(conta) and conta.get("tipo") in TIPOS_DE_RECURSO
 
 
-def _conta_por_id(conn, conta_id):
-    return conn.execute(
-        """SELECT id, nome, tipo, ativo FROM contas_financeiras
-           WHERE id = %s""", (conta_id,)).fetchone()
+def _conta_por_id(conn, conta_id, *, travar: bool = True):
+    """A conta escolhida, lida SOB TRAVA por padrão (TASK_016).
+
+    O `SELECT ... FOR UPDATE` coordena o recebimento com a inativação pela MESMA
+    linha de `contas_financeiras`: o `UPDATE ... SET ativo` do toggle de contas
+    também toma essa trava. Duas ordens possíveis, ambas íntegras:
+
+    - recebimento pega a trava primeiro → grava e commita; a inativação espera;
+    - inativação pega a trava primeiro e commita → o recebimento espera, relê a
+      linha JÁ inativa e RECUSA, sem nenhum efeito.
+
+    Sem isso a validação era um retrato: a conta podia ser inativada entre a
+    conferência e a gravação, e o recebimento entrava numa conta já inativa.
+    A trava fica só no escopo da transação de escrita — nunca durante a
+    interação do usuário com o formulário.
+    """
+    sql = """SELECT id, nome, tipo, ativo FROM contas_financeiras WHERE id = %s"""
+    if travar:
+        sql += " FOR UPDATE"
+    return conn.execute(sql, (conta_id,)).fetchone()
 
 
 def contas_de_destino(conn, forma: str) -> list:
@@ -252,7 +268,16 @@ def conta_de_destino(conn, forma: str, conta_id=None, *, exigir_escolha=True):
 
     if conta_id in (None, 0, ""):
         if len(elegiveis) == 1 or not exigir_escolha:
-            return elegiveis[0]["id"]
+            # TASK_016: o padrão também é CONFIRMADO sob a trava da linha, na
+            # mesma ordem de todo mundo (contas → conta escolhida). A lista
+            # acima é um retrato: entre ela e a gravação a conta pode ser
+            # inativada. Reler com FOR UPDATE fecha essa janela.
+            padrao = _conta_por_id(conn, elegiveis[0]["id"])
+            if not padrao or not padrao["ativo"]:
+                raise SessaoInvalida(
+                    "conta_inativa",
+                    "A conta de destino foi inativada; escolha outra.")
+            return padrao["id"]
         raise SessaoInvalida(
             "conta_invalida",
             "Há mais de uma conta possível para este recebimento; escolha a "

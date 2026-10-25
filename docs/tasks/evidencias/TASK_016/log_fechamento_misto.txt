@@ -1,4 +1,4 @@
-sessão legada 71 | contas conhecidas A=172 B=173 | escolhidas: espécie=174 pix=175 | obrigações=4
+sessão legada 66 | contas conhecidas A=164 B=165 | escolhidas: espécie=166 pix=167 | obrigações=4
 
 -- 1. a tela pede conta SÓ para o que é desconhecido
    pede espécie? True | pix? True | fiado? False
@@ -13,13 +13,13 @@ sessão legada 71 | contas conhecidas A=172 B=173 | escolhidas: espécie=174 pix
   ✔ 2.3 a sessão continua aberta
 
 -- 3. com as duas escolhas: separa por conta e preserva os vínculos
-   resposta: 303 /caixa/fechar?caixa_movimento_id=71
+   resposta: 303 /caixa/fechar?caixa_movimento_id=66
      conta 4 · fiado · R$ 50.00
-     conta 172 · especie · R$ 10.00
-     conta 173 · pix · R$ 30.00
-     conta 174 · especie · R$ 20.00
-     conta 175 · pix · R$ 40.00
-   por conta: {4: '50.00', 172: '10.00', 173: '30.00', 174: '20.00', 175: '40.00'}
+     conta 164 · especie · R$ 10.00
+     conta 165 · pix · R$ 30.00
+     conta 166 · especie · R$ 20.00
+     conta 167 · pix · R$ 40.00
+   por conta: {4: '50.00', 164: '10.00', 165: '30.00', 166: '20.00', 167: '40.00'}
   ✔ 3.1 venda de espécie CONHECIDA foi para a conta persistida (A=10,00)
   ✔ 3.2 venda de PIX CONHECIDA foi para a conta persistida (B=30,00)
   ✔ 3.3 espécie DESCONHECIDA foi para a conta escolhida (20,00)

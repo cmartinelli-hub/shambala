@@ -1,13 +1,13 @@
-contas de teste: 169, 170, 171
+contas de teste: 161, 162, 163
 
 -- D1 inativação já commitada quando o recebimento valida
   ✔ D1 recusa com motivo próprio
   ✔ D1 nenhum lançamento gravado
 
 -- D2 inativação commita DURANTE a transação do recebimento
-     resultado: ('gravou', 170) | lançamentos gravados: 1
+     resultado: ('gravou', 162) | lançamentos gravados: 1
   ✔ D2 o desfecho é íntegro (gravou inteiro OU recusou sem gravar)
-  ✔ D2 gravou porque a validação e a escrita são a MESMA transação (a conta estava ativa quando validou) e o commit veio antes da inativação
+  ✔ D2 o recebimento havia obtido a TRAVA da conta primeiro, por isso concluiu; a inativação esperou a liberação
 
 -- D3 recebimento conclui ANTES da inativação
   ✔ D3 o recebimento já consumado fica gravado

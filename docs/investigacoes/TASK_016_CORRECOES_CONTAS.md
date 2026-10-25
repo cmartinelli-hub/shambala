@@ -171,6 +171,7 @@ continua verde · `—` fora do escopo da ordem
 | **Idempotência com troca de conta** | ◉ — mesma chave mudando a conta = `tentativa_conflito`, sem escrita | `matriz E3.4` |
 | **Inativação — antes do envio** | ◉ — conta inativada entre a tela e o envio: recusa `conta_inativa`, 0 lançamentos | `matriz E4` |
 | **Inativação — disputa transacional REAL** | ◉ — duas conexões, commit controlado (D1–D4) | `log_disputa_concorrente.txt` |
+| **Coordenação por trava — as duas ordens** | ◉ — O1 (recebimento vence) e O2 (inativação vence → recusa sem efeito), com a rota real de inativação | `log_ordem_travas.txt` |
 | **Fechamento** | ◉ — vínculo, recusa sem vínculo, escolha validada, escolha inválida recusada | `matriz E5.1–E5.4` |
 | **Cancelamento** | ◉ — venda cancelada estorna o efeito físico e não mexe no saldo da conta | `matriz E5.5–E5.7` |
 | **Saldo anterior ao período** | ◉ — histórico de 2024/2025 intacto; recebimento de hoje soma a ele; saldo anterior não foi recalculado | `matriz E6` |
@@ -271,11 +272,36 @@ acontece **na mesma transação** que grava, mas não trava a linha da conta.
 **Nunca houve efeito parcial** em nenhum dos quatro: ou grava inteiro, ou não
 grava nada. D2 não é corrupção — é uma ordem válida de commits.
 
-**O que eu NÃO afirmo**: que a conta seja "reservada" durante o recebimento. Ela
-não é. Se o dono quiser que "inativar" vença sempre, é preciso `SELECT ... FOR
-UPDATE` na conta dentro da transação de recebimento — uma decisão de regra de
-negócio (bloquear recebimento em conta inativada já em voo) que **não** tomei
-sozinho, porque muda o comportamento de operações já aceitas.
+### Coordenação implementada (fecha a janela)
+
+A condição acima foi **corrigida por decisão do dono**: recebimento e inativação
+agora se coordenam pela **mesma linha** de `contas_financeiras`.
+
+- `_conta_por_id` passou a ler com **`SELECT ... FOR UPDATE`**. O toggle de contas
+  (`POST /configuracoes/contas/{id}/toggle`) já era um `UPDATE` na mesma linha,
+  portanto toma a mesma trava — as duas operações se enfileiram.
+- O caminho do **padrão** (uma conta elegível, sem escolha explícita) também
+  relê a linha sob trava antes de devolver o id: a lista de elegíveis é um
+  retrato, e entre ela e a gravação a conta podia ser inativada.
+- **Ordem consistente e sem ciclo**: a inativação trava **só** a conta; o
+  recebimento trava sessão/gaveta antes e a conta depois. Não existe caminho que
+  pegue conta→sessão, então não há deadlock entre os dois.
+- **Nenhuma trava durante a interação do usuário**: `conta_de_destino` roda
+  apenas dentro da transação de escrita. As telas leem as opções com
+  `contas_de_destino` (SELECT sem `FOR UPDATE`), na renderização.
+
+As duas ordens, provadas com conexões concorrentes e sincronização por `Event`
+(não por `sleep`) em `prova_ordem_travas.py` / `log_ordem_travas.txt`, usando o
+**caminho real de inativação por HTTP**:
+
+| Ordem | Resultado medido |
+|---|---|
+| **O1** recebimento obtém a trava primeiro | a inativação fica **bloqueada** (verificado com `thread.is_alive()`); o recebimento **conclui e grava** 1 lançamento; a inativação só então aplica e a conta termina inativa |
+| **O2** inativação obtém a trava primeiro e confirma | o recebimento **espera**, relê a linha já inativa e **recusa `conta_inativa`**, com **0 lançamentos** |
+
+**7/7**. O2 é o cenário que antes gravava: o `FOR UPDATE` que esperou um `UPDATE`
+já confirmado relê a versão nova da linha (EvalPlanQual, READ COMMITTED) e vê
+`ativo = 0`.
 
 ## 6. Aplicação no DEV
 
@@ -392,11 +418,9 @@ Se o saldo da conta (A) tivesse mudado, o número estaria medido na tabela acima
 1. **"Caixa da casa" é a `Conta Espécie` atual ou uma conta nova?** Se nova, ela
    será uma segunda conta `especie` e a tela de doação vai **pedir a escolha** —
    comportamento correto, mas é decisão dele.
-2. **Banco e Poupança recebem PIX diretamente** (já habilitado nesta entrega) ou
-   servem só como destino de transferência?
-3. **Saldo real de hoje** de cada conta — sem esse número não há saldo inicial
+2. **Saldo real de hoje** de cada conta — sem esse número não há saldo inicial
    confiável.
-4. **O −R$ 272,14 da Conta Espécie** é reconhecido por ele? (ver §10)
+3. **O −R$ 272,14 da Conta Espécie** é reconhecido por ele? (ver §10)
 
 ---
 
@@ -454,5 +478,6 @@ cujo lançamento não usa essa categoria, e por isso não aparecem no agregado. 
 | `prova_disputa_concorrente.py` / `log_disputa_concorrente.txt` | §5-B — inativação × recebimento em 4 ordens de commit (8/8) |
 | `prova_cancelamento_saldo.py` / `log_cancelamento_saldo.txt` | §8-A — valores por conta e sessão antes/depois (9/9) |
 | `prova_fechamento_misto.py` / `log_fechamento_misto.txt` | §5-A — formas e destinos misturados numa sessão (15/15) |
+| `prova_ordem_travas.py` / `log_ordem_travas.txt` | §5-B — coordenação por trava, ordens O1 e O2 (7/7) |
 | `matriz_cobertura.txt` | matriz E1–E6 (24/24) |
 | `navegador.txt` + `navegador/*.png` | 39 asserções de navegador, com as capturas por tela e largura |

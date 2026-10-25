@@ -2,17 +2,17 @@
   config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
   banco ...: shambala_test_passes
   porta ...: 9011
-  token ...: t010-20261025172634-1898987 (identifica ESTA execução nas provas)
-  árvore ..: 54b78ae96c450f6321db09dddf2fd98caf8daa04-dirty (código validado por esta execução)
+  token ...: t010-20261025173749-1952296 (identifica ESTA execução nas provas)
+  árvore ..: 76073e6601e357f7682c7d850d0f1b1de250b83c-dirty (código validado por esta execução)
 == Registrando o estado do DEV (apenas leitura) ==
   DEV (shambala): pessoas=678 checkins=2920
   porta 9011 livre: ok
 == Recriando o banco de teste (conexão de manutenção validada) ==
   shambala_test_passes criado e selado para esta execução
 == Confrontando a identidade efetiva (mesma configuração do app) ==
-  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025172634-1898987
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025173749-1952296
 == Subindo o app de teste ==
-[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025172634-1898987'}
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025173749-1952296'}
   app no ar: destino confirmado pelo próprio app, vinculado ao token
 == Executando as suítes ==
 -- test_tres_passes.py
@@ -280,8 +280,8 @@
 
 25/25 testes passaram, 0 pulados (TASK_007 — cancelamento rastreável)
 -- test_sessao_eventos_caixa.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025172634-1898987'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025172634-1898987)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025173749-1952296'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025173749-1952296)
 [seed] fixtures prontas
 
 ══ CENÁRIO MISTO DETERMINÍSTICO (inicial 100 → físico esperado 183) ══
@@ -484,8 +484,8 @@
 
 [resultado] aprovadas=161 falhas=0
 -- test_caixa_navegador_task008.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025172634-1898987'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025172634-1898987)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025173749-1952296'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025173749-1952296)
 [seed] fixtures T008N prontas
   ✔ C1 a tela orienta que só PIX está disponível sem sessão
   ✔ C1 PIX pré-selecionado; espécie e fiado bloqueados sem sessão
@@ -600,8 +600,8 @@
 
 [resultado] aprovadas=51 falhas=0
 -- test_financeiro_visaogeral_navegador_task011.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025172634-1898987'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025172634-1898987)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025173749-1952296'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025173749-1952296)
 [startup] 1 mensalidade(s) receberam competência rotulada do vencimento já gravado.
 [seed] fixtures T011N prontas (janela 2026-06)
   ✔ N1 período em destaque (01/06/2026 a 30/06/2026)
@@ -1097,8 +1097,8 @@
 
 79/79 verificações aprovadas (TASK_012 §5 — consultas, saldos e experiência integrada)
 -- test_financeiro_navegador_task012.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025172634-1898987'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025172634-1898987)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025173749-1952296'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025173749-1952296)
 [seed] fixtures T012N prontas (janela 2026-09-01 a 2026-09-30)
 -- C1 mensalidades: as três datas rotuladas e o valor em formato brasileiro
   ✔ C1 a tela diz que a data é o vencimento
@@ -1137,8 +1137,8 @@
 [resultado] aprovadas=27 falhas=0
   evidências: /nc/projetos/shambala/docs/tasks/evidencias/TASK_012
 -- test_t016_navegador.py
-[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025172634-1898987'}
-[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025172634-1898987)
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025173749-1952296'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025173749-1952296)
 [seed] fixtures T016N prontas
 -- N1 PDV com duas contas de espécie: seletor com as duas e venda bloqueada sem escolha
   ✔ N1.1 o bloco de conta da espécie aparece no PDV
@@ -1191,7 +1191,7 @@
 [resultado] aprovadas=39 falhas=0
   evidências: /nc/projetos/shambala/docs/tasks/evidencias/TASK_016/navegador
 -- test_t016_matriz.py
-[ok] banco shambala_test_passes / servidor http://127.0.0.1:9011 (token t010-20261025172634-1898987)
+[ok] banco shambala_test_passes / servidor http://127.0.0.1:9011 (token t010-20261025173749-1952296)
 -- E1 fluxo individual: um recebimento grava na conta escolhida
   ✔ E1.1 a doação foi aceita
   ✔ E1.2 o valor entrou na conta ESCOLHIDA
@@ -1392,11 +1392,11 @@ TESTE NEGATIVO — a trava rejeita o banco de desenvolvimento?
 
 [4] Contrato de configuração e prova de execução corrente:
   OK    arquivo de configuração ausente — recusado: arquivo de configuração da execução ausente: /nao/existe/.env
-  OK    arquivo sem SHAMBALA_DB_NAME — recusado: o arquivo de configuração /tmp/shambala_neg_w29kgibt.env não define SHAMBALA_DB_NAME — des
-  OK    arquivo apontando banco de DEV ('shambala') — recusado: destino 'shambala' do arquivo /tmp/shambala_neg_qax64dzy.env não é comprovadamente descart
+  OK    arquivo sem SHAMBALA_DB_NAME — recusado: o arquivo de configuração /tmp/shambala_neg_jqay71yp.env não define SHAMBALA_DB_NAME — des
+  OK    arquivo apontando banco de DEV ('shambala') — recusado: destino 'shambala' do arquivo /tmp/shambala_neg_lol2dsb_.env não é comprovadamente descart
   OK    destino solicitado A diverge do arquivo B (sentinelas A/B) — recusado: divergência de destino: solicitado 'shambala_a_test', configuração nomeada '/tmp/shambala_
-  OK    destino solicitado bate com o arquivo — aceito: {'banco': 'shambala_a_test', 'arquivo': '/tmp/shambala_neg_k12zk2f0.env'}
-  OK    log sem confirmação alguma (destino não provado) — recusado: o app nunca imprimiu 'Ambiente descartável confirmado' em /tmp/shambala_neg_log_gxw44c4c: 
+  OK    destino solicitado bate com o arquivo — aceito: {'banco': 'shambala_a_test', 'arquivo': '/tmp/shambala_neg_a8t5iey8.env'}
+  OK    log sem confirmação alguma (destino não provado) — recusado: o app nunca imprimiu 'Ambiente descartável confirmado' em /tmp/shambala_neg_log_w9rwr3az: 
   OK    log de OUTRA execução (token antigo) — recusado: o log pertence a OUTRA execução (token 'tok-ANTIGA' != 'tok-desta-execucao'): prova de log
   OK    token corrente mas banco efetivo divergente do esperado — recusado: o servidor HTTP está no banco efetivo 'shambala_outra_test', a suíte espera 'shambala_a_te
   OK    execução corrente provada (token + banco efetivo) — aceito: {'banco_efetivo': 'shambala_a_test', 'token': 'tok-desta-execucao', 'log': '/tmp/shambala_
@@ -1432,7 +1432,7 @@ test_t016_navegador.py: rc=0
 test_t016_matriz.py: rc=0
 test_financeiro_morte_processo_task014.py: rc=0
 teste_negativo_isolamento.py: rc=0
-tests/rodar_testes.sh, linha 89: 1899073 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+tests/rodar_testes.sh, linha 89: 1952342 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
 == Conferência final do DEV ==
   antes : pessoas=678 checkins=2920
   depois: pessoas=678 checkins=2920

@@ -1,0 +1,17 @@
+contas de teste: O1=159 O2=160
+
+── O1 recebimento obtém a trava primeiro
+  ✔ O1.1 a inativação ficou BLOQUEADA na trava da conta
+     recebimento: ('gravou', 159) | lançamentos: 1 | toggle: 303 | ativo agora: 0
+  ✔ O1.2 o recebimento CONCLUIU e gravou exatamente uma vez
+  ✔ O1.3 gravou na conta certa
+  ✔ O1.4 a inativação só aconteceu DEPOIS (conta terminou inativa)
+
+── O2 inativação obtém a trava primeiro e confirma
+     chegada (concluídos até aqui): ['(ambos esperando)']
+     inativação: 303 | recebimento: ('recusa', 'conta_inativa') | lançamentos: 0 | ativo: 0
+  ✔ O2.1 a inativação confirmou e a conta terminou inativa
+  ✔ O2.2 o recebimento ESPEROU e RECUSOU por conta inativa
+  ✔ O2.3 NENHUM lançamento foi gravado (sem efeitos)
+
+[resultado] aprovadas=7 falhas=0
