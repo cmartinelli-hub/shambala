@@ -1,0 +1,118 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025041300-2925381 (identifica ESTA execução nas provas)
+  árvore ..: cf4d8da6be27dc762bcbabf38c34e9ee5c88a324-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025041300-2925381
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025041300-2925381'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_fiado_alocacoes_task012.py
+  PASS  banco: tabela de alocação fiado↔lançamento existe
+  PASS  banco: uma linha de dívida por (lançamento, venda)
+  PASS  banco: um único excedente de crédito por lançamento
+  PASS  banco: movimento de crédito aponta a venda que o consumiu
+  PASS  banco: crédito de fiado negativo não é aceito
+  PASS  banco: alocação incoerente é recusada (dívida sem venda)
+  PASS  banco: alocação incoerente é recusada (crédito apontando uma venda)
+  PASS  banco: alocação de zero centavos é recusada
+  PASS  banco: nenhuma das alocações inválidas chegou a ser gravada
+  PASS  parcial: a dívida nasce devendo o valor de face, sem destino gravado
+  PASS  parcial: 15 abate a dívida e NÃO a quita
+  PASS  parcial: saldo restante continua visível como dívida (25)
+  PASS  parcial: nada virou crédito quando ainda há saldo devedor
+  PASS  parcial: o dinheiro está na sessão, centavo a centavo
+  PASS  parcial: o segundo pagamento (25) quita exatamente o saldo
+  PASS  parcial: duas entregas = dois lançamentos, cada um com sua alocação
+  PASS  parcial: sem crédito e sem segunda entrada de dinheiro
+  PASS  parcial: os dois lançamentos fecham com o valor de face
+  PASS  parcial: cobrar de novo quem já não deve é recusado sem escrita
+  PASS  excedente: 50 entregues produzem UM único lançamento
+  PASS  excedente: 40 alocados na dívida e 10 no crédito, mesmo lançamento
+  PASS  excedente: dívida quitada e crédito de 10 disponível
+  PASS  excedente: o movimento de crédito aponta o lançamento que o gerou
+  PASS  excedente: a sessão recebeu os 50 uma única vez
+  PASS  excedente: soma das alocações == dinheiro recebido (sem centavo perdido)
+  PASS  excedente: repetir a entrega sem dívida em aberto é recusado
+  PASS  seleção: 40 entregues às duas dívidas na ordem escolhida
+  PASS  seleção: a dívida integralmente coberta fica quitada, a parcial não
+  PASS  seleção: nada vira crédito enquanto há saldo (20 - 10 = 10)
+  PASS  seleção: uma única entrada de dinheiro para as duas dívidas
+  PASS  seleção: dívida inexistente na seleção recusa a entrega inteira
+  PASS  seleção: sem escolha explícita a regra antiga (mais antiga primeiro) permanece
+  PASS  seleção: nada de crédito enquanto existe saldo por cobrir
+  PASS  seleção: a tela oferece a marcação por dívida e a prévia da repartição
+  PASS  adiantamento: dinheiro sem dívida em aberto tem origem financeira própria
+  PASS  adiantamento: o crédito nasce vinculado ao lançamento (mesmo dinheiro)
+  PASS  adiantamento: nenhuma dívida foi inventada para receber esse dinheiro
+  PASS  consumo: compra de 60 consome 30 de crédito e deixa dívida de 30
+  PASS  consumo: o consumo de crédito está vinculado à venda que o gerou
+  PASS  consumo: crédito consumido não é segunda entrada de dinheiro
+  PASS  consumo: crédito nunca fica negativo (sobra zero, não -30)
+  PASS  consumo: o saldo de face 30 é cobrado uma única vez e quita a dívida
+  PASS  consumo: dinheiro total da compra (30 + 30) bate com o valor de face
+  PASS  extrato: tela responde para o trabalhador
+  PASS  extrato: saldo devedor e crédito aparecem separados
+  PASS  extrato: a dívida mostra valor original, recebido e saldo
+  PASS  extrato: cada número aponta o lançamento que o origina
+  PASS  extrato: nada no extrato diverge dos números conferidos no banco
+  PASS  extrato: trabalhador inexistente é devolvido à lista com motivo
+  PASS  repetido: a primeira entrega quita a dívida com um lançamento
+  PASS  repetido: o mesmo envio devolve o mesmo destino, sem efeito novo
+  PASS  repetido: nenhuma alocação duplicada (índice único por lançamento/venda)
+  PASS  repetido: mesma chave com outro conteúdo é recusada sem escrita
+  PASS  corrida pagamento/pagamento: a segunda entrega ficou de fato aguardando a primeira no banco
+  PASS  corrida: nenhuma das duas entregas falhou
+  PASS  corrida: a segunda acorda, relê o saldo e aloca exatamente os 10 restantes
+  PASS  corrida: dois entregamentos = dois lançamentos de 30 (dinheiro real)
+  PASS  corrida: nenhum centavo foi alocado duas vezes (40 na mesma dívida)
+  PASS  corrida: dívida quitada e crédito de 20, uma única vez
+  PASS  corrida: cada lançamento fecha com suas alocações
+  PASS  corrida: sessão recebeu 60 e nada mais
+  PASS  corrida consumo/consumo: a venda ficou presa no lock do trabalhador
+  PASS  corrida: a primeira venda concluiu depois de liberado o lock
+  PASS  corrida: as duas vendas de 40 efetivamente saíram no PDV
+  PASS  corrida: o crédito de 50 foi consumido exatamente uma vez no total
+  PASS  corrida: 40 + 40 de compras com 50 de crédito → dívida de 30
+  PASS  corrida: crédito final zero, nunca negativo
+  PASS  corrida: cada consumo está vinculado à sua própria venda
+  PASS  corrida: nenhuma entrada de dinheiro nasceu do consumo de crédito
+  PASS  corrida: consumo de crédito é evento de efeito físico zero na sessão
+  PASS  última escrita: a violação impediu a transação de concluir
+  PASS  última escrita: o dinheiro recebido não existe (rollback integral)
+  PASS  última escrita: nada na sessão, nada alocado, nenhum crédito gravado
+  PASS  última escrita: a dívida continua devendo o valor de face
+  PASS  última escrita: a chave da tentativa não ficou consumida
+  PASS  última escrita: o reenvio depois da falha registra a entrega uma vez
+  PASS  legado: a dívida continua devendo o valor de face (nada presumido)
+  PASS  legado: nenhuma alocação foi criada para o lançamento antigo
+  PASS  legado: nenhum movimento de crédito foi preenchido por suposição
+  PASS  legado: o histórico anterior permanece intacto (não foi apagado)
+  PASS  legado: o extrato declara a limitação em vez de esconder o número
+  PASS  legado: mesmo assim a dívida é mostrada com o valor de face
+  PASS  legado: o recebimento novo abate a dívida sem tocar no legado
+  PASS  cancelamento: dívida já paga em parte não é estornada por atalho
+  PASS  cancelamento: nenhum efeito colateral (venda, dinheiro e alocações intactos)
+  PASS  cancelamento: dívida sem recebimento segue o fluxo de cancelamento
+  PASS  fecho: toda entrega desta suíte tem alocações que somam o valor recebido
+  PASS  fecho: o efeito físico na sessão é exatamente o dinheiro recebido
+  PASS  fecho: nenhuma alocação existe sem o lançamento que a originou
+  PASS  fecho: todo consumo de crédito desta suíte aponta a venda consumida
+  PASS  fecho: nenhum trabalhador do banco ficou com crédito negativo
+
+91/91 verificações aprovadas (TASK_012 §4 — destino explícito do dinheiro no fiado)
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_fiado_alocacoes_task012.py: rc=0
+tests/rodar_testes.sh, linha 89: 2925459 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok

@@ -3,13 +3,19 @@
 Ordem executada: `docs/tasks/TASK_012_REESTRUTURACAO_FINANCEIRA_EXECUCAO_NOTURNA.md`.
 Data: noite de 2026-10-24 → 2026-10-25 (fuso do centro; o DEV atende em `America/Sao_Paulo`).
 HEAD no início da execução: `b9268ec` (docs da correção visual da TASK_011).
-Status geral: **em execução** — §1 e §2 concluídos; §3–§6 em andamento; §9 (DEV) ao final.
+Status geral: **em execução** — §1 a §4 entregues; §5 e §6 em andamento; §9 (DEV) ao final.
 
 Árvore testada: as evidências abaixo foram produzidas sobre `b9268ec` + as
 alterações desta tarefa ainda não commitadas no momento das corridas; o código
 da §2 ficou em `00617c1` (feat: TASK_012 §2 — idempotência de toda entrada de
-dinheiro), e cada log de evidência termina com o par `antes/depois` do DEV, que
-amarra a corrida ao estado real do servidor no momento em que rodou.
+dinheiro), o da §3 em `a4c5346` (feat: TASK_012 §3 — mensalidade passa a ter
+competência) e o da §4 em `a6f0328` (feat: TASK_012 §4 — o recebimento de fiado
+passa a ter destino registrado); cada log de evidência termina com o par
+`antes/depois` do DEV, que amarra a corrida ao estado real do servidor no momento
+em que rodou. Os logs da §4 registram no cabeçalho a árvore
+`cf4d8da…-dirty` — o sufixo `-dirty` é o próprio harness dizendo que a árvore
+tinha alteração não commitada (o código desta etapa); as duas corridas de
+repetibilidade compartilham a mesma identidade registrada e tokens diferentes.
 
 Limites observados: sem produção, sem push, sem mensagens/cobranças, sem novos
 usuários/senhas/permissões, testes exclusivamente em PostgreSQL descartável
@@ -50,10 +56,10 @@ legada (TASK_008), isolamento de ambiente e guardas de destino (TASK_010),
 | Domínio | Fato | Onde vive | Quem deve ler |
 |---|---|---|---|
 | Obrigação de mensalidade | lançamento `entrada/mensalidade` com `status` | `financeiro_movimentacoes` (`data_movimentacao` fazendo as vezes de competência) | consultas a receber; §3 adiciona competência explícita |
-| Dívida de fiado | venda `forma_pagamento='fiado'` não quitada | `vendas_pdv.fiado_pago` + `total - fiado_credito_usado` | extrato do trabalhador; §4 adiciona alocações |
+| Dívida de fiado | venda `forma_pagamento='fiado'` não quitada | `vendas_pdv.fiado_pago` + `total - fiado_credito_usado - alocado` (o `alocado` é da §4) | extrato do trabalhador |
 | Pagamento recebido (dinheiro que entrou) | lançamento `entrada` com conta e forma | `financeiro_movimentacoes` (`recebimento_fiado`, `credito_anticipado`, `doacao`, `venda_pdv`, `mensalidade` baixada) | relatórios de resultado |
-| Alocação do recebimento | qual dívida/credito cada recebimento abateu | **não existia** (só o booleano na venda) | §4 |
-| Crédito do trabalhador | saldo + movimentos | `trabalhadores.fiado_credito` (saldo) e `fiado_credito_mov` (razão) | extrato; consumo não é dinheiro novo |
+| Alocação do recebimento | qual dívida/crédito cada recebimento abateu | `fiado_alocacao` (nova nesta tarefa — vínculo durável lançamento↔dívida + linha de excedente) | consultas de fiado, extrato, cancelamento |
+| Crédito do trabalhador | saldo + movimentos | `trabalhadores.fiado_credito` (saldo, com `CHECK ≥ 0` da §4) e `fiado_credito_mov` (razão, agora com `venda_id`/`financeiro_id`) | extrato; consumo não é dinheiro novo |
 | Efeito na gaveta | evento por sessão | `caixa_sessao_eventos` (`identidade` UNIQUE) | fechamento/conferência; **não** somar com o lançamento correspondente |
 | Tentativa de operação | chave do envio | `operacao_idempotencia` (nova nesta tarefa) | rotas de dinheiro; retenção sem purga automática |
 
@@ -63,7 +69,7 @@ legada (TASK_008), isolamento de ambiente e guardas de destino (TASK_010),
 |---|---|---|---|---|
 | §2 idempotência | Reenvio produzia segundo efeito; proteção pontual só onde havia estado (`fiado_pago`, `status='aberto'`, `identidade` UNIQUE, `vendas_pdv_cancelamento.venda_id`) | Chave de tentativa gerada com a tela (`campo_idempotencia` + `static/js/tentativa.js`), tabela `operacao_idempotencia` com `chave UNIQUE`, reserva→efeitos→confirmação na mesma transação, resposta anterior devolvida antes das validações de estado, recusa legível sem escrita | `tests/test_financeiro_idempotencia_task012.py` (138 asserções: 1º efeito, reenvio byte a byte, concorrência mesma chave nova e concluída, chave+conteúdo divergente, chave nova+conteúdo idêntico, POST sem chave, revisão de preço, rollback da última escrita, corrida na reserva, lote de mensalidades, parcial com excedente, compra multipart com a nota no corpo, venda de livro, autenticação) | nada (base das demais) |
 | §3 mensalidades | Competência inferida de `data_movimentacao LIKE 'YYYY-MM%'` e do texto da descrição; `_existe_mes` + INSERT sem constraint (FIN-05) | Coluna `competencia` (`YYYY-MM`) em `financeiro_movimentacoes`; índice único parcial `(trabalhador_id, competencia)` para `categoria='mensalidade'` criado no startup, com diagnóstico de duplicidade **antes** de aplicar e sem tocar linha em conflito; serviço com checagem + `ON CONFLICT … DO NOTHING` e retorno de "quantas novas"; `POST /mensalidades/gerar` (geração manual) no lugar do GET que gerava; recusas `periodo_invalido` / `mensalidade_ja_registrada` / `sem_mensalidade_ativa`; competência, vencimento e recebimento separados na tela + faixa de conflito histórico | `tests/test_financeiro_mensalidades_task012.py` (64 asserções: chave do banco nos quatro sentidos, geração repetida e concorrente, dois trabalhadores no mesmo mês, virada de ano, mês curto e bissexto, elegibilidade, leitura sem efeito, mensagens de operador, baixa individual e em lote, lote atômico com rollback, duplicidade histórica fictícia sem perda de fatos, rotulamento que não escolhe vencedora, startup que não aborta, backfill idempotente, cancelamento, lançamento manual) | §2 |
-| §4 fiados | Um recebimento quita dívidas por ordem FIFO e o excedente vira crédito **sem vínculo** entre o lançamento, as dívidas e o crédito; `fiado_pago` booleano é a única alocação | — em execução — | — | §2, §3 |
+| §4 fiados | Um recebimento quita dívidas por ordem FIFO e o excedente vira crédito **sem vínculo** entre o lançamento, as dívidas e o crédito; `fiado_pago` booleano é a única alocação | Tabela `fiado_alocacao` (lançamento ↔ dívida, ou linha única de excedente) com `CHECK` de vínculo, índices únicos e FKs `RESTRICT`; `servico_fiado` (`dividas_em_aberto`/`repartir`/`aplicar_recebimento`/`extrato_fiado`) em `Decimal`; quitação só com saldo zero; excedente com lock do trabalhador; vínculo `fiado_credito_mov.venda_id`/`.financeiro_id`; guarda `fiado_credito >= 0` no banco; tela marca dívidas, mostra a distribuição antes de confirmar e lê o saldo; extrato novo `GET /caixa/fiados/extrato/{id}`; cancelamento passa a avaliar as alocações | `tests/test_fiado_alocacoes_task012.py` (91 asserções em 13 provas: dívida 40 com 15+25, 50 contra 40 com crédito 10, adiantamento e consumo parcial, duas dívidas selecionadas, pagamento×pagamento e consumo×consumo sob lock observado, reenvio pela mesma chave, última escrita falhando, legado sem backfill, cancelamento, e as cinco contas batendo por caminhos SQL independentes) + suítes alheias ajustadas sem reduzir assertiva | §2, §3 |
 | §5 consultas | Soma de eventos com lançamentos, fórmulas de saldo divergentes por tela, GET `/financeiro/mensalidades` gerando cobrança (este último **resolvido na §3**) | — em execução — | — | §3, §4 |
 | §6 integridade | FIN-09: arquivo da nota escrito dentro da transação antes do commit | — em execução — | — | §2 |
 
@@ -472,9 +478,308 @@ no ambiente descartável selado, com o código e as suítes da §3 fechados:
    mensalidades do trabalhador (e o log do startup). Se o dono quiser
    acompanhamento persistido, isso é trabalho novo, não desta etapa.
 
-## 4. Fiados, pagamentos parciais e crédito rastreável
+## 4. Fiados, pagamentos parciais e crédito rastreável — entregue
 
-_em execução_
+### 4.1 O "antes", lido em `b9268ec`
+
+Nenhum serviço de fiado existia: a lógica inteira cabia em `pagar_divida_fiado`
+(`rotas/caixa.py:1624` hoje; em `b9268ec` era um bloco de ~100 linhas na rota).
+O que a leitura da revisão anterior mostra, com o exemplo que a ordem pede
+(dívida de 40, entrega de 15):
+
+1. as dívidas em aberto eram lidas `ORDER BY data_venda ASC, id ASC FOR UPDATE`
+   e somadas em `round(float(total) - float(fiado_credito_usado), 2)`;
+2. entregue 15 < devido 40, o laço FIFO percorria as compras: a primeira não
+   era coberta integralmente, então **`break`** — nenhuma quitação;
+3. os 15 que sobraram (`restante >= 0.01`) iam para
+   `UPDATE trabalhadores SET fiado_credito = fiado_credito + 15` com
+   `fiado_credito_mov … 'Saldo de pagamento parcial de fiado'` — **sem
+   referência a lançamento nem a venda**;
+4. um lançamento de 15 era registrado com a descrição
+   `Recebimento fiado — {nome}` — sem dizer para qual dívida;
+5. a dívida de 40 continuava `fiado_pago = FALSE`, devendo 40.
+
+Resultado no fim daquele fluxo: 15 na gaveta, 40 de saldo devedor, 15 de
+crédito — três números que não se reconciliam, e nada no banco que diga que o
+dinheiro tinha destino. O `fiado_alocacao` de hoje é exatamente o elo que
+faltava. Na quitação individual (`POST /caixa/fiados/{venda}/pagar`), a ordem
+era invertida em relação ao dinheiro: `UPDATE … SET fiado_pago = TRUE` vinha
+**antes** de `contabilizar_recebimento`, e o valor cobrado era o de face
+(`total - fiado_credito_usado`), ignorando o que outros recebimentos já tinham
+tratado daquela dívida; o destino só era deduzível do texto
+`Recebimento fiado — venda #{id}`.
+
+### 4.2 O vínculo durável (esquema)
+
+`fiado_alocacao` (`banco.py:1149–1191`) é criada dentro de `criar_tabelas()`,
+depois de `vendas_pdv` e `financeiro_movimentacoes` (as FKs exigem a ordem):
+
+| Coluna | Papel |
+|---|---|
+| `financeiro_id` | o lançamento do dinheiro recebido — `REFERENCES … ON DELETE RESTRICT` (não se apaga dinheiro que tem destino) |
+| `trabalhador_id` | dono da dívida — `RESTRICT` |
+| `venda_id` | a dívida abatida; `NULL` quando a linha é o excedente |
+| `tipo` | `'divida'` ou `'credito'` |
+| `valor` | `NUMERIC(10,2) CHECK (valor > 0)` — centavos, nunca `float` |
+
+Três travas de forma, além das FKs: `CHECK fiado_alocacao_vinculo` exige
+`tipo='divida' ⟺ venda_id NOT NULL` e `tipo='credito' ⟺ venda_id IS NULL` (o
+banco recusa a linha ambígua); `uq_fiado_alocacao_divida` único em
+(`financeiro_id`,`venda_id`) para `tipo='divida'` (um recebimento aloca no
+máximo uma vez em cada dívida); `uq_fiado_alocacao_credito` único em
+(`financeiro_id`) para `tipo='credito'` (**o excedente de um recebimento é um
+só** — é a constraint que a prova da última escrita falhando usa como
+obstáculo). Índices por venda e por trabalhador para as consultas do extrato.
+
+Migrações idempotentes em `_migrar()`:
+
+- `fiado_credito_mov.venda_id` e `fiado_credito_mov.financeiro_id`
+  (`banco.py:647–653`, `para_adicionar`) — o movimento de crédito passa a apontar
+  o fato que o gerou. Linhas antigas ficam `NULL`: **sem vínculo comprovado**,
+  nunca preenchidas por suposição.
+- `CHECK trabalhadores_fiado_credito_nao_negativo` (`banco.py:527–560`, aplicada
+  em `:695`) — o consumo de crédito é limitado pelo saldo, então um negativo só
+  pode ser bug de concorrência. Havendo saldo negativo no banco, o startup
+  imprime o impedimento, **não cria a guarda e não altera linha alguma** (mesma
+  política da §3: diagnosticar sem escolher vencedora).
+
+### 4.3 O serviço (`servico_fiado.py`, novo)
+
+Todo o destino do dinheiro sai daqui, em `Decimal` (`moeda()` quantiza 2 casas
+com `ROUND_HALF_UP` e recusa `float`):
+
+- `dividas_em_aberto(conn, tid, *, travar, venda_ids)` — cada dívida com
+  `total` (face), `credito_usado`, `alocado` (a soma de `fiado_alocacao`),
+  `saldo = max(0, face − credito_usado − alocado)` e `alocacoes_registradas`.
+  Com `travar=True` percorre **sempre por id crescente** (`FOR UPDATE OF v`)
+  para que duas requisições tomem a mesma ordem de locks; a ordem de exibição é
+  aplicada depois. Com `venda_ids`, a seleção do operador **restringe e ordena**
+  a distribuição — nada de prioridade inventada; sem seleção, vale a regra que o
+  sistema já tinha e que continua a mesma: a compra mais antiga primeiro.
+- `repartir(dividas, valor)` — a conta que fecha: percorre as dívidas na ordem
+  recebida, abate saldo por saldo, devolve `(alocacoes, excedente)` com os
+  invariantes `sum(alocacoes) + excedente == valor` (nenhum centavo perdido) e
+  `0 < alocação ≤ saldo da dívida`.
+- `aplicar_recebimento(...)` — a ordem das escritas é **dinheiro → destino →
+  quitação → excedente**: um `recebimento_fiado` no financeiro (com sessão ou
+  conta PIX, pelo `contabilizar_recebimento` da sessão), uma `fiado_alocacao`
+  por dívida abatida, `fiado_pago = TRUE` **só** nas dívidas cujo saldo zerou
+  (`WHERE id = ANY(…) AND fiado_pago = FALSE`), e o excedente — se houver — com
+  `SELECT … FOR UPDATE` no trabalhador antes de somar `fiado_credito`, mais
+  `fiado_credito_mov` com `financeiro_id` e uma linha `('credito', NULL)` em
+  `fiado_alocacao`. Se `repartir` não encontra saldo algum nas dívidas escolhidas,
+  recusa `sem_saldo` antes de qualquer escrita: não é receita "contra nada".
+- `extrato_fiado(conn, tid)` — §4.6.
+
+### 4.4 As telas, e a mudança prospectiva de comportamento
+
+`listar_fiados` (`rotas/caixa.py:1437`) deixa de somar `float` e passa a montar,
+por dívida, `alocado`/`saldo` a partir de `fiado_alocacao`; a lista de cada
+trabalhador sai da mais antiga para a mais recente — **a ordem que o serviço usa
+quando não há seleção é a ordem que a tela mostra**. Em
+`templates/caixa/fiados.html`:
+
+- cada dívida vira um `<input type="checkbox" name="venda_ids" … checked>` com
+  data, **saldo**, e quando for o caso o detalhe "(face R$ …, crédito usado
+  R$ …)" e "(já recebeu R$ …)";
+- o painel âmbar **"Distribuição deste dinheiro:"** é recalculado a cada
+  edição de valor/marcação (`atualizarReparticao`) e diz linha por linha
+  `quita`, `abate parcialmente … fica devendo`, `não recebe nada`, além do
+  rodapé "Sobra de R$ … vira crédito antecipado (o dinheiro entra uma única
+  vez)" ou "Ainda restam R$ … em saldo devedor". É uma **ajuda de tela**: a
+  autoridade continua sendo `repartir` no servidor, que decide sob lock e é o que
+  as asserções medem;
+- o diálogo de confirmação do pagamento parcial foi reescrito com a regra nova
+  ("O valor abate as dívidas marcadas, na ordem da tela; a última fica com
+  saldo. Só vira crédito o que sobrar depois de cobrir todas as marcadas"), o
+  botão passou a se chamar "💰 Quitar o saldo (R$ …)" e a coluna "A pagar" virou
+  **Valor original / Crédito usado / Recebido / Saldo a pagar**;
+- a faixa de sucesso agora repete o que aconteceu em dinheiro — "Recebido R$ … —
+  R$ … abatido (N dívida(s) quitada(s)) e R$ … registrado como crédito
+  antecipado" — com link para o extrato;
+- mensagens novas de recusa: `selecao_invalida` (alguma dívida marcada não está
+  mais em aberto — nada foi registrado) e `sem_saldo` (as marcadas já foram
+  cobertas; para antecipar dinheiro sem dívida use "➕ Crédito").
+
+**A mudança é prospectiva, e é isto que a ordem pede para ser explicado.** Antes,
+entregar menos que a dívida não a abatia: o dinheiro virava crédito solto e a
+dívida continuava de face. Agora, o pagamento destinado a uma dívida **abate
+aquela dívida** e o saldo restante fica visível; `fiado_pago` não vira `TRUE`
+enquanto existir saldo devedor. Nenhum fato anterior foi reescrito: as linhas de
+`fiado_credito_mov` e de `financeiro_movimentacoes` existentes ficam como
+estão, sem vínculo (ver §4.10), e a suíte da §4 prova o legado intacto.
+
+`POST /caixa/fiados/{venda}/pagar` (`rotas/caixa.py:1514`) passa a cobrar o
+**saldo** (`dividas_em_aberto(travar=True, venda_ids=[venda])`), chama
+`aplicar_recebimento` — quitação e alocação na mesma transação, dinheiro antes
+do flag — e trata o caso em que não há dinheiro novo: dívida já coberta por
+crédito consumido no PDV (`saldo == 0`) só encerra o débito, sem lançamento
+inventado. O `idempotencia` da §2 permanece (`identidade=f"fiadopagar:{venda_id}"`
+no evento, chave de tentativa no corpo) e o `corpo_tentativa` de
+`pagar_divida_fiado` passou a incluir `dividas`: a mesma chave com seleção
+diferente é recusada como divergência, não como novo pagamento.
+
+### 4.5 Crédito antecipado: origem, consumo, nunca negativo
+
+- **Adiantamento sem dívida** (`POST /caixa/fiados/{tid}/credito`,
+  `rotas/caixa.py:1798`) tem origem financeira explícita: o lançamento
+  `credito_anticipado` existia desde a TASK_008; agora a linha de
+  `fiado_credito_mov` recebe `financeiro_id` (mesmo lançamento, **sem segunda
+  entrada de dinheiro**) e uma `fiado_alocacao` `('credito', NULL)`, e o
+  trabalhador é travado `FOR UPDATE` **antes** de somar o saldo — duas entregas
+  concorrentes não gravam mais crédito do que o dinheiro recebido.
+- **Consumo no PDV** (`finalizar_venda`, `rotas/caixa.py:240–370`): o `débito`
+  de `fiado_credito_mov` agora carrega `venda_id` da compra que o gerou (antes
+  era só o texto `Compra #{id}`), e o `pendente` que alimenta o limite do
+  trabalhador passou a descontar o que as alocações já receberam
+  (`GREATEST(total − fiado_credito_usado − alocado, 0)`), com o mesmo `GREATEST`
+  que impede dívida abatida em parte de contar como se estivesse inteira. O
+  consumo continua `min(crédito, total)`, e a guarda do banco (§4.2) recusa o
+  negativo. Evento `venda_credito` com `efeito_fisico = 0` — crédito consumido
+  não é dinheiro na gaveta.
+- **Excedente de um recebimento** entra como crédito pelo mesmo caminho, na
+  mesma transação do lançamento que o originou (§4.3).
+
+### 4.6 Extrato por trabalhador (dívida e crédito separados)
+
+`GET /caixa/fiados/extrato/{trabalhador_id}` (`rotas/caixa.py:1928`) +
+`templates/caixa/fiado_extrato.html` (novo), servido por
+`servico_fiado.extrato_fiado`:
+
+- **saldo devedor** e **crédito** em blocos separados, com limite — um não
+  aparece como se abatesse o outro;
+- cada dívida: valor original, crédito usado, recebido, saldo, e a lista dos
+  lançamentos que a abateram (com link `/financeiro/lancamento/{id}`);
+- cada recebimento: o dinheiro que entrou, forma, data e **para onde foi**
+  (dívidas + excedente), lido de `fiado_alocacao` — não do texto;
+- cada movimento de crédito: com vínculo à venda consumida ou ao lançamento que
+  o originou; movimento sem vínculo continua no histórico, marcado como legado
+  sem alocação comprovada;
+- faixa final com `legado_sem_prova` (quantidade e valor), quando houver.
+
+### 4.7 Cancelamento: bloqueios da TASK_007 preservados, avaliação adaptada
+
+A ordem pede "preservar bloqueios seguros do cancelamento TASK_007… adaptar a
+avaliação à existência das novas alocações". `servico_cancelamento.py:143–156`
+passa a perguntar ao vínculo primeiro: se existe `fiado_alocacao` `tipo='divida'`
+para a venda, o motivo é **afirmativo e com valor** — "Esta dívida já recebeu
+pagamento (R$ X alocado em lançamento vinculado a ela) — estorno/recebimento é
+outro fluxo". Não havendo alocação (linhas anteriores a esta entrega), as duas
+heurísticas antigas continuam valendo byte a byte: a descrição exata
+`Recebimento fiado — venda #{id}` e o movimento de crédito posterior à venda com
+margem conservadora de 1 s. Todos os demais bloqueios estão intactos: vínculo de
+sessão obrigatório, `fiado_pago` recusado, venda sem trabalhador, crédito usado
+na compra, `criada_em` ausente. Teste: `prova_cancelamento_respeita_alocacao`
+(§4.9) e o cenário **M8b** da suíte da TASK_007.
+
+Sobre o M8b: a assertiva passou de "movimento de crédito / comprovável" para
+"já recebeu pagamento … alocado". Isso **não** é redução de assertiva para obter
+PASS — é a medição do mesmo contrato por um caminho mais forte. Antes, o bloqueio
+dependia de deduzir pelo texto que existia um recebimento; agora o teste exige
+que o vínculo gravado seja a causa da recusa, e o `_sem_efeitos` (nada mudou no
+banco) continua idêntico. O outro lado da mudança é visível na asserção anterior,
+que passou a afirmar `fiado_pago == False` pelo motivo certo: a venda está
+**abatida em parte**, não "intacta porque o flag engana".
+
+### 4.8 Concorrência determinística e rollback da última escrita
+
+Ordem de locks, em todos os caminhos que tocam fiado: **dívidas** (`ORDER BY id`
+com `FOR UPDATE OF v`) → **sessão** → **trabalhador**. Duas requisições
+concorrentes caminham na mesma ordem, então não deadlockam; os saldos lidos sob
+lock são a base da distribuição, então o mesmo centavo nunca é alocado duas vezes.
+
+As duas provas de corrida não usam `sleep` às cegas: a transação concorrente é
+aberta numa conexão crua do pool (`_obter_pool().getconn()` + `_ConnCompat`) e o
+harness **aguarda `pg_stat_activity`** mostrar a outra sessão em
+`wait_event_type='Lock' AND state='active'` sobre a tabela esperada, só então
+libera — a espera é observada, não presumida.
+
+- **pagamento × pagamento** (40 de dívida, dois recebimentos de 30): o segundo
+  acorda com 10 de saldo e aloca 10 + 20 de excedente. Conferido: 2 lançamentos
+  somando 60 de dinheiro, 40 alocados às dívidas, `fiado_pago = TRUE`, crédito
+  20, sessão 60, e as alocações de cada lançamento exatamente
+  `{divida: 30}` e `{divida: 10, credito: 20}`.
+- **consumo × consumo** (crédito 50, duas vendas de fiado): a segunda compra
+  bloqueia em `trabalhadores` até a primeira confirmar; no fim foram consumidos
+  40 + 10 de 50, **crédito nunca negativo**, cada `fiado_credito_mov` de débito
+  vinculado à sua `venda_id`, zero lançamentos financeiros novos e todos os
+  eventos `venda_credito` com `efeito_fisico = 0`.
+- **última escrita falhando**: dentro da mesma transação, reserva da chave →
+  `aplicar_recebimento(50)` para dívida de 40 → uma segunda linha
+  `('credito', NULL)` que viola `uq_fiado_alocacao_credito`. A exceção faz
+  `conectar()` devolver o rollback: **zero** lançamento, **zero** evento,
+  **zero** alocação, crédito 0, dívida intacta em 40, chave de tentativa **não
+  consumida** (reenvio possível) — e um recebimento correto depois registra o
+  dinheiro uma única vez.
+
+### 4.9 Evidências
+
+`tests/test_fiado_alocacoes_task012.py` (novo, 13 provas, **91 asserções**). Cada
+prova confronta **cinco números por caminhos SQL independentes** — dinheiro
+(`SUM` de `financeiro_movimentacoes` da descrição), lançamentos, efeito na
+sessão (`SUM(efeito_fisico)` via `caixa_sessao_eventos.financeiro_id`), dívida
+(`SUM(GREATEST(face − credito_usado − alocado, 0))`) e crédito (saldo + razão) —
+então "bater" não é a mesma consulta repetida.
+
+- `docs/tasks/evidencias/TASK_012/suite_fiado_alocacoes_r1_repetibilidade.txt` —
+  91/91, rc=0, `DEV inalterado: ok`.
+- `docs/tasks/evidencias/TASK_012/suite_fiado_alocacoes_r2_repetibilidade.txt` —
+  segunda corrida isolada, **91/91 outra vez** (a suíte é repetível: fixtures com
+  prefixo próprio e limpeza em ordem de dependência).
+- `docs/tasks/evidencias/TASK_012/runner_completo_etapa4_r1.txt` — runner
+  completo consolidado: **19 suítes + o teste negativo de isolamento, todas
+  rc=0**, 752 verificações (27+12+8+10+19+18+18+24+21+11+33+25+161+41+51+42+138
+  +64+91), `DEV inalterado: ok` (`pessoas=678 checkins=2918` antes e depois).
+  As suítes alheias tocou só em limpeza (`test_pdv_precos_servidor.py`,
+  `test_cancelamento_vendas.py`: apagar `fiado_alocacao`/`fiado_credito_mov`
+  antes dos pais, porque as FKs são `RESTRICT`) e no M8b descrito em §4.7.
+
+Cobertura, prova por prova: contrato no banco (tabela, `CHECK` de vínculo, os
+dois únicos, as FKs `RESTRICT`, recusa real de linha ambígua e de `valor ≤ 0`),
+dívida 40 com 15 + 25, pagamento 50 contra dívida 40 com crédito 10, duas dívidas
+selecionadas (ordem respeitada, inexistente recusada, não marcadas intocadas),
+adiantamento e consumo parcial, extrato separando dívida e crédito, reenvio pela
+mesma chave, pagamento × pagamento, consumo × consumo, última escrita falhando,
+legado sem backfill, cancelamento respeitando alocação, e o fecho em que as contas
+batem para todos os trabalhadores da suíte (inclusive nenhum crédito negativo,
+nenhuma alocação órfã de lançamento, todo consumo apontando a venda).
+
+### 4.10 Limitações e questões registradas
+
+1. **Legado sem alocação comprovada** — `recebimento_fiado` anteriores a esta
+   entrega não têm como saber para onde foram; continuam no histórico, a dívida
+   segue devendo o valor de face, e **nada foi distribuído retroativamente** por
+   nome, valor aproximado, data ou FIFO presumido (prova: *legado sem backfill*
+   + `prova_contrato_no_banco` sobre a linha crua). No DEV há **43** lançamentos
+   de `recebimento_fiado` sem `trabalhador_id` — por isso a faixa do extrato é
+   necessariamente um total do banco, não do trabalhador: as linhas não têm a
+   quem pertencer. (QUESTÃO para o dono: quer uma tela de destino histórico para
+   que alguém aponte esses 43 manualmente? Isso é trabalho novo, fora desta ordem.)
+2. **As consultas do financeiro ainda não enxergam as alocações** — a lista de
+   fiado (`rotas/financeiro.py:329–348`, `SUM(v.total)` com `NOT v.fiado_pago`) e
+   `relatorio_fiados` (`:1242–1295`, `float` + `total_pendente` sem `alocado`)
+   ainda apresentam dívida de face para uma compra já abatida em parte. É a
+   etapa §5 (fórmulas de saldo divergentes por tela); as telas de caixa estão
+   corretas desde já e é isso que a §4 prova.
+3. **Não existe fluxo para estornar um recebimento alocado** — o cancelamento
+   recusa com o motivo novo (§4.7) e nada mais faz; reembolso de fiado já pago,
+   estorno após sessão fechada e reabertura de caixa continuam excluídos (§7 da
+   ordem), sem saída financeira inventada.
+4. **A prévia de distribuição é do navegador** — quem decide é `repartir` no
+   servidor, sob lock; a tela pode mostrar uma repartição e o servidor registrar
+   outra se uma dívida concorrente mudar entre as duas leituras, e nesse caso a
+   recusa é `selecao_invalida` (nada gravado), nunca uma distribuição silenciosa.
+5. **A seleção entra no corpo da tentativa** — reenviar a mesma chave com
+   dívidas marcadas diferentes é recusado como divergência (§4.4). É proteção,
+   mas significa que o operador precisa recarregar a tela depois de mudar a
+   seleção de um envio já confirmado.
+6. **Um recebimento, um trabalhador** — a entrega de dinheiro é por trabalhador
+   pela própria tela; não há fluxo que distribua um lançamento entre dívidas de
+   dois trabalhadores (teria de ser duas entregas, cada uma com seu lançamento).
+7. **Nada no DEV ainda** — a tabela `fiado_alocacao`, as duas colunas de vínculo
+   e a guarda de crédito negativo só existem no código e no banco descartável;
+   aplicar ao DEV é a etapa §9 (backup + hash + restauração validada + baseline
+   antes/depois + restart da 9000), conforme §0 da ordem.
 
 ## 5. Consultas, saldos e experiência integrada
 
