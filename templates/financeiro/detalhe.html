@@ -20,6 +20,10 @@
             {{ linha.valor|moeda }}
         </dd>
         <dt>Natureza</dt><dd>{{ rotulo_natureza }}</dd>
+        {% if linha.categoria == 'mensalidade' %}
+        <dt>Competência</dt>
+        <dd>{{ linha.competencia or 'histórica: sem competência registrada (usa-se a data do lançamento)' }}</dd>
+        {% endif %}
         <dt>Conta</dt>
         <dd>{{ linha.conta_nome or '—' }}{% if linha.conta_tipo %} — {{ rotulo_conta }}{% endif %}</dd>
         <dt>Situação registrada</dt>
@@ -62,6 +66,28 @@
         <li>Nenhum vínculo registrado.</li>
         {% endif %}
     </ul>
+
+    {% if alocacoes %}
+    <h3 class="fin-subtitulo">Para onde foi este dinheiro</h3>
+    <p class="fin-legenda">Linhas gravadas no banco junto ao recebimento — o saldo das
+    telas de fiado é calculado com estes mesmos valores.</p>
+    <ul class="fin-vinculos">
+        {% for a in alocacoes %}
+        <li>
+            {% if a.tipo == 'credito' %}
+                Crédito antecipado do trabalhador
+                {{ a.trabalhador_nome or ('#' ~ a.id) }} — {{ a.valor|moeda }}
+            {% else %}
+                Dívida #{{ a.venda_id }} (venda de {{ a.data_venda|data_br }}) de
+                {{ a.trabalhador_nome or '—' }} — {{ a.valor|moeda }} abatido
+            {% endif %}
+            {% if a.fiado_trabalhador_id or a.trabalhador_id %}
+            · <a href="/caixa/fiados/extrato/{{ a.fiado_trabalhador_id or a.trabalhador_id }}">extrato do fiado</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
 
     {% if linha.pix_copiadecola %}
     <h3 class="fin-subtitulo">PIX copia-e-cola</h3>

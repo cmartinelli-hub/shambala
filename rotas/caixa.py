@@ -1411,24 +1411,31 @@ async def buscar_trabalhador_fiado(request: Request, q: str = Query("")):
             (termo,)
         ).fetchall()
 
+    import servico_fiado
+
     hoje = date.today()
-    return JSONResponse([
-        {
+    linhas = []
+    for r in rows:
+        limite = servico_fiado.moeda(r["fiado_limite"])
+        pendente = servico_fiado.moeda(r["total_pendente"])
+        # O que a tela mostra é o SALDO depois das alocações registradas; a
+        # conta do limite é feita com Decimal, não com float de NUMERIC.
+        disponivel = max(servico_fiado.ZERO, limite - pendente) if limite > 0 else None
+        linhas.append({
             "id": r["id"],
             "nome": r["nome_completo"],
             "cpf": r["cpf"] or "",
-            "fiado_limite": float(r["fiado_limite"]),
-            "fiado_credito": float(r["fiado_credito"]),
-            "total_pendente": float(r["total_pendente"]),
-            "disponivel": max(0, float(r["fiado_limite"]) - float(r["total_pendente"])) if float(r["fiado_limite"]) > 0 else None,
+            "fiado_limite": float(limite),
+            "fiado_credito": float(servico_fiado.moeda(r["fiado_credito"])),
+            "total_pendente": float(pendente),
+            "disponivel": float(disponivel) if disponivel is not None else None,
             "fiado_bloqueado": (
                 r["fiado_data_encerramento"] is not None
-                and r["total_pendente"] > 0
+                and pendente > 0
                 and date.fromisoformat(r["fiado_data_encerramento"]) < hoje
             ),
-        }
-        for r in rows
-    ])
+        })
+    return JSONResponse(linhas)
 
 
 # ── Fiados / Devedores ─────────────────────────────────────────────────────
@@ -1461,30 +1468,25 @@ async def listar_fiados(request: Request):
                ORDER BY v.data_venda DESC, v.id DESC"""
         ).fetchall()
 
-        # TASK_012 §4: o que já foi recebido de cada dívida vem das alocações
-        # gravadas junto ao lançamento — não de presunção. Dívida sem alocação
-        # deve o valor de face.
+        # TASK_012 §4/§5: o que já foi recebido de cada dívida vem das alocações
+        # gravadas junto ao lançamento — e a fórmula do saldo é a do serviço, a
+        # mesma das telas do financeiro. Dívida sem alocação deve o valor de
+        # face e é marcada como tal (`alocacoes_registradas = False`).
         ids_abertos = [f["id"] for f in fiados]
-        alocado_por_venda = {}
-        if ids_abertos:
-            alocado_por_venda = {
-                r["venda_id"]: Decimal(str(r["alocado"]))
-                for r in conn.execute(
-                    """SELECT venda_id, SUM(valor) AS alocado
-                       FROM fiado_alocacao
-                       WHERE tipo = 'divida' AND venda_id = ANY(%s)
-                       GROUP BY venda_id""", (ids_abertos,)).fetchall()}
+        import servico_fiado
+        alocado_por_venda = servico_fiado.alocado_por_venda(conn, ids_abertos)
 
         agrupado = defaultdict(lambda: {"vendas": [], "total": Decimal("0.00")})
         for f in fiados:
             f_dict = dict(f)
             tid = f_dict["fiado_trabalhador_id"]
-            f_dict["alocado"] = alocado_por_venda.get(f_dict["id"], Decimal("0.00"))
-            f_dict["saldo"] = max(
-                Decimal("0.00"),
-                Decimal(str(f_dict["total"]))
-                - Decimal(str(f_dict.get("fiado_credito_usado") or 0))
-                - f_dict["alocado"])
+            linha = servico_fiado.linha_de_saldo(
+                f_dict, alocado_por_venda.get(f_dict["id"], Decimal("0.00")),
+                tem_alocacao=f_dict["id"] in alocado_por_venda)
+            f_dict["saldo"] = linha["saldo"]
+            f_dict["alocado"] = linha["recebido"]
+            f_dict["alocacoes_registradas"] = linha["alocacoes_registradas"]
+            f_dict["sem_alocacao"] = not linha["alocacoes_registradas"]
             agrupado[tid]["trabalhador_nome"] = f_dict["trabalhador_nome"]
             agrupado[tid]["trabalhador_cpf"] = f_dict.get("trabalhador_cpf") or ""
             agrupado[tid]["fiado_limite"] = Decimal(str(f_dict.get("fiado_limite") or 0))

@@ -36,6 +36,168 @@ class FiadoInvalido(Exception):
         self.motivo = motivo
 
 
+def alocado_por_venda(conn, venda_ids):
+    """Quanto cada dívida já recebeu, somado das alocações gravadas (§4).
+
+    É a única forma de ler "recebido" no módulo: as telas de consulta usam a
+    mesma função que o recebimento usa para distribuir, então a conta exibida e
+    a conta escrita não podem divergir. Dívida ausente do resultado não tem
+    alocação registrada — e continua devendo o valor de face.
+    """
+    ids = [int(v) for v in venda_ids]
+    if not ids:
+        return {}
+    return {
+        r["venda_id"]: moeda(r["alocado"])
+        for r in conn.execute(
+            """SELECT venda_id, SUM(valor) AS alocado FROM fiado_alocacao
+               WHERE tipo = 'divida' AND venda_id = ANY(%s)
+               GROUP BY venda_id""", (ids,)).fetchall()
+    }
+
+
+def linha_de_saldo(venda, alocado, *, tem_alocacao):
+    """Os quatro números de uma dívida, na mesma conta para toda tela.
+
+    Valor original, crédito consumido na compra, recebido (alocado) e saldo —
+    o saldo nunca é negativo, e `tem_alocacao` é o que diz se o recebido é
+    comprovado ou se a linha vem do histórico sem alocação registrada.
+    """
+    original = moeda(venda["total"])
+    consumido = moeda(venda.get("fiado_credito_usado"))
+    recebido = moeda(alocado)
+    return {
+        "valor_original": original,
+        "credito_usado": consumido,
+        "recebido": recebido,
+        "alocacoes_registradas": tem_alocacao,
+        "saldo": max(ZERO, original - consumido - recebido),
+    }
+
+
+def fiados_em_aberto_para_consulta(conn, *, nome_like=None, limite=None):
+    """Fiado em aberto para as telas de consulta (TASK_012 §5).
+
+    Mesmo saldo do recebimento: valor original − crédito consumido − alocado,
+    nunca negativo. Os totais são calculados sobre TODAS as dívidas do recorte,
+    não sobre as exibidas — `limite` corta a lista, nunca o número, senão a tela
+    mostraria "total" de uma página. `sem_alocacao` conta as dívidas cujo
+    recebido não é comprovável (limitação do legado, exibida como tal).
+    """
+    filtro = " AND norm(COALESCE(t.nome_completo, '')) LIKE %s" if nome_like else ""
+    params_tot = [nome_like] if nome_like else []
+
+    base = ("""FROM vendas_pdv v
+              LEFT JOIN trabalhadores t ON t.id = v.fiado_trabalhador_id
+              LEFT JOIN (SELECT venda_id, SUM(valor) AS alocado
+                         FROM fiado_alocacao WHERE tipo = 'divida'
+                         GROUP BY venda_id) a ON a.venda_id = v.id
+              WHERE v.forma_pagamento = 'fiado' AND NOT v.fiado_pago
+                AND v.status = 'concluida'""" + filtro)
+
+    tot = conn.execute(
+        f"""SELECT COUNT(*) AS n,
+                   COALESCE(SUM(v.total), 0) AS original,
+                   COALESCE(SUM(GREATEST(v.total - v.fiado_credito_usado
+                                         - COALESCE(a.alocado, 0), 0)), 0) AS saldo,
+                   COALESCE(SUM(COALESCE(a.alocado, 0)), 0) AS recebido,
+                   COUNT(*) FILTER (WHERE a.venda_id IS NULL) AS sem_alocacao
+            {base}""", params_tot).fetchone()
+
+    sql = ("""SELECT v.id, v.data_venda, v.total, v.fiado_credito_usado,
+                     v.fiado_trabalhador_id, t.nome_completo,
+                     COALESCE(a.alocado, 0) AS alocado,
+                     (a.venda_id IS NOT NULL) AS tem_alocacao
+             """ + base + " ORDER BY v.data_venda DESC, v.id DESC")
+    params = list(params_tot)
+    if limite:
+        sql += " LIMIT %s"
+        params.append(int(limite))
+
+    linhas = []
+    for r in conn.execute(sql, params).fetchall():
+        d = dict(r)
+        d.update(linha_de_saldo(d, d["alocado"], tem_alocacao=d["tem_alocacao"]))
+        linhas.append(d)
+
+    return linhas, {
+        "n": tot["n"],
+        "original": moeda(tot["original"]),
+        "recebido": moeda(tot["recebido"]),
+        "saldo": moeda(tot["saldo"]),
+        "sem_alocacao": tot["sem_alocacao"],
+    }
+
+
+def saldo_por_trabalhador(conn):
+    """Saldo devedor atual de cada trabalhador com fiado em aberto (§5).
+
+    As telas que listam trabalhadores (relatório de fiados, ficha do
+    trabalhador) exibem o MESMO número do extrato — a conta é feita aqui, uma
+    vez, e não copiada página a página (era assim que divergia).
+    """
+    saida = {}
+    for r in conn.execute(
+        """SELECT v.fiado_trabalhador_id AS tid,
+                  COUNT(*) AS n,
+                  COALESCE(SUM(GREATEST(v.total - v.fiado_credito_usado
+                                        - COALESCE(a.alocado, 0), 0)), 0) AS saldo,
+                  COUNT(*) FILTER (WHERE a.venda_id IS NULL) AS sem_alocacao
+           FROM vendas_pdv v
+           LEFT JOIN (SELECT venda_id, SUM(valor) AS alocado
+                      FROM fiado_alocacao WHERE tipo = 'divida'
+                      GROUP BY venda_id) a ON a.venda_id = v.id
+           WHERE v.forma_pagamento = 'fiado' AND NOT v.fiado_pago
+             AND v.status = 'concluida' AND v.fiado_trabalhador_id IS NOT NULL
+           GROUP BY v.fiado_trabalhador_id""").fetchall():
+        saida[r["tid"]] = {"dividas": r["n"], "saldo": moeda(r["saldo"]),
+                           "sem_alocacao": r["sem_alocacao"]}
+    return saida
+
+
+def historico_fiado(conn, trabalhador_id):
+    """Histórico do fiado de um trabalhador para relatório (TASK_012 §5).
+
+    Traz quitadas e canceladas também, cada venda com valor original, crédito
+    consumido, recebido e saldo — o destino do dinheiro aparece ligado ao
+    lançamento, não deduzido do texto. Cancelada não compõe os totais (regra da
+    TASK_007) mas continua listada. `crédito` do trabalhador é devolvido à
+    parte: crédito NÃO abate saldo devedor exibido, cada um no seu número.
+    """
+    vendas = [dict(r) for r in conn.execute(
+        """SELECT v.id, v.total, v.fiado_credito_usado, v.data_venda,
+                  v.fiado_pago, v.fiado_data_pagamento, v.status,
+                  v.forma_pagamento, c.nome AS caixa_nome
+           FROM vendas_pdv v
+           JOIN caixas c ON c.id = v.caixa_id
+           WHERE v.fiado_trabalhador_id = %s AND v.forma_pagamento = 'fiado'
+           ORDER BY v.data_venda DESC, v.id DESC""", (trabalhador_id,)).fetchall()]
+
+    alocadas = alocado_por_venda(conn, [v["id"] for v in vendas])
+    gasto = recebido_em_dividas = em_aberto = ZERO
+    quitadas = sem_alocacao = 0
+    for v in vendas:
+        v.update(linha_de_saldo(v, alocadas.get(v["id"], ZERO),
+                               tem_alocacao=v["id"] in alocadas))
+        if v["status"] == "cancelada":
+            continue
+        gasto += v["valor_original"]
+        recebido_em_dividas += v["recebido"]
+        if v["fiado_pago"]:
+            quitadas += 1
+        elif not v["alocacoes_registradas"]:
+            sem_alocacao += 1
+        em_aberto += v["saldo"]
+
+    return vendas, {
+        "gasto": gasto,
+        "recebido": recebido_em_dividas,
+        "em_aberto": em_aberto,
+        "quitadas": quitadas,
+        "sem_alocacao": sem_alocacao,
+    }
+
+
 def dividas_em_aberto(conn, trabalhador_id, *, travar=False, venda_ids=None):
     """Dívidas de fiado em aberto, com valor original, já recebido e saldo.
 
@@ -72,13 +234,7 @@ def dividas_em_aberto(conn, trabalhador_id, *, travar=False, venda_ids=None):
         return []
 
     ids = [l["id"] for l in linhas]
-    alocadas = {
-        r["venda_id"]: moeda(r["alocado"])
-        for r in conn.execute(
-            """SELECT venda_id, SUM(valor) AS alocado FROM fiado_alocacao
-               WHERE tipo = 'divida' AND venda_id = ANY(%s)
-               GROUP BY venda_id""", (ids,)).fetchall()
-    }
+    alocadas = alocado_por_venda(conn, ids)
 
     dividas = []
     for l in linhas:

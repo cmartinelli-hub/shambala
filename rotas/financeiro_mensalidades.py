@@ -13,6 +13,7 @@ concorrência da geração não criem segunda cobrança.
 """
 import re
 from datetime import date
+from decimal import Decimal
 
 from banco import (
     PREDICADO_MENSALIDADE, UQ_MENSALIDADE_COMPETENCIA, conectar, conta_id_por_tipo,
@@ -106,7 +107,7 @@ def sincronizar_mensalidades(conn, trab: dict) -> int:
     Não faz nada se inativo ou valor_mensalidade <= 0.
 
     Retorna quantas obrigações NOVAS este chamador criou (0 = já gerada)."""
-    valor = float(trab["valor_mensalidade"] or 0)
+    valor = Decimal(str(trab["valor_mensalidade"] or 0))
     if not trab.get("ativo", 1) or valor <= 0:
         return 0
     dia_venc = int(trab["dia_vencimento"] or 10)
@@ -133,7 +134,7 @@ def atualizar_pendentes_futuras(conn, trab: dict) -> None:
     hoje = date.today()
     corte = f"{hoje.year:04d}-{hoje.month:02d}-01"
     dia_venc = int(trab["dia_vencimento"] or 10)
-    valor = float(trab["valor_mensalidade"] or 0)
+    valor = Decimal(str(trab["valor_mensalidade"] or 0))
     rows = conn.execute(
         """SELECT id, data_movimentacao, competencia FROM financeiro_movimentacoes
            WHERE trabalhador_id = %s AND categoria = 'mensalidade'

@@ -3,6 +3,7 @@ import qrcode
 import base64
 import io
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import quote_plus
 from fastapi import APIRouter, Request, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -95,6 +96,18 @@ _MSGS_OK = {
 
 def _ultimo_dia(ano: int, mes: int) -> int:
     return calendar.monthrange(ano, mes)[1]
+
+
+def _dec(valor) -> Decimal:
+    """Decimal de duas casas, arredondamento comercial — a política do
+    financeiro. `float` somado a `NUMERIC` é como centavo se perde."""
+    if isinstance(valor, float):
+        valor = f"{valor:.2f}"
+    return Decimal(str(valor if valor is not None else 0)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+ZERO = Decimal("0.00")
 
 
 def _periodo_padrao() -> tuple[str, str]:
@@ -298,6 +311,27 @@ async def dashboard(
                 ORDER BY c.id""",
             params).fetchall()
 
+        # Acumulado da conta até a data final do recorte (TASK_012 §5): o
+        # período da consulta responde "o que aconteceu", o acumulado responde
+        # "quanto há nesta conta" — antes a tela só tinha o primeiro e o
+        # operador lia movimento mensal como se fosse saldo. Não é conciliação
+        # bancária: é o que os lançamentos pagos dizem, e a transferência entra
+        # na conta de origem e na de destino (sai do resultado global, fica no
+        # histórico de cada conta).
+        acumulado = {
+            r["conta_id"]: _dec(r["acumulado"])
+            for r in conn.execute(
+                """SELECT fm.conta_id,
+                          COALESCE(SUM(CASE WHEN fm.tipo = 'entrada'
+                                            THEN fm.valor ELSE -fm.valor END), 0) AS acumulado
+                   FROM financeiro_movimentacoes fm
+                   WHERE fm.status = 'pago' AND fm.conta_id IS NOT NULL
+                     AND fm.data_movimentacao <= %s
+                   GROUP BY fm.conta_id""", (ate_uso,)).fetchall()
+        }
+        contas_mov = [dict(cm) | {"acumulado": acumulado.get(cm["id"], ZERO)}
+                      for cm in contas_mov]
+
         historico_ambiguo = conn.execute(
             """SELECT COUNT(*) AS c
                FROM financeiro_movimentacoes fm
@@ -326,26 +360,13 @@ async def dashboard(
                     LIMIT %s OFFSET %s""",
                 [de_uso, ate_uso, por_uso, (pagina_uso - 1) * por_uso]).fetchall()
 
-            fiado_where = ("WHERE v.forma_pagamento = 'fiado' AND NOT v.fiado_pago "
-                           "AND v.status = 'concluida'")
-            fiado_params: list = []
-            if termo:
-                fiado_where += " AND norm(COALESCE(t.nome_completo, '')) LIKE %s"
-                fiado_params.append(like)
-            fiados = conn.execute(
-                f"""SELECT v.id, v.data_venda, v.total, t.nome_completo,
-                           v.fiado_trabalhador_id
-                    FROM vendas_pdv v
-                    LEFT JOIN trabalhadores t ON t.id = v.fiado_trabalhador_id
-                    {fiado_where}
-                    ORDER BY v.data_venda DESC, v.id DESC
-                    LIMIT 50""", fiado_params).fetchall()
-            fiado_tot = conn.execute(
-                f"""SELECT COUNT(*) AS n,
-                           COALESCE(SUM(v.total), 0) AS total
-                    FROM vendas_pdv v
-                    LEFT JOIN trabalhadores t ON t.id = v.fiado_trabalhador_id
-                    {fiado_where}""", fiado_params).fetchone()
+            # Fiado em aberto: a conta de saldo é a do recebimento (§4/§5) —
+            # valor original − crédito consumido − alocado, nunca negativa. O
+            # `limite` corta a LISTA; os totais vêm de todas as dívidas do
+            # recorte, senão a nota diria "total" de uma página.
+            import servico_fiado
+            fiados, fiado_tot = servico_fiado.fiados_em_aberto_para_consulta(
+                conn, nome_like=like if termo else None, limite=50)
             n_pend_total = n_pend
         else:
             pendentes, fiados, fiado_tot = [], [], None
@@ -402,11 +423,11 @@ async def dashboard(
         "q": q, "por": por_uso, "pagina": pagina_uso, "paginas": paginas,
         "recusas": recusas,
         "msg_ok": _MSGS_OK.get(msg, ""),
-        "recebimentos": float(tot["receb"]),
-        "pagamentos": float(tot["pag"]),
-        "resultado": float(tot["receb"]) - float(tot["pag"]),
-        "a_receber": float(pend["a_receber"]),
-        "a_pagar": float(pend["a_pagar"]),
+        "recebimentos": _dec(tot["receb"]),
+        "pagamentos": _dec(tot["pag"]),
+        "resultado": _dec(tot["receb"]) - _dec(tot["pag"]),
+        "a_receber": _dec(pend["a_receber"]),
+        "a_pagar": _dec(pend["a_pagar"]),
         "filtros_ativos": filtros_ativos,
         "n_total": n_total,
         "inicio_exibido": (pagina_uso - 1) * por_uso + 1 if n_total else 0,
@@ -464,6 +485,20 @@ async def detalhe_lancamento(request: Request, mov_id: int, volta: str = ""):
                ORDER BY id""",
             (mov_id,)).fetchall()
 
+        # Destino do dinheiro (TASK_012 §4/§5): o que este lançamento abatou,
+        # lido das alocações gravadas — a mesma fonte dos saldos exibidos.
+        alocacoes = conn.execute(
+            """SELECT a.id, a.tipo, a.venda_id, a.valor, a.trabalhador_id,
+                      v.data_venda, v.fiado_trabalhador_id,
+                      t.nome_completo AS trabalhador_nome
+               FROM fiado_alocacao a
+               LEFT JOIN vendas_pdv v ON v.id = a.venda_id
+               LEFT JOIN trabalhadores t ON t.id = COALESCE(v.fiado_trabalhador_id,
+                                                            a.trabalhador_id)
+               WHERE a.financeiro_id = %s
+               ORDER BY a.tipo, a.venda_id""",
+            (mov_id,)).fetchall()
+
     d = dict(linha)
     return templates.TemplateResponse("financeiro/detalhe.html", {
         "request": request,
@@ -474,6 +509,7 @@ async def detalhe_lancamento(request: Request, mov_id: int, volta: str = ""):
         "rotulo_conta": ROTULOS_TIPO_CONTA.get(d.get("conta_tipo"),
                                                d.get("conta_tipo") or ""),
         "eventos": [dict(e) for e in eventos],
+        "alocacoes": [dict(a) | {"valor": _dec(a["valor"])} for a in alocacoes],
         "volta": volta,
     })
 
@@ -529,6 +565,21 @@ async def salvar_nova(
 
     data_ref = data_movimentacao.strip() or date.today().isoformat()
 
+    # Valor é dinheiro: entra pelo parser do financeiro (duas casas, teto do
+    # NUMERIC, recusa legível) antes de qualquer reserva de tentativa. `float()`
+    # aqui derrubava a requisição (500) ou aceitava `1,234` como mil e duzentos.
+    from servico_sessao import moeda as _moeda_form, SessaoInvalida
+
+    def _recusa(cod: str):
+        return RedirectResponse(url=f"/financeiro/nova?erro={cod}", status_code=303)
+
+    try:
+        valor_dec = _moeda_form(valor, "valor")
+    except SessaoInvalida:
+        return _recusa("valor_invalido")
+    if valor_dec <= ZERO:
+        return _recusa("valor_invalido")
+
     # TASK_012 §3: mensalidade lançada à mão entra pela mesma chave do resto do
     # módulo (trabalhador, competência). Sem período legível não há competência
     # inequívoca — o período é recusado com mensagem simples, e nada é escrito.
@@ -544,7 +595,7 @@ async def salvar_nova(
             chave_tentativa = exigir_reserva(
                 conn, idempotencia=idempotencia, operacao="lancamento_novo",
                 autor_id=atendente["id"],
-                corpo={"tipo": tipo, "categoria": categoria, "valor": valor,
+                corpo={"tipo": tipo, "categoria": categoria, "valor": str(valor_dec),
                        "data": data_ref, "descricao": descricao.strip(),
                        "trabalhador_id": trabalhador_id or None,
                        "pessoa_id": pessoa_id or None, "status": status,
@@ -561,7 +612,7 @@ async def salvar_nova(
                    (tipo, categoria, valor, data_movimentacao, competencia, descricao,
                     trabalhador_id, pessoa_id, status, pix_copiadecola, conta_id)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                (tipo, categoria, float(valor or 0), data_ref, competencia,
+                (tipo, categoria, valor_dec, data_ref, competencia,
                  descricao.strip(),
                  int(trabalhador_id) if trabalhador_id else None,
                  int(pessoa_id) if pessoa_id else None,
@@ -635,7 +686,7 @@ async def mensalidades(
                         "competencia": comp,
                         "mes_ref": comp,
                         "data_vencimento": venc,
-                        "valor": float(r["valor"]),
+                        "valor": _dec(r["valor"]),
                         "vencido": venc < hoje_iso,
                         "corrente": comp == mes_atual,
                         "futuro": comp > mes_atual,
@@ -669,7 +720,7 @@ async def mensalidades(
                         "data_vencimento": str(r["data_movimentacao"])[:10],
                         "data_pagamento": (str(r["data_pagamento"])[:10]
                                            if r["data_pagamento"] else None),
-                        "valor": float(r["valor"]),
+                        "valor": _dec(r["valor"]),
                     })
 
         from servico_sessao import contas_por_tipo, sessoes_abertas
@@ -682,7 +733,7 @@ async def mensalidades(
         "request": request,
         "atendente": atendente,
         "trabalhador": trabalhador,
-        "valor_mensal": float(trabalhador["valor_mensalidade"] or 0) if trabalhador else 0,
+        "valor_mensal": _dec(trabalhador["valor_mensalidade"]) if trabalhador else ZERO,
         "dia_vencimento": (trabalhador or {}).get("dia_vencimento") or 10,
         "pendentes": pendentes,
         "conflito": conflito,
@@ -934,7 +985,18 @@ async def gerar_pix(
     if redir:
         return redir
 
-    valor_float = float(valor or 0)
+    # PIX estático é uma consulta: não pode derrubar a aplicação por causa de
+    # texto no campo. Valor ilegível → mensagem, nenhum QR é gerado.
+    try:
+        valor_dec = _dec(valor)
+    except InvalidOperation:
+        return HTMLResponse(
+            "<h1>Valor inválido</h1><p>O valor do PIX não é um número. "
+            "Nenhum código foi gerado.</p>", status_code=400)
+    if valor_dec <= ZERO:
+        return HTMLResponse(
+            "<h1>Valor insuficiente</h1><p>Informe um valor maior que zero "
+            "para gerar o PIX.</p>", status_code=400)
 
     # Se não tem chave, busca do banco
     if not chave:
@@ -944,7 +1006,7 @@ async def gerar_pix(
             ).fetchone()
             chave = row["valor"] if row else ""
 
-    pix_code = gerar_payload_pix(chave, valor_float, descricao)
+    pix_code = gerar_payload_pix(chave, float(valor_dec), descricao)
 
     qr = qrcode.QRCode(version=1, box_size=10, border=2)
     qr.add_data(pix_code)
@@ -1092,6 +1154,21 @@ async def relatorios_financeiro(
 
     filtros = []
     params = []
+    recusas = []
+
+    # Datas validadas antes de virar filtro: texto solto no LIKE/comparação é
+    # a tela exibindo "nenhum resultado" para o que era um erro de digitação.
+    for rotulo, valor in (("inicial", data_inicio), ("final", data_fim)):
+        if valor:
+            try:
+                date.fromisoformat(valor.strip())
+            except ValueError:
+                recusas.append(f"Data {rotulo} “{valor}” inválida — o filtro não "
+                               "foi aplicado.")
+                if rotulo == "inicial":
+                    data_inicio = ""
+                else:
+                    data_fim = ""
 
     if data_inicio:
         filtros.append("fm.data_movimentacao >= %s")
@@ -1101,32 +1178,52 @@ async def relatorios_financeiro(
         filtros.append("fm.data_movimentacao <= %s")
         params.append(data_fim)
 
-    if tipo:
+    if tipo in ("entrada", "saida"):
         filtros.append("fm.tipo = %s")
         params.append(tipo)
+    elif tipo:
+        recusas.append("Tipo fora de Entrada/Saída — o filtro não foi aplicado.")
+        tipo = ""
 
-    if categoria:
+    if categoria in ROTULOS_CATEGORIA:
         filtros.append("fm.categoria = %s")
         params.append(categoria)
+    elif categoria:
+        recusas.append("Categoria desconhecida — o filtro não foi aplicado.")
+        categoria = ""
 
     if conta_id:
-        filtros.append("fm.conta_id = %s")
-        params.append(int(conta_id))
+        if conta_id.strip().isdigit():
+            filtros.append("fm.conta_id = %s")
+            params.append(int(conta_id))
+        else:
+            recusas.append("Conta inválida — o filtro não foi aplicado.")
+            conta_id = ""
 
     where = ""
     if filtros:
         where = "WHERE " + " AND ".join(filtros)
 
     with conectar() as conn:
-        total_entradas = conn.execute(
-            f"SELECT COALESCE(SUM(CASE WHEN fm.tipo='entrada' THEN fm.valor ELSE 0 END), 0) AS total FROM financeiro_movimentacoes fm {where}",
+        # Um só varrimento, com os totais SEPARADOS por situação (TASK_012 §5):
+        # "Total Entradas" somando pendente+cancelado é lido como dinheiro
+        # recebido, e não é. A tela passa a mostrar obrigação e dinheiro como
+        # linhas próprias, e o recorte de data diz qual data é.
+        tot = conn.execute(
+            f"""SELECT COALESCE(SUM(CASE WHEN fm.tipo='entrada' AND fm.status='pago'
+                                         THEN fm.valor END), 0) AS entradas_pagas,
+                       COALESCE(SUM(CASE WHEN fm.tipo='saida' AND fm.status='pago'
+                                         THEN fm.valor END), 0) AS saidas_pagas,
+                       COALESCE(SUM(CASE WHEN fm.tipo='entrada' AND fm.status='pendente'
+                                         THEN fm.valor END), 0) AS entradas_pendentes,
+                       COALESCE(SUM(CASE WHEN fm.tipo='saida' AND fm.status='pendente'
+                                         THEN fm.valor END), 0) AS saidas_pendentes,
+                       COALESCE(SUM(CASE WHEN fm.status='cancelado' THEN fm.valor END), 0) AS cancelados,
+                       COUNT(*) FILTER (WHERE fm.categoria IN ('transferencia','sangria')) AS transferencias,
+                       COUNT(*) AS n
+                FROM financeiro_movimentacoes fm {where}""",
             params,
-        ).fetchone()["total"]
-
-        total_saidas = conn.execute(
-            f"SELECT COALESCE(SUM(CASE WHEN fm.tipo='saida' THEN fm.valor ELSE 0 END), 0) AS total FROM financeiro_movimentacoes fm {where}",
-            params,
-        ).fetchone()["total"]
+        ).fetchone()
 
         movs = conn.execute(
             f"""SELECT fm.*,
@@ -1150,9 +1247,11 @@ async def relatorios_financeiro(
     return templates.TemplateResponse("financeiro/relatorios.html", {
         "request": request,
         "atendente": atendente,
-        "total_entradas": float(total_entradas),
-        "total_saidas": float(total_saidas),
+        "tot": {k: (v if k in ("n", "transferencias") else _dec(v))
+                for k, v in dict(tot).items()},
         "movs": [dict(m) for m in movs],
+        "recusas": recusas,
+        "rotulos_categoria": ROTULOS_CATEGORIA,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "tipo": tipo,
@@ -1164,6 +1263,21 @@ async def relatorios_financeiro(
 
 # ── Relatório de Mensalidades (extrato do mês / não pagas / por trabalhador) ──
 
+# Qual data o filtro "Mês" usa. A ordem exige que o filtro explicite a data:
+# competência é o mês A QUE A COBRANÇA SE REFERE; vencimento é quando deveria
+# ser paga; pagamento é quando o dinheiro entrou. São perguntas diferentes e a
+# tela diz qual está fazendo.
+_DATA_USO = {
+    "comp": ("Competência — o mês a que a cobrança se refere",
+             "(fm.competencia = %s OR (fm.competencia IS NULL "
+             "AND substr(fm.data_movimentacao, 1, 7) = %s))"),
+    "venc": ("Vencimento — a data em que a mensalidade vence",
+             "substr(fm.data_movimentacao, 1, 7) = %s"),
+    "pag": ("Data do pagamento — o mês em que o dinheiro entrou",
+            "substr(fm.data_pagamento, 1, 7) = %s"),
+}
+
+
 @router.get("/mensalidades/relatorio", response_class=HTMLResponse)
 async def relatorio_mensalidades(
     request: Request,
@@ -1171,31 +1285,47 @@ async def relatorio_mensalidades(
     status: str = "",
     trabalhador_id: int = 0,
     visao: str = "mes",
+    data_uso: str = "comp",
 ):
     atendente, redir = _guard(request)
     if redir:
         return redir
 
-    hoje = date.today()
-    mes_ref = mes if mes else f"{hoje.year}-{hoje.month:02d}"
+    from rotas.relatorios import _hoje_sp
+    from rotas.financeiro_mensalidades import normalizar_competencia
+    hoje = _hoje_sp()
+    recusa = ""
+    if not data_uso or data_uso not in _DATA_USO:
+        data_uso = "comp"
+    mes_ref = normalizar_competencia(mes) if mes.strip() else ""
+    if not mes_ref:
+        if mes.strip():
+            recusa = (f"Período “{mes.strip()}” não é um mês válido (AAAA-MM) — o "
+                      "relatório usou o mês corrente.")
+        mes_ref = f"{hoje.year}-{hoje.month:02d}"
+    rotulo_data, clausula = _DATA_USO[data_uso]
 
     with conectar() as conn:
         trabalhadores = conn.execute(
             "SELECT id, nome_completo FROM trabalhadores ORDER BY nome_completo"
         ).fetchall()
 
-        filtros = ["fm.categoria = 'mensalidade'", "fm.data_movimentacao LIKE %s"]
-        params = [f"{mes_ref}%"]
+        if data_uso == "comp":
+            params_mes = [mes_ref, mes_ref]
+        else:
+            params_mes = [mes_ref]
+        filtros = ["fm.categoria = 'mensalidade'", clausula]
+        params = list(params_mes)
         if status:
             filtros.append("fm.status = %s")
             params.append(status)
         if trabalhador_id:
             filtros.append("fm.trabalhador_id = %s")
-            params.append(trabalhador_id)
+            params.append(int(trabalhador_id))
         where = "WHERE " + " AND ".join(filtros)
 
         if visao == "trabalhador":
-            linhas = conn.execute(
+            linhas = [dict(r) for r in conn.execute(
                 f"""SELECT t.id, t.nome_completo,
                            COALESCE(SUM(CASE WHEN fm.status='pago' THEN fm.valor ELSE 0 END),0) AS pago,
                            COALESCE(SUM(CASE WHEN fm.status='pendente' THEN fm.valor ELSE 0 END),0) AS pendente,
@@ -1206,16 +1336,23 @@ async def relatorio_mensalidades(
                     GROUP BY t.id, t.nome_completo
                     ORDER BY t.nome_completo""",
                 [hoje.isoformat()] + params,
-            ).fetchall()
+            ).fetchall()]
             resumo = None
         else:
-            linhas = conn.execute(
+            linhas = []
+            for r in conn.execute(
                 f"""SELECT fm.*, t.nome_completo AS trabalhador_nome
                     FROM financeiro_movimentacoes fm
                     LEFT JOIN trabalhadores t ON t.id = fm.trabalhador_id
-                    {where} ORDER BY fm.data_movimentacao, t.nome_completo""",
+                    {where}
+                    ORDER BY COALESCE(fm.competencia, substr(fm.data_movimentacao, 1, 7)),
+                             fm.data_movimentacao, t.nome_completo""",
                 params,
-            ).fetchall()
+            ).fetchall():
+                d = dict(r)
+                d["competencia"] = d["competencia"] or str(d["data_movimentacao"])[:7]
+                d["competencia_legada"] = r["competencia"] is None
+                linhas.append(d)
             resumo = conn.execute(
                 f"""SELECT COALESCE(SUM(CASE WHEN fm.status='pago' THEN fm.valor ELSE 0 END),0) AS total_pago,
                            COALESCE(SUM(CASE WHEN fm.status='pendente' THEN fm.valor ELSE 0 END),0) AS total_pendente,
@@ -1230,9 +1367,14 @@ async def relatorio_mensalidades(
         "mes_ref": mes_ref,
         "status": status,
         "visao": visao,
+        "data_uso": data_uso,
+        "rotulos_data": [(chave, _DATA_USO[chave][0]) for chave in _DATA_USO],
+        "rotulo_data": rotulo_data,
+        "recusa": recusa,
+        "hoje_sp": hoje.isoformat(),
         "trabalhador_id": trabalhador_id,
         "trabalhadores": [dict(t) for t in trabalhadores],
-        "linhas": [dict(l) for l in linhas],
+        "linhas": linhas,
         "resumo": dict(resumo) if resumo else None,
     })
 
@@ -1241,26 +1383,36 @@ async def relatorio_mensalidades(
 
 @router.get("/fiados", response_class=HTMLResponse)
 async def relatorio_fiados(request: Request, trabalhador_id: int = 0):
+    """Relatório de fiado por trabalhador (TASK_012 §5).
+
+    Cada venda mostra valor original, crédito consumido na compra, o que já foi
+    RECEBIDO contra ela (das alocações ligadas ao lançamento) e o saldo — e não
+    um único "pendente" que tratava dívida abatida em parte como se estivesse
+    inteira. Crédito do trabalhador aparece à parte: crédito não quita dívida
+    exibida, são números de naturezas diferentes.
+    """
     atendente, redir = _guard(request)
     if redir:
         return redir
 
+    import servico_fiado
+
     with conectar() as conn:
-        # Lista todos os trabalhadores com fiado
-        trabalhadores = conn.execute(
+        trabalhadores = [dict(t) for t in conn.execute(
             """SELECT id, nome_completo, cpf,
                       fiado_limite, fiado_credito, fiado_data_encerramento
                FROM trabalhadores
                WHERE ativo = 1
                ORDER BY nome_completo"""
-        ).fetchall()
+        ).fetchall()]
 
-        vendas = []
+        saldos = servico_fiado.saldo_por_trabalhador(conn)
+        for t in trabalhadores:
+            t["saldo"] = saldos.get(t["id"], {}).get("saldo", ZERO)
+            t["dividas"] = saldos.get(t["id"], {}).get("dividas", 0)
+
         trab_sel = None
-        total_gasto = 0.0
-        total_pago = 0.0
-        total_pendente = 0.0
-
+        vendas, totais = [], None
         if trabalhador_id:
             trab_sel = conn.execute(
                 """SELECT id, nome_completo, cpf, fiado_limite,
@@ -1270,38 +1422,18 @@ async def relatorio_fiados(request: Request, trabalhador_id: int = 0):
             ).fetchone()
 
             if trab_sel:
-                vendas = conn.execute(
-                    """SELECT v.*, c.nome AS caixa_nome
-                       FROM vendas_pdv v
-                       JOIN caixas c ON c.id = v.caixa_id
-                       WHERE v.fiado_trabalhador_id = %s
-                         AND v.forma_pagamento = 'fiado'
-                       ORDER BY v.data_venda DESC, v.id DESC""",
-                    (trabalhador_id,)
-                ).fetchall()
-
-                for v in vendas:
-                    # TASK_007: canceladas não compõem os totais; continuam
-                    # listadas como histórico explícito (a listagem já as traz,
-                    # identificadas pelo status).
-                    if v["status"] == "cancelada":
-                        continue
-                    v_total = float(v["total"])
-                    total_gasto += v_total
-                    if v["fiado_pago"]:
-                        total_pago += v_total
-                    else:
-                        total_pendente += v_total
+                trab_sel = dict(trab_sel)
+                trab_sel["fiado_credito"] = _dec(trab_sel["fiado_credito"])
+                trab_sel["fiado_limite"] = _dec(trab_sel["fiado_limite"])
+                vendas, totais = servico_fiado.historico_fiado(conn, trabalhador_id)
 
     return templates.TemplateResponse("financeiro/fiado_trabalhador.html", {
         "request": request,
         "atendente": atendente,
-        "trabalhadores": [dict(t) for t in trabalhadores],
-        "trabalhador_sel": dict(trab_sel) if trab_sel else None,
-        "vendas": [dict(v) for v in vendas],
-        "total_gasto": total_gasto,
-        "total_pago": total_pago,
-        "total_pendente": total_pendente,
+        "trabalhadores": trabalhadores,
+        "trabalhador_sel": trab_sel,
+        "vendas": vendas,
+        "totais": totais,
     })
 
 
@@ -1338,19 +1470,17 @@ async def salvar_transferencia(
     if redir:
         return redir
 
-    from decimal import Decimal, InvalidOperation
+    # Mesmo parser do lançamento novo: duas casas ROUND_HALF_UP e teto do
+    # NUMERIC. O `quantize` solto arredondava meio centavo para par.
     from servico_idempotencia import (
         TentativaJaRegistrada, TentativaRecusada, confirmar, exigir_reserva,
     )
-
+    from servico_sessao import SessaoInvalida, moeda as _moeda_form
     try:
-        valor_dec = Decimal(valor.strip().replace(",", ".")).quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError, AttributeError):
+        valor_dec = _moeda_form(valor, "valor")
+    except SessaoInvalida:
         return RedirectResponse(url="/financeiro/transferir?erro=valor_invalido",
                                 status_code=303)
-
-    if valor_dec <= 0:
-        return RedirectResponse(url="/financeiro/transferir?erro=valor_invalido", status_code=303)
 
     if conta_origem == conta_destino:
         return RedirectResponse(url="/financeiro/transferir?erro=contas_iguais", status_code=303)

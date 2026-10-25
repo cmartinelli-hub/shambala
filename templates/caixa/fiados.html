@@ -230,6 +230,12 @@
             <div style="font-size:1.3rem;font-weight:900;color:#c0392b">
                 Dívida: R$ {{ "%.2f"|format(grupo.total) }}
             </div>
+            {% set _sem_prova = grupo.vendas | selectattr("sem_alocacao") | list %}
+            {% if _sem_prova %}
+            <div style="font-size:.75rem;color:#a1660f;max-width:320px">{{ _sem_prova|length }}
+                dívida(s) anteriores ao registro de recebimentos: o valor mostrado é o de
+                face — nada foi abatido por presunção.</div>
+            {% endif %}
             <div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end">
                 <button class="btn btn-sm btn-primario" onclick="togglePagar({{ tid }}, {{ grupo.total }})">💰 Receber Pagamento</button>
                 <button class="btn btn-sm btn-secundario" onclick="toggleCredito({{ tid }})">➕ Crédito</button>
@@ -266,6 +272,9 @@
                             {% endif %}
                             {% if v.alocado and v.alocado > 0 %}
                             <small style="color:#1da851">(já recebeu R$ {{ "%.2f"|format(v.alocado) }})</small>
+                            {% endif %}
+                            {% if v.sem_alocacao %}
+                            <small style="color:#a1660f">(histórico: nenhum recebimento registrado)</small>
                             {% endif %}
                         </span>
                     </label>

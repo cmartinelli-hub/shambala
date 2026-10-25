@@ -140,7 +140,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
         <h3 style="margin:0">👤 {{ trabalhador.nome_completo }}</h3>
         <span style="font-size:.9rem;color:var(--cor-texto-suave)">
-            Mensalidade: <strong>R$ {{ valor_mensal|replace('.', ',') }}</strong> — vencimento dia {{ dia_vencimento }}
+            Mensalidade: <strong>{{ valor_mensal|moeda }}</strong> — vencimento dia {{ dia_vencimento }}
         </span>
     </div>
 
@@ -161,7 +161,7 @@
                     {% if p.futuro %}<span style="color:var(--cor-texto-suave);font-weight:600;font-size:.75rem"> FUTURA</span>{% endif %}
                 </td>
                 <td>{{ p.data_vencimento|data_br }}</td>
-                <td>R$ {{ p.valor|replace('.', ',') }}</td>
+                <td>{{ p.valor|moeda }}</td>
                 <td>
                     {% if p.futuro %}
                     <button type="button" class="btn btn-secundario" style="padding:.1rem .5rem;font-size:.75rem"
@@ -247,7 +247,7 @@
             <td>{{ pr.competencia }}</td>
             <td>{{ pr.data_vencimento|data_br }}</td>
             <td>{{ pr.data_pagamento|data_br if pr.data_pagamento else '—' }}</td>
-            <td>R$ {{ pr.valor|replace('.', ',') }}</td>
+            <td>{{ pr.valor|moeda }}</td>
             <td><button class="btn btn-secundario" style="padding:.25rem .6rem;font-size:.85rem"
                         onclick="reimprimir({{ pr.id }})">🖨 Reimprimir</button></td>
         </tr>
@@ -289,15 +289,21 @@ const _idsPagos = {{ (pago.split(',') if pago else []) | tojson }};
 let _totalAtual = 0;
 
 function fmtVal(v) {
-    return v.toFixed(2).replace('.', ',');
+    // Ponto de milhar + vírgula decimal: R$ 1.234,56 (TASK_012 §5 — a tela não
+    // pode mostrar "1234.5" nem perder centavo ao somar floats).
+    const Neg = v < 0;
+    const [int, dec] = Math.abs(v).toFixed(2).split('.');
+    return (Neg ? '-' : '') + int.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + dec;
 }
 
 function recalcular() {
-    let total = 0;
-    document.querySelectorAll('.cb-pendente:checked').forEach(cb => total += parseFloat(cb.dataset.valor));
-    _totalAtual = total;
-    document.getElementById('total-resumo').textContent = fmtVal(total);
-    document.getElementById('btn-receber').disabled = total <= 0;
+    // Soma em centavos: somar reais em float é como centavo se perde.
+    let centavos = 0;
+    document.querySelectorAll('.cb-pendente:checked').forEach(
+        cb => centavos += Math.round(parseFloat(cb.dataset.valor) * 100));
+    _totalAtual = centavos / 100;
+    document.getElementById('total-resumo').textContent = fmtVal(_totalAtual);
+    document.getElementById('btn-receber').disabled = centavos <= 0;
 }
 
 // ── Autocomplete de trabalhador ─────────────────────────────────────────────

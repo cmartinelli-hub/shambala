@@ -2,13 +2,20 @@
 {% block titulo %}Fiados por Trabalhador — Financeiro{% endblock %}
 
 {% block conteudo %}
-<div class="cabecalho-secao">
-    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+<div class="fin-cabecalho">
+    <div>
         <h2 style="margin:0">Fiados por Trabalhador</h2>
+        <p class="fin-periodo">O que foi comprado a fiado, o que já foi recebido contra cada
+            dívida e quanto resta.</p>
     </div>
-    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-        <a href="/financeiro" class="btn btn-primario btn-sm">← Financeiro</a>
-        <a href="/caixa/fiados" class="btn btn-secundario btn-sm">📝 Fiados pendentes</a>
+    <div class="fin-acoes">
+        <nav class="fin-nav">
+            <a href="/financeiro">← Financeiro</a>
+            <a href="/caixa/fiados">Receber pagamento</a>
+            {% if trabalhador_sel %}
+            <a href="/caixa/fiados/extrato/{{ trabalhador_sel.id }}">Extrato do trabalhador</a>
+            {% endif %}
+        </nav>
     </div>
 </div>
 
@@ -20,46 +27,73 @@
             <option value="">Selecione um trabalhador…</option>
             {% for t in trabalhadores %}
             <option value="{{ t.id }}" {% if trabalhador_sel and trabalhador_sel.id == t.id %}selected{% endif %}>
-                {{ t.nome_completo }}{% if t.cpf %} — {{ t.cpf }}{% endif %}
+                {{ t.nome_completo }}{% if t.cpf %} — {{ t.cpf }}{% endif %}{% if t.dividas %} · {{ t.dividas }} dívida(s), {{ t.saldo|moeda }}{% endif %}
             </option>
             {% endfor %}
         </select>
         <button type="submit" class="btn btn-primario">Filtrar</button>
     </form>
+    <p class="fin-nota">Os valores acima da lista são o saldo devedor de cada trabalhador,
+    pela mesma conta do extrato: valor original − crédito consumido − já recebido.</p>
 </div>
 
 {% if trabalhador_sel %}
-<!-- Cards de resumo -->
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.8rem;margin-bottom:1.5rem">
-    <div class="card-form" style="text-align:center">
-        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Total Gasto</div>
-        <div style="font-size:1.4rem;font-weight:900;color:var(--cor-primaria)">R$ {{ "%.2f"|format(total_gasto) }}</div>
+<div class="grade-cards fin-cards">
+    <div class="card-stat">
+        <div class="stat-valor">{{ totais.gasto|moeda }}</div>
+        <div class="stat-label">Comprado a fiado</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Valor original das vendas a fiado concluídas. Canceladas não entram
+            (continuariam listadas abaixo, identificadas).</p>
+        </details>
     </div>
-    <div class="card-form" style="text-align:center">
-        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Pago</div>
-        <div style="font-size:1.4rem;font-weight:900;color:#1da851">R$ {{ "%.2f"|format(total_pago) }}</div>
+    <div class="card-stat">
+        <div class="stat-valor fin-entrada">{{ totais.recebido|moeda }}</div>
+        <div class="stat-label">Já recebido</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Dinheiro entregue e registrado contra estas dívidas, ligado ao
+            lançamento que o registrou. Não é venda quitada por cortesia: cada
+            valor aqui tem alocação no financeiro.</p>
+        </details>
     </div>
-    <div class="card-form" style="text-align:center">
-        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Pendente</div>
-        <div style="font-size:1.4rem;font-weight:900;color:#c0392b">R$ {{ "%.2f"|format(total_pendente) }}</div>
+    <div class="card-stat fin-card-obrigacao">
+        <div class="stat-valor fin-pendente">{{ totais.em_aberto|moeda }}</div>
+        <div class="stat-label">Saldo devedor</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>O que ainda não foi recebido. Dívida abatida em parte aparece com
+            o resto, não como se estivesse inteira — e não é marcada como paga.</p>
+        </details>
     </div>
-    <div class="card-form" style="text-align:center">
-        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Crédito</div>
-        <div style="font-size:1.4rem;font-weight:900;color:#1da851">R$ {{ "%.2f"|format(trabalhador_sel.fiado_credito) }}</div>
+    <div class="card-stat">
+        <div class="stat-valor fin-entrada">{{ trabalhador_sel.fiado_credito|moeda }}</div>
+        <div class="stat-label">Crédito antecipado</div>
+        <details class="fin-def"><summary>O que conta</summary>
+            <p>Adiantamento do trabalhador, em dinheiro já registrado. É outro
+            número: crédito <strong>não</strong> abate o saldo devedor acima
+            enquanto não for consumido em uma compra.</p>
+        </details>
     </div>
-    <div class="card-form" style="text-align:center">
-        <div style="font-size:.8rem;color:var(--cor-texto-suave)">Limite</div>
-        <div style="font-size:1.4rem;font-weight:900{% if trabalhador_sel.fiado_limite > 0 %};color:#e67e22{% endif %}">
+    <div class="card-stat">
+        <div class="stat-valor fin-valor-menor">
             {% if trabalhador_sel.fiado_limite > 0 %}
-                R$ {{ "%.2f"|format(trabalhador_sel.fiado_limite) }}
+                {{ trabalhador_sel.fiado_limite|moeda }}
             {% else %}
                 Ilimitado
             {% endif %}
         </div>
+        <div class="stat-label">Limite de fiado</div>
     </div>
 </div>
 
-<!-- Dados do trabalhador -->
+{% if totais.quitadas %}
+<p class="fin-nota">{{ totais.quitadas }} dívida(s) totalmente quitada(s).</p>
+{% endif %}
+{% if totais.sem_alocacao %}
+<div class="fin-aviso">{{ totais.sem_alocacao }} dívida(s) são anteriores ao registro de
+destino do recebimento: o banco não guarda quanto delas foi pago, então o saldo exibido é o
+valor de face. Nada foi distribuído por nome, valor aproximado, data nem ordem suposta.</div>
+{% endif %}
+
 <div class="card-form" style="margin-bottom:1.5rem">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
         <div>
@@ -76,44 +110,68 @@
     </div>
 </div>
 
-<!-- Tabela de vendas fiado -->
 {% if vendas %}
-<table class="tabela">
+<div class="fin-rolo fin-somente-desktop">
+<table class="fin-tabela tabela">
     <thead>
         <tr>
-            <th>#</th>
-            <th>Data</th>
-            <th>Valor</th>
-            <th>Crédito usado</th>
+            <th>Venda em</th>
             <th>Caixa</th>
-            <th>Status</th>
-            <th>Data pagamento</th>
+            <th class="fin-col-valor">Valor original</th>
+            <th class="fin-col-valor">Crédito consumido</th>
+            <th class="fin-col-valor">Recebido</th>
+            <th class="fin-col-valor">Saldo</th>
+            <th>Situação</th>
+            <th>Pagamento em</th>
         </tr>
     </thead>
     <tbody>
         {% for v in vendas %}
         <tr>
-            <td>{{ v.id }}</td>
-            <td>{{ v.data_venda|data_br }}</td>
-            <td>R$ {{ "%.2f"|format(v.total) }}</td>
-            <td>{% if v.fiado_credito_usado and v.fiado_credito_usado > 0 %}R$ {{ "%.2f"|format(v.fiado_credito_usado) }}{% else %}—{% endif %}</td>
+            <td class="fin-data">{{ v.data_venda|data_br }}</td>
             <td>{{ v.caixa_nome }}</td>
+            <td class="fin-col-valor">{{ v.valor_original|moeda }}</td>
+            <td class="fin-col-valor">{% if v.credito_usado %}{{ v.credito_usado|moeda }}{% else %}—{% endif %}</td>
+            <td class="fin-col-valor">{% if v.recebido %}<span class="fin-entrada">{{ v.recebido|moeda }}</span>{% else %}—{% endif %}
+                {% if not v.alocacoes_registradas and v.saldo > 0 %}<small class="fin-vinculo">histórico sem prova</small>{% endif %}</td>
+            <td class="fin-col-valor fin-pendente">{{ v.saldo|moeda }}</td>
             <td>
                 {% if v.status == 'cancelada' %}
-                <span style="color:#999;font-weight:600">Cancelada (não somada)</span>
+                <span class="fin-sit" style="color:#999">Cancelada (não somada)</span>
                 {% elif v.fiado_pago %}
-                <span style="color:#1da851;font-weight:600">Pago</span>
+                <span class="fin-sit fin-entrada">Paga</span>
+                {% elif v.recebido > 0 %}
+                <span class="fin-sit fin-pendente">Recebida em parte</span>
                 {% else %}
-                <span style="color:#c0392b;font-weight:600">Pendente</span>
+                <span class="fin-sit" style="color:#c0392b">Pendente</span>
                 {% endif %}
             </td>
-            <td>{% if v.fiado_data_pagamento %}{{ v.fiado_data_pagamento|data_br }}{% else %}—{% endif %}</td>
+            <td class="fin-data">{% if v.fiado_data_pagamento %}{{ v.fiado_data_pagamento|data_br }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
+<div class="fin-somente-mobile">
+    {% for v in vendas %}
+    <details class="fin-linha">
+        <summary>
+            <span class="fin-data">{{ v.data_venda|data_br }}</span>
+            <span class="fin-linha-desc">{{ v.caixa_nome }}{% if v.status == 'cancelada' %} · cancelada{% endif %}</span>
+            <span class="fin-col-valor fin-pendente">{{ v.saldo|moeda }}</span>
+        </summary>
+        <dl class="fin-linha-corpo">
+            <dt>Valor original</dt><dd>{{ v.valor_original|moeda }}</dd>
+            <dt>Crédito consumido</dt><dd>{{ v.credito_usado|moeda }}</dd>
+            <dt>Recebido</dt><dd>{{ v.recebido|moeda }}</dd>
+            <dt>Situação</dt><dd>{% if v.status == 'cancelada' %}Cancelada{% elif v.fiado_pago %}Paga{% elif v.recebido > 0 %}Recebida em parte{% else %}Pendente{% endif %}</dd>
+            {% if v.fiado_data_pagamento %}<dt>Pagamento em</dt><dd>{{ v.fiado_data_pagamento|data_br }}</dd>{% endif %}
+        </dl>
+    </details>
+    {% endfor %}
+</div>
 {% else %}
-<p style="color:var(--cor-texto-suave);text-align:center;padding:2rem">Nenhuma venda fiado encontrada para este trabalhador.</p>
+<p class="fin-legenda">Nenhuma venda fiado encontrada para este trabalhador.</p>
 {% endif %}
 {% endif %}
 {% endblock %}

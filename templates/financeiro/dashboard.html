@@ -244,10 +244,16 @@ de destino/origem com natureza “Transferência”.</p>
         <div class="stat-label">{{ cm.nome }}</div>
         <div class="stat-valor fin-valor-menor">+ {{ cm.entradas|moeda }}</div>
         <div class="stat-valor fin-valor-menor">− {{ cm.saidas|moeda }}</div>
+        <div class="stat-valor fin-valor-menor">Σ {{ cm.acumulado|moeda }}</div>
         <div class="stat-label">
             {% if cm.tipo == 'areceber' %}conta de obrigações — valores registrados, não dinheiro
             {% else %}{{ rotulos_tipo_conta.get(cm.tipo, cm.tipo) }}{% endif %}
         </div>
+        <details class="fin-def"><summary>Acumulado</summary>
+            <p>{{ cm.acumulado|moeda }} é a soma de todos os lançamentos pagos
+            desta conta até {{ ate_uso|data_br }} — não só o período exibido. Não
+            é saldo conferido com o banco.</p>
+        </details>
     </div>
     {% endfor %}
 </div>
@@ -337,20 +343,26 @@ Para dar baixa, use as telas de Mensalidades e Fiados (nenhuma baixa acontece aq
 
 <h3 class="fin-subtitulo">Fiado em aberto (fora do indicador “A receber”)</h3>
 <p class="fin-legenda">Vendas a fiado ainda não recebidas, organizadas por data da venda —
-o banco não registra vencimento para elas, por isso não compõem o total acima.</p>
+o banco não registra vencimento para elas, por isso não compõem o total acima.
+<em>Recebido</em> é o que já entrou destinado a esta dívida, ligado ao lançamento;
+<em>Saldo</em> é o que ainda falta.</p>
 {% if fiados %}
 <div class="fin-rolo fin-somente-desktop">
 <table class="fin-tabela">
     <thead>
-        <tr><th>Venda em</th><th>Trabalhador</th><th class="fin-col-valor">Valor</th><th></th></tr>
+        <tr><th>Venda em</th><th>Trabalhador</th><th class="fin-col-valor">Valor original</th>
+            <th class="fin-col-valor">Recebido</th><th class="fin-col-valor">Saldo</th><th></th></tr>
     </thead>
     <tbody>
     {% for f in fiados %}
         <tr>
             <td class="fin-data">{{ f.data_venda|data_br }}</td>
             <td>{{ f.nome_completo or '—' }}</td>
-            <td class="fin-col-valor">{{ f.total|moeda }}</td>
-            <td>{% if f.fiado_trabalhador_id %}<a href="/financeiro/fiados?trabalhador_id={{ f.fiado_trabalhador_id }}">Fiado</a>{% endif %}</td>
+            <td class="fin-col-valor">{{ f.valor_original|moeda }}</td>
+            <td class="fin-col-valor">{% if f.recebido %}<span class="fin-sit fin-entrada">{{ f.recebido|moeda }}</span>{% else %}—{% endif %}</td>
+            <td class="fin-col-valor fin-pendente">{{ f.saldo|moeda }}</td>
+            <td>{% if f.fiado_trabalhador_id %}<a href="/financeiro/fiados?trabalhador_id={{ f.fiado_trabalhador_id }}">Fiado</a>
+                · <a href="/caixa/fiados/extrato/{{ f.fiado_trabalhador_id }}">Extrato</a>{% endif %}</td>
         </tr>
     {% endfor %}
     </tbody>
@@ -358,15 +370,32 @@ o banco não registra vencimento para elas, por isso não compõem o total acima
 </div>
 <div class="fin-somente-mobile">
     {% for f in fiados %}
-    <div class="fin-linha" style="cursor:default">
-        <span class="fin-data">{{ f.data_venda|data_br }}</span>
-        <span class="fin-linha-desc">{{ f.nome_completo or 'Fiado' }}</span>
-        <span class="fin-col-valor">{{ f.total|moeda }}</span>
-    </div>
+    <details class="fin-linha">
+        <summary>
+            <span class="fin-data">{{ f.data_venda|data_br }}</span>
+            <span class="fin-linha-desc">{{ f.nome_completo or 'Fiado' }}</span>
+            <span class="fin-col-valor fin-pendente">{{ f.saldo|moeda }}</span>
+        </summary>
+        <dl class="fin-linha-corpo">
+            <dt>Valor original</dt><dd>{{ f.valor_original|moeda }}</dd>
+            <dt>Recebido</dt><dd>{{ f.recebido|moeda }}</dd>
+            <dt>Saldo</dt><dd>{{ f.saldo|moeda }}</dd>
+            {% if f.fiado_trabalhador_id %}
+            <dt>Extrato</dt><dd><a href="/caixa/fiados/extrato/{{ f.fiado_trabalhador_id }}">ver destino do dinheiro</a></dd>
+            {% endif %}
+        </dl>
+    </details>
     {% endfor %}
 </div>
-{% if fiado_tot and fiado_tot.n > 50 %}
-<p class="fin-nota">Mostrando os 50 mais recentes de {{ fiado_tot.n }} ({{ fiado_tot.total|moeda }} no total) — use a tela de Fiados.</p>
+{% if fiado_tot %}
+<p class="fin-nota">{{ fiado_tot.n }} dívida(s) em aberto: {{ fiado_tot.original|moeda }} em valor
+original, {{ fiado_tot.recebido|moeda }} já recebido, <strong>{{ fiado_tot.saldo|moeda }} em
+saldo</strong>.{% if fiado_tot.n > 50 %} Mostrando os 50 mais recentes — use a tela de Fiados.{% endif %}</p>
+{% if fiado_tot.sem_alocacao %}
+<p class="fin-aviso">{{ fiado_tot.sem_alocacao }} dívida(s) são anteriores ao registro de
+destino do recebimento: não há como provar quanto delas já foi pago, então o saldo exibido
+é o valor de face. Nada foi distribuído por suposição.</p>
+{% endif %}
 {% endif %}
 {% else %}
 <p class="fin-legenda">Nenhum fiado em aberto{% if q %} para a busca “{{ q }}”{% endif %}.</p>
