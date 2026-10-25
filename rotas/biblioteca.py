@@ -397,7 +397,8 @@ async def vender_livro(
         respondida = resposta_de_tentativa(
             conn, idempotencia=idempotencia, corpo=corpo_tentativa,
             erro_para=lambda ce: f"/biblioteca?erro={ce}",
-            destino_padrao=destino_sucesso)
+            destino_padrao=destino_sucesso,
+            operacao="biblioteca_venda", autor_id=atendente["id"])
         if respondida:
             return respondida
 

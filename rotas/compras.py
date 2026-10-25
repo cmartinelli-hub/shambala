@@ -562,7 +562,8 @@ async def salvar_compra(
         respondida = resposta_de_tentativa(
             conn, idempotencia=idempotencia, corpo=corpo_tentativa,
             erro_para=lambda ce: f"/financeiro/compras?erro={ce}",
-            destino_padrao=destino_sucesso)
+            destino_padrao=destino_sucesso,
+            operacao="compra", autor_id=atendente["id"])
         if respondida:
             return respondida
 

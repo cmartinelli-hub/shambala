@@ -1,0 +1,19 @@
+# AUD-01 — reprodução do defeito ANTES da correção
+#
+# Dois atendentes distintos (t014_a, t014_b), ambos com permissão de escrita.
+# App descartável real (porta 9018, banco shambala_test_passes, token t014-aud01).
+#
+# A envia: (303, '/financeiro')
+#   lançamentos criados: 1 | tentativa: autor_id=4 (A=4) operacao=lancamento_novo
+#   destino guardado: /financeiro
+#
+# B REENVIA a mesma chave e o mesmo corpo: (303, '/financeiro')
+#   lançamentos depois: 1   (B não criou efeito: recebeu a resposta de A)
+#
+# Conclusão: o segundo operador recebeu destino/documento da tentativa do
+# primeiro, sem comparação de autor. `reservar()` e `reconhecer()` consultam
+# apenas `chave`; `autor_id` é gravado mas nunca conferido.
+#
+# Observação lateral (defeito de fixture do próprio probe): apagar o atendente
+# com tentativa associada esbarra em `operacao_idempotencia_autor_id_fkey` —
+# a limpeza do probe passou a apagar a tentativa antes do atendente.

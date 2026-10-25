@@ -897,7 +897,8 @@ async def receber_mensalidades(
             respondida = resposta_de_tentativa(
                 conn, idempotencia=idempotencia, corpo=corpo_tentativa,
                 erro_para=_erro,
-                destino_padrao=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}")
+                destino_padrao=f"/financeiro/mensalidades?trabalhador_id={trabalhador_id}",
+                operacao="mensalidade_receber", autor_id=atendente["id"])
             if respondida:
                 return respondida
 

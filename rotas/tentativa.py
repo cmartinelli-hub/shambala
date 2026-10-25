@@ -12,14 +12,21 @@ from servico_idempotencia import (
 )
 
 
-def resposta_de_tentativa(conn, *, idempotencia, corpo, erro_para, destino_padrao):
+def resposta_de_tentativa(conn, *, idempotencia, corpo, erro_para, destino_padrao,
+                          operacao=None, autor_id=None):
     """Devolve a resposta original da tentativa, ou None se ela é nova.
 
     `erro_para(chave)` monta a URL de recusa da rota; `destino_padrao` responde
     quando a tentativa concluída não registrou destino.
+
+    AUD-01 (TASK_014): `operacao` e `autor_id` identificam o CONTEXTO da
+    requisição. A tentativa registrada só é devolvida quando o contexto confere;
+    caso contrário a rota recebe a recusa `tentativa_contexto` — sem destino,
+    documento nem autoria do outro operador.
     """
     try:
-        reconhecer(conn, idempotencia=idempotencia, corpo=corpo)
+        reconhecer(conn, idempotencia=idempotencia, corpo=corpo,
+                   operacao=operacao, autor_id=autor_id)
     except TentativaRecusada as e:
         return RedirectResponse(url=erro_para(e.chave_erro), status_code=303)
     except TentativaJaRegistrada as e:

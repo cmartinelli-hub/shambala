@@ -183,7 +183,8 @@ async def finalizar_venda(
         respondida = resposta_de_tentativa(
             conn, idempotencia=idempotencia, corpo=corpo_tentativa,
             erro_para=lambda ce: f"/caixa/pdv?caixa_id={caixa_id}&erro={ce}",
-            destino_padrao=f"/caixa/pdv?caixa_id={caixa_id}")
+            destino_padrao=f"/caixa/pdv?caixa_id={caixa_id}",
+            operacao="pdv_venda", autor_id=atendente["id"])
         if respondida:
             return respondida
 
@@ -966,7 +967,8 @@ async def registrar_doacao(
         with conectar() as conn:
             respondida = resposta_de_tentativa(
                 conn, idempotencia=idempotencia, corpo=corpo_tentativa,
-                erro_para=_erro_doacao, destino_padrao=destino_doacao)
+                erro_para=_erro_doacao, destino_padrao=destino_doacao,
+                operacao="doacao_avulsa", autor_id=atendente["id"])
             if respondida:
                 return respondida
 
@@ -1557,7 +1559,8 @@ async def pagar_fiado(
         with conectar() as conn:
             respondida = resposta_de_tentativa(
                 conn, idempotencia=idempotencia, corpo=corpo_tentativa,
-                erro_para=_erro_fiado, destino_padrao="/caixa/fiados")
+                erro_para=_erro_fiado, destino_padrao="/caixa/fiados",
+                operacao="fiado_quitar_venda", autor_id=atendente["id"])
             if respondida:
                 return respondida
 
@@ -1677,7 +1680,8 @@ async def pagar_divida_fiado(
         with conectar() as conn:
             respondida = resposta_de_tentativa(
                 conn, idempotencia=idempotencia, corpo=corpo_tentativa,
-                erro_para=_erro_divida, destino_padrao="/caixa/fiados")
+                erro_para=_erro_divida, destino_padrao="/caixa/fiados",
+                operacao="fiado_pagar_divida", autor_id=atendente["id"])
             if respondida:
                 return respondida
 
@@ -1841,7 +1845,8 @@ async def adicionar_credito_fiado(
         with conectar() as conn:
             respondida = resposta_de_tentativa(
                 conn, idempotencia=idempotencia, corpo=corpo_tentativa,
-                erro_para=_erro_credito, destino_padrao="/caixa/fiados")
+                erro_para=_erro_credito, destino_padrao="/caixa/fiados",
+                operacao="credito_anticipado", autor_id=atendente["id"])
             if respondida:
                 return respondida
 
@@ -2085,7 +2090,8 @@ async def salvar_sangria(
                 conn, idempotencia=idempotencia, corpo=corpo_tentativa,
                 erro_para=lambda ce: erro_base + ce,
                 destino_padrao=(f"/caixa/sangria"
-                                f"?caixa_movimento_id={caixa_movimento_id}"))
+                                f"?caixa_movimento_id={caixa_movimento_id}"),
+                operacao="sangria", autor_id=atendente["id"])
             if respondida:
                 return respondida
 

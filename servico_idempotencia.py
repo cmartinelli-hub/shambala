@@ -28,6 +28,7 @@ import secrets
 NOVA = "nova"
 REPETIDA = "repetida"
 CONFLITO = "conflito"
+CONTEXTO = "contexto"
 PENDENTE = "em_andamento"
 ANULADA = "anulada"
 
@@ -48,6 +49,9 @@ MENSAGENS_TENTATIVA = {
     "tentativa_em_andamento":
         "Esta tentativa ainda não foi concluída. Recarregue a página e "
         "confira se a operação já está registrada antes de tentar de novo.",
+    "tentativa_contexto":
+        "Esta tentativa pertence a outra operação ou a outro operador. Nada foi "
+        "gravado — recarregue a tela e refaça a operação.",
     "tentativa_anulada":
         "Esta tentativa não foi concluída: a nota fiscal não pôde ser guardada "
         "e o lançamento foi cancelado. Nada foi cobrado — abra uma nova tela "
@@ -68,6 +72,30 @@ def normalizar_chave(valor) -> str | None:
     return limpa if _CHAVE_OK.match(limpa) else None
 
 
+def _contexto_confere(registro: dict, operacao, autor_id) -> bool:
+    """A tentativa registrada pertence a ESTE contexto (operação e operador)?
+
+    AUD-01 (TASK_014): a chave sozinha não é credencial. Duas coisas precisam
+    bater antes de qualquer resposta persistida ser devolvida:
+
+    - **operação**: a rota/serviço que está atendendo (`pdv_venda`,
+      `lancamento_novo`, `compra`, …). Chave de uma operação reapresentada em
+      outra é recusa, mesmo que o corpo seja estruturalmente parecido;
+    - **autor**: o atendente autenticado na requisição. Outro atendente com a
+      mesma chave/corpo não recebe destino/documento alheio.
+
+    Semelhança textual não entra na conta: a comparação é de identidade, não de
+    conteúdo. Registros antigos com `autor_id` nulo (ou operação vazia) NÃO
+    conferem — e a recusa é segura, sem atribuir autoria retroativa.
+    """
+    if (registro.get("operacao") or "") != (operacao or ""):
+        return False
+    autor_registrado = registro.get("autor_id")
+    if autor_registrado is None or autor_id is None:
+        return False
+    return int(autor_registrado) == int(autor_id)
+
+
 def _hash_corpo(corpo: dict) -> str:
     """Hash do conteúdo SEMÂNTICO (campos canonizados). Valores que o servidor
     recalcula — preço, subtotal, troco — não entram: quem manda é o servidor."""
@@ -82,7 +110,9 @@ def reservar(conn, *, chave: str, operacao: str, corpo: dict,
 
     NOVA     → siga escrevendo e chame `confirmar` na mesma transação.
     REPETIDA → mesmo resultado/documento (registro["destino"]); nenhum efeito.
-    CONFLITO → mesma chave com conteúdo divergente: não escrever.
+    CONFLITO → mesma chave, MESMO contexto, conteúdo divergente: não escrever.
+    CONTEXTO → mesma chave com OUTRA operação ou outro operador: não escrever e
+               não devolver destino/documento (AUD-01).
     PENDENTE → tentativa sem conclusão confirmada: não escrever por cima.
     """
     hash_ = _hash_corpo(corpo)
@@ -98,12 +128,18 @@ def reservar(conn, *, chave: str, operacao: str, corpo: dict,
         return NOVA, None
 
     existente = conn.execute(
-        """SELECT id, operacao, corpo_hash, status, documento, destino
+        """SELECT id, operacao, corpo_hash, status, documento, destino, autor_id
            FROM operacao_idempotencia WHERE chave = %s FOR UPDATE""",
         (chave,),
     ).fetchone()
     if existente is None:
         return PENDENTE, None
+    # AUD-01: a corrida na reserva NÃO pode contornar a validação — conferir o
+    # contexto aqui também, antes de devolver repetida/conflito/pendente.
+    if not _contexto_confere(existente, operacao, autor_id):
+        # Contexto diferente NÃO é "conteúdo divergente": a mensagem ao operador
+        # é outra, e a recusa não pode sugerir que ele mexeu no mesmo envio.
+        return CONTEXTO, existente
     if existente["status"] != "concluida":
         return PENDENTE, existente
     return (REPETIDA if existente["corpo_hash"] == hash_ else CONFLITO), existente
@@ -171,7 +207,8 @@ class TentativaJaRegistrada(Exception):
         self.documento = documento
 
 
-def reconhecer(conn, *, idempotencia, corpo: dict) -> str:
+def reconhecer(conn, *, idempotencia, corpo: dict,
+               operacao: str | None = None, autor_id: int | None = None) -> str:
     """Confere a identidade da tentativa ANTES das validações de estado.
 
     Uma tentativa já concluída tem resposta; essa resposta não muda porque o
@@ -189,12 +226,15 @@ def reconhecer(conn, *, idempotencia, corpo: dict) -> str:
     if not chave:
         raise TentativaRecusada("tentativa_sem_chave")
     registrada = conn.execute(
-        """SELECT status, corpo_hash, documento, destino
+        """SELECT status, corpo_hash, documento, destino, operacao, autor_id
            FROM operacao_idempotencia WHERE chave = %s""",
         (chave,),
     ).fetchone()
     if registrada is None:
         return chave
+    # AUD-01: contexto ANTES de qualquer resposta. Chave não é credencial.
+    if not _contexto_confere(registrada, operacao, autor_id):
+        raise TentativaRecusada("tentativa_contexto")
     if registrada["status"] == ANULADA:
         raise TentativaRecusada("tentativa_anulada")
     if registrada["status"] != "concluida":
@@ -210,17 +250,25 @@ def exigir_reserva(conn, *, idempotencia, operacao: str, corpo: dict,
 
     Levanta `TentativaJaRegistrada` quando a tentativa já produziu efeito — o
     chamador devolve o destino original, sem nenhum novo efeito — e
-    `TentativaRecusada` quando ela não pode seguir (sem chave, conteúdo
-    divergente da mesma chave ou tentativa pendente).
+    `TentativaRecusada` quando ela não pode seguir (sem chave, contexto de outro
+    operador/operação, conteúdo divergente da mesma chave ou tentativa pendente).
+
+    AUD-01 (TASK_014): `autor_id` é obrigatório. Sem ele não há como distinguir
+    "o dono da tentativa repetindo" de "outro atendente com a mesma chave", e a
+    função prefere recusar a aceitar contexto desconhecido.
     """
     chave = normalizar_chave(idempotencia)
     if not chave:
         raise TentativaRecusada("tentativa_sem_chave")
+    if autor_id is None:
+        raise TentativaRecusada("tentativa_contexto")
     desfecho, registro = reservar(conn, chave=chave, operacao=operacao,
                                   corpo=corpo, autor_id=autor_id)
     if desfecho == REPETIDA:
         raise TentativaJaRegistrada(chave, (registro or {}).get("destino"),
                                     (registro or {}).get("documento"))
+    if desfecho == CONTEXTO:
+        raise TentativaRecusada("tentativa_contexto")
     if desfecho == CONFLITO:
         raise TentativaRecusada("tentativa_conflito")
     if desfecho == PENDENTE:

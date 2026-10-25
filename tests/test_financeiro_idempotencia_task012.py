@@ -1495,6 +1495,216 @@ def req_login(o):
     POST("/login", {"nome_usuario": "admin", "senha": "teste123"}, o=o)
 
 
+# ── AUD-01 (TASK_014): a chave não é credencial entre operadores ────────────
+
+def operador(usuario):
+    """Cria (idempotente) um atendente de teste com escrita e o devolve logado.
+
+    Dois operadores AUTORIZADOS: é o cenário do AUD-01 — se a chave fosse
+    credencial, o segundo receberia a resposta do primeiro.
+    """
+    from rotas.auth import hash_senha
+    with conectar() as conn:
+        grupo = conn.execute(
+            "SELECT id FROM grupos WHERE nome = 'Admin' LIMIT 1").fetchone()
+        gid = grupo["id"] if grupo else conn.execute(
+            "INSERT INTO grupos (nome, descricao) VALUES ('Admin','Admin') RETURNING id"
+        ).fetchone()["id"]
+        linha = conn.execute("SELECT id FROM atendentes WHERE nome_usuario = %s",
+                             (usuario,)).fetchone()
+        if linha:
+            uid = linha["id"]
+            conn.execute("UPDATE atendentes SET senha_hash = %s, ativo = 1 WHERE id = %s",
+                         (hash_senha("teste123"), uid))
+        else:
+            uid = conn.execute(
+                """INSERT INTO atendentes (nome_usuario, nome_completo, senha_hash, ativo)
+                   VALUES (%s, %s, %s, 1) RETURNING id""",
+                (usuario, usuario, hash_senha("teste123"))).fetchone()["id"]
+        conn.execute(
+            """INSERT INTO usuarios_grupos (usuario_id, grupo_id) VALUES (%s, %s)
+               ON CONFLICT DO NOTHING""", (uid, gid))
+    o = _nova_opener()
+    POST("/login", {"nome_usuario": usuario, "senha": "teste123"}, o=o)
+    return o, uid
+
+
+def prova_aud01_dois_operadores():
+    """AUD-01: outro atendente com a MESMA chave/corpo NÃO recebe o resultado.
+
+    Contrato: recusa sem documento/destino alheio e banco inalterado; o dono da
+    tentativa continua podendo repetir a dele.
+    """
+    o_a, uid_a = operador("t014_op_a")
+    o_b, uid_b = operador("t014_op_b")
+    assert uid_a != uid_b, "os dois operadores precisam ser distintos"
+
+    k = chave()
+    desc = f"{PREFIXO} aud01 dois operadores {k[:8]}"
+    dados = {"tipo": "entrada", "categoria": "outros", "valor": "5.00",
+             "data_movimentacao": "2026-04-05", "descricao": desc,
+             "trabalhador_id": "", "pessoa_id": "", "status": "pago",
+             "pix_copiadecola": "", "conta_id": str(F["especie"]),
+             "idempotencia": k}
+
+    st_a, _, loc_a = POST("/financeiro/nova", dados, o=o_a)
+    criados_apos_a = escalar(
+        "SELECT count(*) FROM financeiro_movimentacoes WHERE descricao = %s", (desc,))
+    autor = escalar("SELECT autor_id FROM operacao_idempotencia WHERE chave = %s", (k,))
+    verificar("AUD-01: o operador A conclui e a tentativa fica com o autor dele",
+              st_a == 303 and criados_apos_a == 1 and autor == uid_a,
+              f"status={st_a} criados={criados_apos_a} autor={autor} esperado={uid_a}")
+
+    st_b, corpo_b, loc_b = POST("/financeiro/nova", dados, o=o_b)
+    criados_apos_b = escalar(
+        "SELECT count(*) FROM financeiro_movimentacoes WHERE descricao = %s", (desc,))
+    documento_a = escalar("SELECT documento FROM operacao_idempotencia "
+                          "WHERE chave = %s", (k,), None)
+    verificar("AUD-01: o operador B, com a mesma chave e o mesmo corpo, é RECUSADO "
+              "por contexto — sem destino e sem documento alheio",
+              st_b == 303 and "erro=tentativa_contexto" in (loc_b or "")
+              and str(documento_a) not in (loc_b or ""),
+              f"status={st_b} loc_b={loc_b} documento_a={documento_a}")
+    # Destino com URL específica: aí dá para provar que NADA do destino do dono
+    # volta ao outro contexto. (Em `/financeiro/nova` o destino gravado é
+    # "/financeiro", que é prefixo da própria URL de recusa — comparar seria
+    # tautológico.)
+    kt = chave()
+    trans = {"conta_origem": F["especie"], "conta_destino": F["pix"],
+             "valor": "40.00", "descricao": f"{PREFIXO} aud01 transferencia {kt[:8]}",
+             "idempotencia": kt}
+    st_ta, _, loc_ta = POST("/financeiro/transferir", trans, o=o_a)
+    destino_ta = escalar("SELECT destino FROM operacao_idempotencia WHERE chave = %s",
+                         (kt,), None)
+    st_tb, _, loc_tb = POST("/financeiro/transferir", trans, o=o_b)
+    verificar("AUD-01: com destino específico, o segundo operador recebe a recusa "
+              "e NÃO o destino gravado do primeiro",
+              st_ta == 303 and (destino_ta or "@@") in (loc_ta or "")
+              and "erro=tentativa_contexto" in (loc_tb or "")
+              and (destino_ta or "@@") not in (loc_tb or ""),
+              f"A={loc_ta} B={loc_tb} destino={destino_ta}")
+    with conectar() as conn:
+        conn.execute("DELETE FROM operacao_idempotencia WHERE chave = %s", (kt,))
+        conn.execute("""DELETE FROM financeiro_movimentacoes
+                        WHERE descricao LIKE %s""",
+                     (f"%aud01 transferencia%",))
+    verificar("AUD-01: a recusa de B não cria efeito e não altera a tentativa do A",
+              criados_apos_b == 1
+              and escalar("SELECT status FROM operacao_idempotencia WHERE chave = %s",
+                          (k,)) == "concluida"
+              and escalar("SELECT autor_id FROM operacao_idempotencia WHERE chave = %s",
+                          (k,)) == uid_a,
+              f"criados={criados_apos_b}")
+    verificar("AUD-01: a recusa não revela o operador original no corpo da resposta",
+              str(uid_a) not in (corpo_b or "") and "t014_op_a" not in (corpo_b or ""),
+              "identidade do autor vazou")
+
+    st_a2, _, loc_a2 = POST("/financeiro/nova", dados, o=o_a)
+    verificar("AUD-01: A continua podendo repetir a própria tentativa (mesmo resultado)",
+              st_a2 == 303 and (loc_a2 or "") == (loc_a or "")
+              and escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                          "WHERE descricao = %s", (desc,)) == 1,
+              f"status={st_a2} loc={loc_a2} esperado={loc_a}")
+
+    # mesma chave em OUTRA operação, mesmo operador: recusa sem escrita
+    st_op, _, loc_op = POST("/caixa/doacao", {
+        "forma": "especie", "valor": "5.00", "descricao": f"{PREFIXO} aud01 outra op",
+        "sessao_id": F["sessao"], "conta_pix_id": 0, "idempotencia": k}, o=o_a)
+    verificar("AUD-01: a mesma chave em OUTRA operação (mesmo operador) é recusada "
+              "sem escrita, mesmo com corpo estruturalmente parecido",
+              st_op == 303 and "erro=tentativa_contexto" in (loc_op or "")
+              and escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                          "WHERE descricao = %s", (f"{PREFIXO} aud01 outra op",)) == 0,
+              f"status={st_op} loc={loc_op}")
+
+    # registros históricos sem contexto confiável: recusa segura
+    with conectar() as conn:
+        conn.execute("UPDATE operacao_idempotencia SET autor_id = NULL WHERE chave = %s",
+                     (k,))
+    st_nulo, _, loc_nulo = POST("/financeiro/nova", dados, o=o_a)
+    verificar("AUD-01: tentativa histórica com autor nulo é RECUSADA (sem atribuir "
+              "autoria retroativa e sem apagar identidade)",
+              st_nulo == 303 and "erro=tentativa_contexto" in (loc_nulo or "")
+              and escalar("SELECT count(*) FROM operacao_idempotencia "
+                          "WHERE chave = %s", (k,)) == 1,
+              f"status={st_nulo} loc={loc_nulo}")
+
+    with conectar() as conn:
+        conn.execute("DELETE FROM operacao_idempotencia WHERE chave = %s", (k,))
+        conn.execute("DELETE FROM financeiro_movimentacoes WHERE descricao LIKE %s",
+                     (f"%aud01%",))
+
+
+def prova_aud01_concorrencia_entre_contextos():
+    """AUD-01: dois contextos disputando a MESMA chave — um vencedor no máximo.
+
+    Exercita a chave NOVA (a corrida é na reserva) e a já concluída. O perdedor
+    não pode receber resultado alheio.
+    """
+    o_a, uid_a = operador("t014_op_a")
+    o_b, uid_b = operador("t014_op_b")
+
+    # (1) chave NOVA, os dois contextos ao mesmo tempo
+    k = chave()
+    desc = f"{PREFIXO} aud01 corrida {k[:8]}"
+    dados = {"tipo": "entrada", "categoria": "outros", "valor": "6.00",
+             "data_movimentacao": "2026-04-06", "descricao": desc,
+             "trabalhador_id": "", "pessoa_id": "", "status": "pago",
+             "pix_copiadecola": "", "conta_id": str(F["especie"]),
+             "idempotencia": k}
+    barreira = threading.Barrier(2)
+    saidas = {}
+
+    def enviar(nome, o):
+        barreira.wait(timeout=20)
+        saidas[nome] = POST("/financeiro/nova", dados, o=o)[::2]  # (status, location)
+
+    ts = [threading.Thread(target=enviar, args=(n, o))
+          for n, o in (("A", o_a), ("B", o_b))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(40)
+
+    criados = escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                      "WHERE descricao = %s", (desc,))
+    autor = escalar("SELECT autor_id FROM operacao_idempotencia WHERE chave = %s", (k,))
+    recusados = [n for n, (st, loc) in saidas.items()
+                 if "erro=tentativa_contexto" in (loc or "")]
+    verificar("AUD-01 concorrência (chave NOVA): um vencedor só, e o outro contexto "
+              "é recusado em vez de receber o resultado alheio",
+              criados == 1 and len(recusados) == 1 and autor in (uid_a, uid_b),
+              f"criados={criados} recusados={recusados} autor={autor} saidas={saidas}")
+
+    # (2) chave já CONCLUÍDA, os dois contextos ao mesmo tempo
+    saidas2 = {}
+
+    def repetir(nome, o):
+        barreira2.wait(timeout=20)
+        saidas2[nome] = POST("/financeiro/nova", dados, o=o)[::2]
+
+    barreira2 = threading.Barrier(2)
+    ts = [threading.Thread(target=repetir, args=(n, o))
+          for n, o in (("A", o_a), ("B", o_b))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(40)
+    criados2 = escalar("SELECT count(*) FROM financeiro_movimentacoes "
+                       "WHERE descricao = %s", (desc,))
+    dono = [n for n, (st, loc) in saidas2.items()
+            if "erro=tentativa_contexto" not in (loc or "")]
+    verificar("AUD-01 concorrência (chave já CONCLUÍDA): só o contexto dono recebe "
+              "o resultado; o outro é recusado e nada é duplicado",
+              criados2 == 1 and dono == ["A" if autor == uid_a else "B"],
+              f"criados={criados2} dono={dono} saidas={saidas2}")
+
+    with conectar() as conn:
+        conn.execute("DELETE FROM operacao_idempotencia WHERE chave = %s", (k,))
+        conn.execute("DELETE FROM financeiro_movimentacoes WHERE descricao LIKE %s",
+                     (f"%aud01%",))
+
+
 def _m_unica_doacao():
     return medida({
         "fin": ("SELECT count(*) FROM financeiro_movimentacoes WHERE descricao LIKE %s",
@@ -1551,6 +1761,8 @@ def main():
                   prova_concorrencia_na_reserva,
                   prova_mensalidades_lote, prova_fiado_parcial_e_credito,
                   prova_autenticacao_e_pendentes,
+                  prova_aud01_dois_operadores,
+                  prova_aud01_concorrencia_entre_contextos,
                   prova_nota_fora_da_transacao):
         try:
             extra()
