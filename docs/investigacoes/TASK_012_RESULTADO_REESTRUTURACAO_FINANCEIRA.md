@@ -65,7 +65,7 @@ posteriores — assumi-los abertos teria desfazer trabalho alheio:
 | FIN-06 estorno de fiado pago | **contido por bloqueio**, não resolvido: a TASK_007 recusa o estorno (e a §4 ampliou a recusa para recebimento alocado). O **reembolso continua pendente** — não existe caminho para devolver dinheiro de fiado já pago, e a ordem o deixa fora de escopo (§7) |
 | FIN-07 consultas/datas divergentes | **resolvido no módulo financeiro** pela §5 (fórmula única no serviço, três datas rotuladas, filtros validados); conciliação bancária segue fora de escopo |
 | FIN-08 constraints/autorias/FKs | **parcial** — §2/§3/§4 acrescentaram as travas do escopo; backfill de autoria histórica, `auditoria_eventos` e duplicidade histórica de mensalidade seguem abertos por decisão explícita (§6.4) |
-| FIN-09 foto da compra escrita antes do commit | **em revisão** — a §6 corrigiu o ciclo (temporário + promoção atômica + recuperação no startup) e provou os desfechos, mas a separação entre commit e promoção não tem atomicidade possível: o que existe é detecção e compensação (§6.5). Fica registrado como **corrigido e sob revisão**, não como fechado |
+| FIN-09 foto da compra escrita antes do commit | **em revisão** — a §6 corrigiu o ciclo (temporário + promoção atômica + recuperação no startup com limites estreitos e provados, §6.6) e provou os desfechos, mas a separação entre commit e promoção não tem atomicidade possível: o que existe é detecção e compensação (§6.5). Fica registrado como **corrigido e sob revisão**, não como fechado |
 | Idempotência de reenvio | **inexistente como mecanismo** — só havia garantias pontuais derivadas de estado → §2 |
 
 Garantias existentes que **não** foram reescritas nesta tarefa (e continuam
@@ -1107,7 +1107,43 @@ verificado, não afirmado — a prova confere `estoque_movimentos` e
 as compras que falharam ficam `cancelado` (não entram como despesa paga)
 enquanto só a operação boa fica `pago`.
 
-### 6.6 FIN-09 — estado honesto: corrigido, **sob revisão**
+### 6.6 Os limites da recuperação automática (segunda devolução do dono)
+
+A primeira versão da varredura de startup era larga demais: `compra paga sem
+arquivo → cancelar` alcançaria compra HISTÓRICA e confundiria "arquivo sumiu"
+(volume não montado, disco removível ausente, falha de leitura) com "tentativa
+interrompida". Reescrita com cinco limites, cada um com prova própria:
+
+| Limite | Como é garantido | Prova |
+|---|---|---|
+| 1. só tentativa **nova** e **interrompida** | casa com tentativa `operacao='compra'` **concluída** apontando para a linha, com conclusão dentro de `INTERVALO_RECUPERACAO` (24 h); compra sem tentativa nunca é tocada | *compra com tentativa VELHA não é cancelada* |
+| 2. não interfere em compra **em processamento** | tentativa `em_andamento` fica fora; a varredura inteira roda sob `pg_try_advisory_lock` — quem não pega a trava não age | *tentativa em andamento não é recuperada* + *duas recuperações simultâneas cancelam UMA vez* |
+| 3. só com **prova independente** de que o arquivo nunca existiu | `os.path.exists() == False` é o mesmo sintoma de diretório não montado; o caso interrompido deixa o **temporário** ao lado do destino (conteúdo escrito antes do commit, promoção é o último passo). Sem temporário, sem recuperação | *arquivo ausente SEM temporário é preservado* + *compra com arquivo presente não é tocada* |
+| 4. **um commit** para o que anda junto | cancelamento e anulação no mesmo `with conectar()`: se a anulação falhar, o estado **não muda** e a próxima subida conclui; nunca "cancelado com a chave respondendo sucesso" | *anulação falhando (TRIGGER real): estado coerente e reenvio recusado* + *recuperação posterior conclui* |
+| 5. só cancela, **nunca apaga**; o que foi pulado é informado | a linha fica auditável; `puladas` vai para o log de subida | *a varredura informa o que pulou* |
+
+**O que a recuperação NÃO faz** (e agora está explícito): não cancela por arquivo
+ausente sozinho, não age em compra histórica, não remove temporário de tentativa
+em voo, não apaga linha e não tenta "consertar" nada quando o diretório não pode
+ser lido — nesse caso ela não tem prova e não age.
+
+**O recuperador alterou alguma compra no DEV?** Não. Três evidências
+independentes:
+1. os logs dos três reinícios (`dev-startup-task012.log`, `-r2`, `-r3-final`) não
+   têm nenhuma linha de recuperação — nem "tentativa interrompida", nem
+   "PRESERVADAS";
+2. o DEV tem **12 compras, todas `pago`, 0 canceladas**, e o agregado
+   `compra: 12 | 528.64` é idêntico nos baselines antes da migração, depois dela e
+   após o último restart;
+3. rodando o recuperador **em modo leitura** contra o DEV atual: 12 compras pagas
+   com nota, **0** com tentativa de idempotência (pré-requisito do limite 1),
+   **0** com prova de interrupção e **0** com arquivo ausente. Nenhuma seria
+   tocada nem pelo código novo.
+
+As 12 notas referenciadas existem em disco (12/12 conferidas), e não há nenhuma
+`.tmp-` pendente em `static/fotos`.
+
+### 6.7 FIN-09 — estado honesto: corrigido, **sob revisão**
 
 O defeito original (arquivo escrito dentro da transação, nome sorteado duas
 vezes) está corrigido e provado. A **atomicidade entre o commit e o arquivo não
@@ -1119,7 +1155,7 @@ arquivos ou um outbox no banco resolveriam a janela e são arquitetura nova:
 registrados como decisão futura, conforme o §6 da ordem ("se exigir arquitetura
 nova, entregar diagnóstico e manter fora da implementação").
 
-### 6.7 FIN-08 — o que fica aberto, e por quê
+### 6.8 FIN-08 — o que fica aberto, e por quê
 
 A §2/§3/§4 acrescentaram as travas que o escopo pedia: `chave UNIQUE` em
 `operacao_idempotencia`, índice único parcial `(trabalhador_id, competencia)`
@@ -1182,14 +1218,21 @@ competência a partir do vencimento já gravado.
 
 ### 9.3 Backup, hash e restauração validada
 
-1. backup do DEV antes de qualquer escrita, **no destino permanente do projeto**
-   (`docs/tasks/backups/`, o mesmo das TASK_010/011), no formato usado por elas
-   (`.sql.gz` + `.sha256`):
-   `shambala_pre_task012_dev_20261025101223.sql.gz` (224.161 bytes, 47 tabelas);
-   conferido com `sha256sum -c` → SUCESSO; o `.gz` abre e é dump PostgreSQL.
-   O dump `-Fc` da primeira coleta (`shambala_dev_antes_t012_20261025081651.dump`,
-   361.887 bytes, SHA-256 `658e873f…707493`) foi uma cópia de trabalho em
-   `/tmp` e **não é mais a referência**: `/tmp` não sobrevive a reboot;
+1. **DOIS backups, e a diferença entre eles importa.** O primeiro é o único que
+   serve para desfazer a migração; o segundo é retrato de um DEV **já migrado**
+   e não substitui o primeiro:
+
+   | Arquivo (em `docs/tasks/backups/`) | Quando | Estado do banco | Serve para |
+   |---|---|---|---|
+   | `shambala_pre_task012_PRE_MIGRACAO_20261025081651.dump` (361.887 bytes, SHA-256 `658e873f…707493`) | 08:16, **antes de qualquer escrita** | **sem** o schema da TASK_012 — conferido: `pg_restore -l` não lista `operacao_idempotencia` nem `fiado_alocacao` | **voltar atrás**: é o backup original |
+   | `shambala_pre_task012_dev_20261025101223.sql.gz` (224.161 bytes, SHA-256 `fbffbfaa…0c83`) | 10:12, **depois** da migração e dos reinícios | **com** as duas tabelas (conferido no `.gz`) | retrato posterior; **não** desfaz a migração |
+
+   Ambos com `.sha256` ao lado, conferidos com `sha256sum -c` → SUCESSO. O dump
+   pré-migração estava só em `/tmp` (cópia de trabalho) e foi copiado para o
+   destino permanente preservando o `mtime` e o hash — `/tmp` não sobrevive a
+   reboot, e esse é o arquivo que importa para reverter. O diretório
+   `docs/tasks/backups/` é **ignorado pelo `.gitignore`** (não versionado, como os
+   das TASK_010/011): o backup vive no servidor, não no repositório.
 2. **SHA-256** calculado e reconferido: `658e873f7549241b72407387f888eeb59d2f6968b610affda60e435477707493`
    (registrado em `docs/tasks/evidencias/TASK_012/*.sha256`);
 3. restauração em banco descartável `shambala_t012_restore` (criado de
@@ -1288,11 +1331,13 @@ Endpoints: `/login` 200, `/financeiro` 303, `/financeiro/compras` 303,
    mesma rotina que a suíte de mensalidades exercita.
 4. **A sessão de caixa aberta (1) não foi tocada** e continua pelo fluxo
    legado; novos recebimentos nela continuam bloqueados (TASK_008).
-5. **Produção não foi acessada nem por leitura**, e não houve push. O backup
-   recuperável está em `docs/tasks/backups/shambala_pre_task012_dev_20261025101223.sql.gz`
-   com o `.sha256` ao lado (destino permanente, versionado). A restauração desse
-   arquivo **não foi reexecutada** depois da troca de formato — a validação de
-   restauração (§9.3) foi feita sobre o dump `-Fc`; registrado como limite.
+5. **Produção não foi acessada nem por leitura**, e não houve push. Os dois
+   backups estão em `docs/tasks/backups/` com `.sha256` ao lado (diretório **não
+   versionado**, por `.gitignore`, igual às TASK_010/011). **Para reverter a
+   TASK_012 use o `PRE_MIGRACAO`** — o outro já contém o schema novo. A
+   restauração validada (§9.3) foi feita **sobre o dump pré-migração**, que é o
+   que precisa funcionar; o retrato posterior não foi restaurado (não é preciso
+   para reverter) — registrado como limite.
 
 ## 10. Roteiro de conferência do dono (máximo 10 passos)
 
@@ -1372,7 +1417,7 @@ três itens impedem declarar a tarefa concluída, e ficam nomeados:
    smartphone, §8 abaixo), mas ela roda em banco descartável com dados fictícios
    — não substitui o dono abrindo as telas no DEV com os dados dele.
 
-E a §6 tem FIN-08 parcial por decisão da própria ordem (§6.7).
+E a §6 tem FIN-08 parcial por decisão da própria ordem (§6.8).
 
 | Pendência | Natureza |
 |---|---|
