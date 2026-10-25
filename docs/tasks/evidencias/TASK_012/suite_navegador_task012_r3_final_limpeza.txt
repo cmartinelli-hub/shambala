@@ -1,0 +1,64 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261025121134-663352 (identifica ESTA execução nas provas)
+  árvore ..: 87e1f6297f46de3d6293535848f365db56d1f4fa-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2918
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261025121134-663352
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025121134-663352'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- test_financeiro_navegador_task012.py
+[ok] conexão do script: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261025121134-663352'}
+[ok] servidor HTTP (http://127.0.0.1:9011) na execução corrente, mesmo banco efetivo: shambala_test_passes (token t010-20261025121134-663352)
+[seed] fixtures T012N prontas (janela 2026-09-01 a 2026-09-30)
+-- C1 mensalidades: as três datas rotuladas e o valor em formato brasileiro
+  ✔ C1 a tela diz que a data é o vencimento
+  ✔ C1 valor da mensalidade em R$ com vírgula (não 60.00)
+  ✔ C1 nenhuma rolagem horizontal no desktop
+  ✔ C1 relatório expõe o seletor 'Qual data o mês usa'
+  ✔ C1 as três perguntas estão nomeadas para o operador
+-- C2 fiado parcial: Recebido, Saldo e 'Recebida em parte' na tela
+  ✔ C2 premissa: a entrega de 15 abateu a dívida (alocação gravada)
+  ✔ C2 o cartão de saldo devedor mostra R$ 25,00 (40 − 15)
+  ✔ C2 o valor recebido aparece separado (R$ 15,00)
+  ✔ C2 a situação não é 'Paga' nem 'Pendente': é 'Recebida em parte'
+  ✔ C2 extrato separa saldo devedor de crédito antecipado
+  ✔ C2 extrato mostra o mesmo saldo 25,00 das outras telas
+-- C3 excedente como crédito e detalhe do lançamento com o destino
+  ✔ C3 premissa: a entrega de 30 fechou a dívida (25 alocados) e deixou 5 de crédito
+  ✔ C3 o excedente aparece como crédito do trabalhador (R$ 5,00)
+  ✔ C3 a dívida quitada não deixa saldo devedor
+  ✔ C3 o detalhe do lançamento mostra 'Para onde foi este dinheiro'
+  ✔ C3 o destino aponta a dívida abatida, com valor
+-- C4 número grande, CSS versionado e retorno ao mesmo recorte
+  ✔ C4 o valor grande aparece completo (R$ 1.234.567,89)
+  ✔ C4 o CSS é servido com versão (à prova de cache antigo)
+  ✔ C4 a Visão Geral explica o acumulado por conta
+  ✔ C4 o detalhe devolve ao mesmo recorte consultado
+-- C5 smartphone: nada cortado, nada com rolagem horizontal
+  ✔ C5 /financeiro?de=2026-09-01&ate=2026-09-30 cabe na largura do celular (sem rolagem lateral)
+  ✔ C5 /financeiro/fiados?trabalhador_id=1 cabe na largura do celular (sem rolagem lateral)
+  ✔ C5 /financeiro/mensalidades/relatorio?mes=2026-09&data_uso=comp cabe na largura do celular (sem rolagem lateral)
+  ✔ C5 o valor grande também cabe no celular
+  ✔ C5 nenhum valor estoura o cartão no celular
+-- C6 larguras intermediárias: 768 e 1024 sem rolagem horizontal
+  ✔ C6 768px sem rolagem horizontal
+  ✔ C6 1024px sem rolagem horizontal
+
+[resultado] aprovadas=27 falhas=0
+  evidências: /nc/projetos/shambala/docs/tasks/evidencias/TASK_012
+== Sumário por suíte (contagens reais nos logs acima) ==
+test_financeiro_navegador_task012.py: rc=0
+tests/rodar_testes.sh, linha 89: 663441 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2918
+  depois: pessoas=678 checkins=2918
+  DEV inalterado: ok
