@@ -167,34 +167,37 @@ recusada, inclusive no legado). A **ausência de constraint** no banco garantind
 o par permanece como risco documentado — sem DDL novo, conforme o limite
 "não remodelar o financeiro" da ordem.
 
-## Sessões legadas — estado observado e decisão registrada pelo dono
+## Sessões legadas — estado observado (decisão pendente)
 
-Nas sessões `legado` (criadas antes da migração TASK_008), **o comportamento
-observado e provado é**: vendas em espécie e sangrias operam pela regra antiga
-(acumuladores `total_vendas`/`total_sangrias`, fechamento pela fórmula
-anterior); **novos recebimentos** contra legado são recusados
-(`sessao_legada_recebimento`, provado por POST direto e em lote — CASO
-12/C7/LOTE, todos recusados antes de qualquer escrita) e o **fechamento pela
-regra nova** contra legado é recusado (`sessao_legada`, com explicação).
+**Estado observado: vendas e sangrias continuam permitidas em sessões legadas
+pela implementação atual. A manutenção ou alteração desse comportamento aguarda
+decisão explícita do dono.** Não há, nesta conversa nem nos registros desta
+tarefa, autorização demonstrada do dono sobre esse ponto: a linha do adendo da
+TASK_008 (`docs/tasks/done/TASK_008_CAIXA_VENDAS_RECEBIMENTOS_DINHEIRO_FISICO.md`,
+l.306 — "Vendas e sangrias em legado continuam permitidas — operar e fechar a
+gaveta antiga exige a regra antiga; o dono barrou novos *recebimentos*, não o
+fluxo legado em si") é **descrição do executor**, registrada como descrição da
+intenção da implementação, não como decisão do dono atribuída a esta revisão ou
+endossada por ela. O que está provado pelas suítes é o comportamento em si: nas
+sessões `legado` (criadas antes da migração TASK_008), vendas em espécie e
+sangrias operam pela regra antiga (acumuladores `total_vendas`/
+`total_sangrias`, fechamento pela fórmula anterior); **novos recebimentos**
+contra legado são recusados (`sessao_legada_recebimento`, provado por POST
+direto e em lote — CASO 12/C7/LOTE, todos recusados antes de qualquer escrita)
+e o **fechamento pela regra nova** contra legado é recusado (`sessao_legada`,
+com explicação). Demonstração executada na suíte: legado aceita venda/sangria
+pela regra antiga, recusa recebimento sem efeito, fecha pela fórmula
+`10 + 20 − 22 = 8`, e a reabertura do mesmo caixa nasce na versão `eventos`.
 
-Manter vendas/sangrias nesse fluxo **não é decisão desta revalidação**: está
-registrado como decisão do dono no adendo da revisão da TASK_008
-(`docs/tasks/done/TASK_008_CAIXA_VENDAS_RECEBIMENTOS_DINHEIRO_FISICO.md`, l.306:
-"Vendas e sangrias em legado continuam permitidas — operar e fechar a gaveta
-antiga exige a regra antiga; o dono barrou novos *recebimentos*, não o fluxo
-legado em si"). Esta TASK_010 apenas conferiu o código contra esse registro e
-contra "Transição e histórico" da TASK_008 ("novos eventos não podem contaminar
-acumuladores legados por fallback"): sob essa leitura o requisito está atendido,
-porque os acumuladores legado **só recebem o fluxo legado** — as suítes provam
-que uma sessão `eventos` nunca usa `total_vendas` (permanece 0 mesmo com
-vendas/cancelamentos gravados via eventos) e que o legado não aceita evento do
-modelo novo. O CASO 8b (corrida em sessão `eventos` própria) confirma que nada
-do fluxo novo cai nos acumuladores antigos. Qualquer mudança nessa regra —
-endurecer ou afrouxar o fluxo legado — exige decisão explícita do dono, não
-competência técnica desta revisão. Demonstração executada na suíte: legado
-aceita venda/sangria pela regra antiga, recusa recebimento sem efeito, fecha
-pela fórmula `10 + 20 − 22 = 8`, e a reabertura do mesmo caixa nasce na versão
-`eventos`.
+A conferência contra "Transição e histórico" da TASK_008 ("novos eventos não
+podem contaminar acumuladores legados por fallback") permanece como verificação
+técnica: sob essa leitura o requisito está atendido, porque os acumuladores
+legado **só recebem o fluxo legado** — as suítes provam que uma sessão `eventos`
+nunca usa `total_vendas` (permanece 0 mesmo com vendas/cancelamentos gravados
+via eventos) e que o legado não aceita evento do modelo novo. O CASO 8b (corrida
+em sessão `eventos` própria) confirma que nada do fluxo novo cai nos
+acumuladores antigos. Qualquer mudança no comportamento legado — endereçar ou
+afrouxar — depende de decisão explícita do dono, não desta revisão técnica.
 
 ## `test_financeiro_integracao.py` — classificação honesta
 
@@ -277,17 +280,19 @@ sentinelas A/B e mutações antes/depois.
 
 **Não encontramos novos bloqueadores financeiros** na revalidação.
 
-Parecer técnico: **TASK_010 encerrável com ressalvas; a TASK_008 está
+Parecer técnico: **TASK_010 encerrada com ressalvas; a TASK_008 está
 tecnicamente aprovada para considerarmos as correções da revisão concluídas**,
 com homologação manual do dono **pendente** e três ressalvas explícitas
 registradas acima: ausência de constraint do par de sangria; duplicação por
 reenvio cego no PDV, que **continua como risco conhecido** (a prova de reenvio
 cobriu exatamente o recebimento de mensalidade testado e o cancelamento — não
-se estende a outros fluxos); e a manutenção do fluxo legado de vendas/sangrias,
-que **não é decisão desta revalidação** — está registrada como decisão do dono
-no adendo da TASK_008 (l.306), e alterá-la exige autorização explícita do dono.
-Nada aqui autoriza produção ou publicação; a aprovação técnica **não**
-substitui a homologação manual do dono — o roteiro abaixo é o instrumento para
+se estende a outros fluxos); e o fluxo legado de vendas/sangrias, que é
+**estado observado da implementação atual** — a linha citada da TASK_008 (l.306)
+é descrição do executor, não autorização demonstrada do dono; a manutenção ou
+alteração desse comportamento **aguarda decisão explícita do dono** (pendência
+distinta da homologação). Nada aqui autoriza produção ou publicação; a aprovação
+técnica **não** substitui a homologação manual do dono — o roteiro abaixo é o
+instrumento para
 isso.
 
 ## Roteiro de homologação do dono (dados exclusivamente fictícios)
