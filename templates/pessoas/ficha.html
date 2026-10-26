@@ -107,10 +107,10 @@
     <h2 class="ficha-secao-titulo">{{ icone("heart-pulse") }} Planos de Tratamento</h2>
     <div class="ficha-planos-grid">
         {% for p in planos %}
-        <div class="ficha-plano-card {% if p.status == 'ativo' %}plano-ativo{% elif p.status == 'alta' %}plano-alta{% else %}plano-cancelado{% endif %}">
+        <div class="ficha-plano-card {% if p.status == 'ativo' %}plano-ativo{% elif p.status == 'alta' %}plano-alta{% elif p.status == 'concluido' %}plano-alta{% else %}plano-cancelado{% endif %}">
             <div class="ficha-plano-header">
                 <span class="ficha-plano-medium">{{ p.medium_nome }}</span>
-                <span class="ficha-plano-status status-{{ p.status }}">{{ p.status }}</span>
+                <span class="ficha-plano-status status-{{ p.status }}">{% if p.status == 'concluido' %}Concluído{% else %}{{ p.status }}{% endif %}</span>
             </div>
             <div class="ficha-plano-dados">
                 <div class="ficha-plano-dado">

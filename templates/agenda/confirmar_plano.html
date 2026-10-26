@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block titulo %}Agendar atendimento — confirmar plano{% endblock %}
+
+{% block conteudo %}
+<a href="/agenda?medium_id={{ medium_id }}&de={{ data_de }}&ate={{ data_ate }}&dia_semana={{ dia_semana }}&pessoa_nome={{ pessoa_nome|urlencode }}" class="btn-voltar">← Agenda de Sessões</a>
+
+{% if erro_externo %}
+<div class="form-erro">
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
+    <span>{{ erro_externo }}</span>
+</div>
+{% endif %}
+
+<div class="cabecalho-secao">
+    <div>
+        <h1>Confirmar destino do atendimento</h1>
+        <p class="subtitulo">{{ pessoa_nome_completo }} · {{ medium_nome }} · {{ data | data_br }}</p>
+    </div>
+</div>
+
+{% if modo == 'conflito' %}
+<div class="card-form" style="margin-bottom:1.5rem">
+    <p>{{ pessoa_nome_completo }} já tem plano ativo com outro médium. Não é possível
+        acrescentar esta sessão ao médium errado nem criar um plano paralelo em
+        segredo — resolva pelo plano existente ou converse com a recepção.</p>
+</div>
+<form method="post" action="/agenda/novo">
+    <input type="hidden" name="pessoa_id" value="{{ pessoa_id }}">
+    <input type="hidden" name="data" value="{{ data }}">
+    <input type="hidden" name="medium_id" value="{{ medium_id }}">
+    <input type="hidden" name="data_de" value="{{ data_de }}">
+    <input type="hidden" name="data_ate" value="{{ data_ate }}">
+    <input type="hidden" name="dia_semana" value="{{ dia_semana }}">
+    <input type="hidden" name="pessoa_nome" value="{{ pessoa_nome }}">
+    <div class="fin-rolo">
+    <table class="tabela">
+        <thead>
+            <tr><th>Plano</th><th>Início</th><th>Situação das sessões</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for p in planos %}
+            <tr>
+                <td>{{ p.medium_nome }}</td>
+                <td>{{ p.inicio_br }}</td>
+                <td>{{ p.resumo }}{% if p.legado %} · iniciado antes da regra de conclusão automática{% endif %}</td>
+                <td>
+                    {% if pode_abrir_agenda_plano %}
+                    <a href="/cadastros/mediuns/{{ p.medium_id }}/planos/{{ p.id }}/agenda"
+                       class="btn btn-secundario btn-sm">Abrir agenda deste plano</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <div style="margin-top:1rem">
+        <a href="/agenda?medium_id={{ medium_id }}&de={{ data_de }}&ate={{ data_ate }}&dia_semana={{ dia_semana }}&pessoa_nome={{ pessoa_nome|urlencode }}"
+           class="btn btn-secundario">Voltar</a>
+    </div>
+</form>
+
+{% else %}
+<form method="post" action="/agenda/novo">
+    <input type="hidden" name="pessoa_id" value="{{ pessoa_id }}">
+    <input type="hidden" name="data" value="{{ data }}">
+    <input type="hidden" name="medium_id" value="{{ medium_id }}">
+    <input type="hidden" name="data_de" value="{{ data_de }}">
+    <input type="hidden" name="data_ate" value="{{ data_ate }}">
+    <input type="hidden" name="dia_semana" value="{{ dia_semana }}">
+    <input type="hidden" name="pessoa_nome" value="{{ pessoa_nome }}">
+    <input type="hidden" name="qtd_sessoes" value="{{ qtd_sessoes }}">
+    <input type="hidden" name="frequencia" value="{{ frequencia }}">
+    <input type="hidden" name="confirmar" value="1">
+
+    {% if modo == 'confirmar' %}
+    {% set p = planos[0] %}
+    <div class="card-form" style="margin-bottom:1.5rem">
+        <p>Este atendimento será <strong>acrescentado ao plano</strong> com
+            <strong>{{ p.medium_nome }}</strong>, iniciado em <strong>{{ p.inicio_br }}</strong>
+            ({{ p.resumo }}). Nada é gravado até você confirmar.</p>
+        {% if p.legado %}
+        <p class="subtitulo" style="margin-top:.6rem">Este plano foi iniciado antes da regra de
+            conclusão automática: continua funcionando normalmente, mas não se encerra sozinho
+            quando as sessões se completam — o encerramento é feito por alta ou cancelamento.</p>
+        {% endif %}
+        {% if pode_abrir_agenda_plano %}
+        <p style="margin-top:.6rem">
+            <a href="/cadastros/mediuns/{{ p.medium_id }}/planos/{{ p.id }}/agenda"
+               class="btn btn-secundario btn-sm">Abrir agenda deste plano</a>
+            <span class="subtitulo">para ver ou ajustar as sessões deste plano</span>
+        </p>
+        {% endif %}
+        <input type="hidden" name="plano_destino" value="{{ p.id }}">
+    </div>
+    {% else %}
+    <div class="card-form" style="margin-bottom:1rem">
+        <p>{{ pessoa_nome_completo }} tem <strong>vários planos ativos</strong> com este médium.
+            Escolha em qual a sessão entra — nada é gravado até você confirmar.</p>
+    </div>
+    <div class="fin-rolo">
+    <table class="tabela">
+        <thead>
+            <tr><th></th><th>Médium</th><th>Início</th><th>Situação das sessões</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for p in planos %}
+            <tr>
+                <td><input type="radio" name="plano_destino" value="{{ p.id }}" required></td>
+                <td>{{ p.medium_nome }}</td>
+                <td>{{ p.inicio_br }}</td>
+                <td>{{ p.resumo }}{% if p.legado %} · antes da regra automática{% endif %}</td>
+                <td>
+                    {% if pode_abrir_agenda_plano %}
+                    <a href="/cadastros/mediuns/{{ p.medium_id }}/planos/{{ p.id }}/agenda"
+                       class="btn btn-secundario btn-sm">Abrir agenda deste plano</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:1rem;display:flex;gap:.6rem">
+        <button type="submit" class="btn btn-primario">Confirmar e acrescentar sessão</button>
+        <a href="/agenda?medium_id={{ medium_id }}&de={{ data_de }}&ate={{ data_ate }}&dia_semana={{ dia_semana }}&pessoa_nome={{ pessoa_nome|urlencode }}"
+           class="btn btn-secundario">Cancelar</a>
+    </div>
+</form>
+{% endif %}
+{% endblock %}

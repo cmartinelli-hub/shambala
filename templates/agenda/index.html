@@ -8,6 +8,19 @@
 <div class="form-erro">
     <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
     <span>{{ erro_externo }}</span>
+    {% if plano_ativo and pode_abrir_agenda_plano %}
+    <a href="/cadastros/mediuns/{{ plano_ativo.medium_id }}/planos/{{ plano_ativo.id }}/agenda"
+       class="btn btn-secundario btn-sm" style="margin-left:.6rem">Abrir agenda deste plano</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if msg_externo %}
+<div class="form-sucesso" style="background:var(--cor-sucesso-suave, #e8f5e9);border:1px solid var(--cor-sucesso, #2e7d32);border-radius:8px;padding:.7rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+    <span>{{ msg_externo }}</span>
+    {% if link_agenda_plano %}
+    <a href="{{ link_agenda_plano }}" class="btn btn-secundario btn-sm">Abrir agenda deste plano</a>
+    {% endif %}
 </div>
 {% endif %}
 

@@ -1,0 +1,13 @@
+# baseline DEV — banco efetivo shambala_verifica_backup_t018 (config: /var/run/postgresql:5432)
+
+planos_tratamento: 1912 linhas  conteudo_md5=533913a75392134286a6a7506763461d
+  por status: {'alta': 17, 'ativo': 1866, 'cancelado': 29}
+agendamentos:      2980 linhas  conteudo_md5=1cda8bfa5606750ff7261b707be15716
+  por status: {'agendado': 231, 'cancelado': 315, 'faltou': 840, 'realizado': 1594}
+checkins:          2920 linhas (2198 realizadas)
+pessoas:           678 linhas
+planos de 1 sessão (o "avulso"): 1801   plano_pessoas: 1912
+
+schema planos_tratamento:  9 colunas md5=16c043c338d44b42c13e531cbc5bc6b0
+schema agendamentos:       6 colunas md5=1a3651cb4b1ff7bb2ce4fa784b2fd29c
+colunas TASK_018 presentes: sessoes_previstas=nao, sessoes_adicionais=nao, regra_conclusao=nao, concluido_em=nao, concluido_por=nao, conclusao_origem=nao, conclusao_desfeita_em=nao, conclusao_desfeita_por=nao, adicionada=nao

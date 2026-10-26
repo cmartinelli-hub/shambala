@@ -1,4 +1,5 @@
 from datetime import date
+import urllib.parse
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -670,27 +671,27 @@ async def atendimento_realizado(request: Request, checkin_id: int):
     atendente, redir = _guard(request)
     if redir:
         return redir
+    import servico_conclusao_planos
     with conectar() as conn:
         row = conn.execute(
-            "SELECT dia_trabalho_id, medium_id, agendamento_id, plano_id, codigo_atendimento FROM checkins WHERE id = %s",
+            "SELECT dia_trabalho_id, medium_id, agendamento_id, plano_id, codigo_atendimento, atendimento_realizado FROM checkins WHERE id = %s",
             (checkin_id,)
         ).fetchone()
         if row:
-            # Marca o titular e todos os acompanhantes com o mesmo código
-            conn.execute(
-                "UPDATE checkins SET atendimento_realizado = 1 WHERE dia_trabalho_id = %s AND codigo_atendimento = %s",
-                (row["dia_trabalho_id"], row["codigo_atendimento"])
-            )
-            medium_id = row["medium_id"]
-            if row["agendamento_id"]:
+            if row["atendimento_realizado"]:
+                # Reenvio (duplo clique/retry) do mesmo atendimento: o efeito
+                # já foi registrado — nada é contado duas vezes (TASK_018).
+                medium_id = row["medium_id"]
+            else:
+                # Marca o titular e todos os acompanhantes com o mesmo código
                 conn.execute(
-                    "UPDATE agendamentos SET status='realizado' WHERE id=%s",
-                    (row["agendamento_id"],)
+                    "UPDATE checkins SET atendimento_realizado = 1 WHERE dia_trabalho_id = %s AND codigo_atendimento = %s",
+                    (row["dia_trabalho_id"], row["codigo_atendimento"])
                 )
-            if row["plano_id"]:
-                conn.execute(
-                    "UPDATE planos_tratamento SET sessoes_realizadas = sessoes_realizadas + 1 WHERE id=%s",
-                    (row["plano_id"],)
+                medium_id = row["medium_id"]
+                # Realização sob a trava do plano; pode concluir (TASK_018).
+                servico_conclusao_planos.marcar_realizado(
+                    conn, row["plano_id"], row["agendamento_id"], atendente["id"]
                 )
         else:
             medium_id = None
@@ -704,30 +705,35 @@ async def atendimento_desfazer(request: Request, checkin_id: int):
     atendente, redir = _guard(request)
     if redir:
         return redir
+    import servico_conclusao_planos
     with conectar() as conn:
         row = conn.execute(
-            "SELECT dia_trabalho_id, medium_id, agendamento_id, plano_id, codigo_atendimento FROM checkins WHERE id = %s",
+            "SELECT dia_trabalho_id, medium_id, agendamento_id, plano_id, codigo_atendimento, atendimento_realizado FROM checkins WHERE id = %s",
             (checkin_id,)
         ).fetchone()
-        if row:
+        if not row:
+            return RedirectResponse(url="/dia", status_code=303)
+        try:
             # Reabre o titular e todos os acompanhantes com o mesmo código
             conn.execute(
                 "UPDATE checkins SET atendimento_realizado = 0 WHERE dia_trabalho_id = %s AND codigo_atendimento = %s",
                 (row["dia_trabalho_id"], row["codigo_atendimento"])
             )
             medium_id = row["medium_id"]
-            if row["agendamento_id"]:
-                conn.execute(
-                    "UPDATE agendamentos SET status='agendado' WHERE id=%s",
-                    (row["agendamento_id"],)
-                )
-            if row["plano_id"]:
-                conn.execute(
-                    "UPDATE planos_tratamento SET sessoes_realizadas = GREATEST(0, sessoes_realizadas - 1) WHERE id=%s",
-                    (row["plano_id"],)
-                )
-        else:
+            # Desfaz a sessão sob a trava do plano; pode reabrir conclusão
+            # automática — ou recusar se isso criar dois planos ativos.
+            servico_conclusao_planos.desfazer_realizado(
+                conn, row["plano_id"], row["agendamento_id"], atendente["id"]
+            )
+        except servico_conclusao_planos.ReavaliarRecusado as recusa:
+            # A recusa anula TODA a transação: sem desfazer o checkin, sem
+            # mexer em sessão ou contador. O `commit` do conectar() no fim do
+            # bloco não reapresenta nada — não há efeitos parciais.
+            conn.rollback()
             medium_id = None
+            return RedirectResponse(
+                url="/dia?erro=" + urllib.parse.quote(recusa.mensagem), status_code=303
+            )
     if medium_id:
         return RedirectResponse(url=f"/dia/mediuns/{medium_id}", status_code=303)
     return RedirectResponse(url="/dia", status_code=303)
@@ -1129,23 +1135,21 @@ async def dashboard_atendimento_realizado(request: Request, checkin_id: int):
     atendente, redir = _guard(request)
     if redir:
         return redir
+    import servico_conclusao_planos
     with conectar() as conn:
         row = conn.execute(
-            "SELECT dia_trabalho_id, agendamento_id, plano_id, codigo_atendimento FROM checkins WHERE id=%s",
+            "SELECT dia_trabalho_id, agendamento_id, plano_id, codigo_atendimento, atendimento_realizado FROM checkins WHERE id=%s",
             (checkin_id,)
         ).fetchone()
-        if row:
+        if row and not row["atendimento_realizado"]:
             conn.execute(
                 "UPDATE checkins SET atendimento_realizado=1 WHERE dia_trabalho_id=%s AND codigo_atendimento=%s",
                 (row["dia_trabalho_id"], row["codigo_atendimento"])
             )
-            if row["agendamento_id"]:
-                conn.execute("UPDATE agendamentos SET status='realizado' WHERE id=%s", (row["agendamento_id"],))
-            if row["plano_id"]:
-                conn.execute(
-                    "UPDATE planos_tratamento SET sessoes_realizadas = sessoes_realizadas + 1 WHERE id=%s",
-                    (row["plano_id"],)
-                )
+            # mesmo serviço e mesma regra do caminho da fila (TASK_018)
+            servico_conclusao_planos.marcar_realizado(
+                conn, row["plano_id"], row["agendamento_id"], atendente["id"]
+            )
     return RedirectResponse(url="/dia/dashboard", status_code=303)
 
 
@@ -1464,10 +1468,11 @@ async def salvar_fraterno(
                 com_passe = banco.calcular_sessoes_com_passe(sessoes_total, sessoes_com_passe)
                 cur = conn.execute(
                     """INSERT INTO planos_tratamento
-                       (medium_id, sessoes_total, data_inicio, frequencia, sessoes_com_passe, status)
-                       VALUES (%s,%s,%s,%s,%s,'ativo')
+                       (medium_id, sessoes_total, sessoes_previstas, data_inicio,
+                        frequencia, sessoes_com_passe, status, regra_conclusao)
+                       VALUES (%s,%s,%s,%s,%s,%s,'ativo',1)
                        RETURNING id""",
-                    (medium_id, sessoes_total, inicio.isoformat(), frequencia, com_passe)
+                    (medium_id, sessoes_total, sessoes_total, inicio.isoformat(), frequencia, com_passe)
                 )
                 plano_id = cur.fetchone()["id"]
                 conn.execute(

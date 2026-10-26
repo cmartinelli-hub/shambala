@@ -142,6 +142,7 @@
             {{ p.medium_nome }} — {{ p.sessoes_realizadas }}/{{ p.sessoes_total }} sessões —
             {% if p.status == 'ativo' %}<strong>Em andamento</strong>
             {% elif p.status == 'alta' %}Alta
+            {% elif p.status == 'concluido' %}Concluído
             {% else %}Cancelado{% endif %}
             ({{ p.data_inicio }})
         </div>

@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from banco import conectar, _normalizar, data_atendimento_valida
 import banco
+import servico_conclusao_planos
 from fastapi.responses import JSONResponse
 from rotas.auth import obter_atendente_logado, e_admin
 from rotas.mediuns import _reaplicar_piso_passe
@@ -44,6 +45,12 @@ def _guard(request: Request):
     return guarda_modulo(request, modulo)
 
 
+def _pode_abrir_agenda_plano(atendente) -> bool:
+    from rotas.permissoes import usuario_pode
+    return (usuario_pode(atendente["id"], "cadastros.mediuns", "ler")
+            or usuario_pode(atendente["id"], "cadastros.mediuns.planos", "ler"))
+
+
 def _dia_semana_iso(data_str: str) -> int:
     """Retorna o dia da semana (0=segunda) de uma data ISO."""
     return date.fromisoformat(data_str).weekday()
@@ -57,7 +64,11 @@ async def agenda(
     ate: str = Query(""),
     dia_semana: int = Query(-1),  # -1 = todos
     pessoa_nome: str = Query(""),
+    pessoa_id: int = Query(0),
     erro: str = Query(""),
+    msg: str = Query(""),
+    plano_ref: int = Query(0),
+    plano_med: int = Query(0),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -114,6 +125,18 @@ async def agenda(
         ).fetchall()
         dias_atendimento_set = {r["dia_semana"] for r in dias_atendimento}
 
+        # Bloqueio de plano único apontado na própria tela: o erro vem do POST
+        # /novo; reconsultamos (não confiamos em id vindo da URL) os planos
+        # ativos da pessoa e oferecemos a agenda deles a quem pode abri-la,
+        # por referências humanas (médium e início), nunca "plano 1799".
+        plano_ativo = None
+        pode_abrir_agenda_plano = False
+        if erro and pessoa_id:
+            pa = banco.planos_ativos_da_pessoa(conn, pessoa_id)
+            if pa:
+                plano_ativo = _referencia_plano(conn, pa[0])
+                pode_abrir_agenda_plano = _pode_abrir_agenda_plano(atendente)
+
     # Filtrar por dia da semana (após buscar do banco)
     if dia_semana >= 0:
         agendamentos = [
@@ -149,10 +172,42 @@ async def agenda(
         "hoje": hoje.isoformat(),
         "total_sessoes": total_sessoes,
         "erro_externo": erro,
+        "msg_externo": msg,
+        "link_agenda_plano": (
+            f"/cadastros/mediuns/{plano_med}/planos/{plano_ref}/agenda"
+            if msg and plano_ref and plano_med and _pode_abrir_agenda_plano(atendente)
+            else ""
+        ),
+        "plano_ativo": plano_ativo,
+        "pode_abrir_agenda_plano": pode_abrir_agenda_plano,
         "dias_semana": DIAS_SEMANA,
         "dias_atendimento": dias_atendimento_set,
         "dias_com_agenda": dias_com_agenda,
     })
+
+
+def _referencia_plano(conn, plano) -> dict:
+    """Referência humana de um plano para mensagens: médium, início e situação
+    das sessões. IDs internos ficam só nas rotas/auditoria (TASK_018 §4)."""
+    nome = conn.execute(
+        "SELECT nome_completo FROM mediuns WHERE id = %s", (plano["medium_id"],)
+    ).fetchone()
+    previstas = plano["sessoes_previstas"]
+    if previstas is None:
+        previstas = plano["sessoes_total"]
+    extras = plano["sessoes_adicionais"] or 0
+    resumo = f"{plano['sessoes_realizadas']} cumpridas de {previstas}"
+    if extras:
+        resumo += f" + {extras} extra{'s' if extras > 1 else ''} "
+        resumo += "(acrescentada)" if extras == 1 else "(acrescentadas)"
+    return {
+        "id": plano["id"],
+        "medium_id": plano["medium_id"],
+        "medium_nome": nome["nome_completo"] if nome else "médium não cadastrado",
+        "inicio_br": date.fromisoformat(plano["data_inicio"]).strftime("%d/%m/%Y"),
+        "resumo": resumo,
+        "legado": (plano["regra_conclusao"] or 0) != 1,
+    }
 
 
 @router.post("/novo")
@@ -167,6 +222,8 @@ async def novo_agendamento(
     pessoa_nome: str = Form(""),
     qtd_sessoes: int = Form(1),
     frequencia: str = Form("semanal"),
+    confirmar: int = Form(0),
+    plano_destino: int = Form(0),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -179,12 +236,27 @@ async def novo_agendamento(
             data = f"{data_parts[2]}-{data_parts[1]}-{data_parts[0]}"
 
     params = (f"medium_id={medium_id}&de={data_de}&ate={data_ate}"
-              f"&dia_semana={dia_semana}&pessoa_nome={urllib.parse.quote(pessoa_nome, safe='')}")
+              f"&dia_semana={dia_semana}&pessoa_id={pessoa_id}"
+              f"&pessoa_nome={urllib.parse.quote(pessoa_nome, safe='')}")
 
     def _voltar(erro: str):
         return RedirectResponse(
             url=f"/agenda?{params}&erro={urllib.parse.quote(erro)}", status_code=303
         )
+
+    ctx_base = {
+        "request": request,
+        "atendente": atendente,
+        "data": data,
+        "medium_id": medium_id,
+        "pessoa_id": pessoa_id,
+        "data_de": data_de,
+        "data_ate": data_ate,
+        "dia_semana": dia_semana,
+        "pessoa_nome": pessoa_nome,
+        "qtd_sessoes": qtd_sessoes,
+        "frequencia": frequencia,
+    }
 
     with conectar() as conn:
         # Validar data inicial
@@ -193,6 +265,99 @@ async def novo_agendamento(
         except ValueError:
             return _voltar("Data inválida.")
 
+        pessoa = conn.execute(
+            "SELECT id, nome_completo FROM pessoas WHERE id = %s", (pessoa_id,)
+        ).fetchone()
+        if not pessoa:
+            return _voltar("Selecione uma pessoa válida.")
+        medium = conn.execute(
+            "SELECT id, nome_completo FROM mediuns WHERE id = %s", (medium_id,)
+        ).fetchone()
+        if not medium:
+            return _voltar("Selecione um médium válido.")
+
+        def _pagina(modo, refs, erro=""):
+            # A página intermediária preserva os campos preenchidos (ocultos no
+            # próprio formulário) — nada é escrito até a confirmação.
+            ctx = dict(ctx_base)
+            ctx.update({
+                "pessoa_nome_completo": pessoa["nome_completo"],
+                "medium_nome": medium["nome_completo"],
+                "modo": modo,
+                "planos": refs,
+                "erro_externo": erro,
+                "pode_abrir_agenda_plano": _pode_abrir_agenda_plano(atendente),
+            })
+            return templates.TemplateResponse("agenda/confirmar_plano.html", ctx)
+
+        # ── Caminho habitual com plano ativo (TASK_018 §4): a sessão entra no
+        # plano da pessoa, de forma explícita — nunca em plano paralelo
+        # silencioso. Nada é escrito antes da confirmação.
+        planos_ativos = banco.planos_ativos_da_pessoa(conn, pessoa_id)
+        if planos_ativos:
+            compat = [p for p in planos_ativos if p["medium_id"] == medium_id]
+
+            if not compat:
+                # Plano ativo de OUTRO médium: não anexar ao médium errado,
+                # não criar plano para contornar plano único — explicar o
+                # conflito e oferecer acesso ao plano permitido.
+                return _pagina("conflito", [_referencia_plano(conn, p) for p in planos_ativos])
+
+            if not confirmar:
+                # Um ou vários planos: escolha/apresentação explícita por
+                # referências humanas (médium, início, situação). Sem escolha
+                # automática por id, linha ou recência.
+                refs = [_referencia_plano(conn, p) for p in compat]
+                return _pagina("escolha" if len(refs) > 1 else "confirmar", refs)
+
+            # Confirmação: revalidar no servidor (id do navegador não é
+            # autorização) pessoa↔plano, médium e situação ativa.
+            refs = [_referencia_plano(conn, p) for p in compat]
+            alvo = [p for p in compat if p["id"] == plano_destino]
+            if not alvo:
+                return _pagina(
+                    "escolha" if len(refs) > 1 else "confirmar", refs,
+                    erro="Este plano não está mais entre os planos ativos da "
+                         "pessoa. Recarregue a agenda e tente novamente.",
+                )
+            if not data_atendimento_valida(conn, data):
+                return _pagina(
+                    "escolha" if len(refs) > 1 else "confirmar", refs,
+                    erro=f"{data_inicio.strftime('%d/%m/%Y')} não é dia de "
+                         "atendimento. Escolha um dia cadastrado em Configurações.",
+                )
+            res = servico_conclusao_planos.acrescentar_sessao(
+                conn, alvo[0]["id"], data, requer_passe=0, encaixe=0,
+                tipo="adicao", autor_id=atendente["id"],
+            )
+            if res == "data_ja_agendada":
+                return _pagina(
+                    "escolha" if len(refs) > 1 else "confirmar", refs,
+                    erro=f"Já existe atendimento agendado neste plano em "
+                         f"{data_inicio.strftime('%d/%m/%Y')}.",
+                )
+            if res == "plano_nao_ativo":
+                # Plano saiu de ativo entre a tela e a escrita (ex.: a última
+                # realização concorrente o concluiu). Não reabre, não cria
+                # outro, não escreve nada parcial — orientar recarregar.
+                return _voltar(
+                    "O plano acabou de sair da situação ativa (concluído ou "
+                    "encerrado). Recarregue a agenda antes de agendar."
+                )
+            _reaplicar_piso_passe(conn, alvo[0]["id"])
+            ref = _referencia_plano(conn, alvo[0])
+            msg = (
+                f"Atendimento de {pessoa['nome_completo']} acrescentado ao plano "
+                f"com {ref['medium_nome']}, iniciado em {ref['inicio_br']}."
+            )
+            return RedirectResponse(
+                url=f"/agenda?{params}&msg={urllib.parse.quote(msg)}"
+                    f"&plano_ref={ref['id']}&plano_med={ref['medium_id']}",
+                status_code=303,
+            )
+
+        # ── Sem plano ativo: fluxo existente de novo atendimento (esta tela
+        # cria planos; a tarefa não concede poder geral de criar plano clínico).
         total = max(1, int(qtd_sessoes or 1))
         inicio = banco._proxima_data_trabalho(data_inicio, banco._dias_atendimento(conn))
 
@@ -216,24 +381,17 @@ async def novo_agendamento(
                     f"Pessoa já possui agendamento em {date.fromisoformat(d).strftime('%d/%m/%Y')}."
                 )
 
-        # Regra do plano único: com plano ativo, as sessões devem entrar pela
-        # agenda desse plano (encaixe/reagendar) — esta tela cria planos novos.
-        if banco.planos_ativos_da_pessoa(conn, pessoa_id):
-            return _voltar(
-                "Pessoa já possui plano ativo. Use a agenda do plano para encaixar "
-                "sessões ou encerre o plano antes de criar um novo."
-            )
-
         # Cria o plano da Agenda. `sessoes_com_passe = 0` significa "somente o
         # piso obrigatório do centro" (as 3 primeiras sessões); a partir da 4ª
-        # o passe é opcional, conforme R4.
+        # o passe é opcional, conforme R4. `regra_conclusao=1` marca o plano
+        # como nascido sob a regra prospectiva de conclusão (TASK_018).
         cur = conn.execute(
             """INSERT INTO planos_tratamento
-               (medium_id, sessoes_total, sessoes_realizadas, data_inicio,
-                frequencia, status, sessoes_com_passe)
-               VALUES (%s, %s, 0, %s, %s, 'ativo', 0)
+               (medium_id, sessoes_total, sessoes_previstas, sessoes_realizadas,
+                data_inicio, frequencia, status, sessoes_com_passe, regra_conclusao)
+               VALUES (%s, %s, %s, 0, %s, %s, 'ativo', 0, 1)
                RETURNING id""",
-            (medium_id, total, inicio.isoformat(), frequencia)
+            (medium_id, total, total, inicio.isoformat(), frequencia)
         )
         plano_id = cur.fetchone()["id"]
         conn.execute(
@@ -547,22 +705,21 @@ async def agenda_medium_lancar(
                 "Confira a data na papelada ou as Configurações de dias de atendimento."
             ))
 
-        # Caso 1: plano ativo no MÉDIUM selecionado → acrescenta 1 sessão avulsa.
+        # Caso 1: plano ativo no MÉDIUM selecionado → acrescenta 1 sessão ao
+        # plano pela transição única do serviço (trava + extensão, TASK_018).
         plano = _plano_ativo_da_pessoa_em_medium(conn, pessoa_id, medium_id)
         if plano:
-            duplicado = conn.execute(
-                """SELECT 1 FROM agendamentos
-                   WHERE plano_id = %s AND data = %s AND status = 'agendado'
-                   LIMIT 1""",
-                (plano["id"], data_iso)
-            ).fetchone()
-            if duplicado:
-                return _voltar(erro="Pessoa já possui atendimento agendado nesta data.")
-            conn.execute(
-                "INSERT INTO agendamentos (plano_id, data, status, requer_passe, encaixe) "
-                "VALUES (%s, %s, 'agendado', 0, 0)",
-                (plano["id"], data_iso)
+            res = servico_conclusao_planos.acrescentar_sessao(
+                conn, plano["id"], data_iso, requer_passe=0, encaixe=0,
+                tipo="adicao", autor_id=atendente["id"],
             )
+            if res == "data_ja_agendada":
+                return _voltar(erro="Pessoa já possui atendimento agendado nesta data.")
+            if res == "plano_nao_ativo":
+                return _voltar(erro=(
+                    "O plano acabou de sair da situação ativa. "
+                    "Recarregue a agenda antes de lançar."
+                ))
             _reaplicar_piso_passe(conn, plano["id"])
             return _voltar(msg=f"Sessão de {pessoa['nome_completo']} acrescentada ao plano em {date.fromisoformat(data_iso).strftime('%d/%m/%Y')}.")
 
@@ -604,11 +761,11 @@ async def agenda_medium_lancar(
 
         cur = conn.execute(
             """INSERT INTO planos_tratamento
-               (medium_id, sessoes_total, sessoes_realizadas, data_inicio,
-                frequencia, status, sessoes_com_passe)
-               VALUES (%s, %s, 0, %s, %s, 'ativo', 0)
+               (medium_id, sessoes_total, sessoes_previstas, sessoes_realizadas,
+                data_inicio, frequencia, status, sessoes_com_passe, regra_conclusao)
+               VALUES (%s, %s, %s, 0, %s, %s, 'ativo', 0, 1)
                RETURNING id""",
-            (medium_id, total, inicio.isoformat(), frequencia)
+            (medium_id, total, total, inicio.isoformat(), frequencia)
         )
         plano_id = cur.fetchone()["id"]
         conn.execute(

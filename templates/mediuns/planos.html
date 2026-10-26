@@ -59,6 +59,7 @@
             <td class="acoes" style="display:flex;gap:.4rem;flex-wrap:wrap">
                 <a href="/cadastros/mediuns/{{ medium.id }}/planos/{{ p.id }}/agenda"
                    class="btn btn-secundario btn-sm">Agenda</a>
+                {% if pode_gerir %}
                 <form method="post"
                       action="/cadastros/mediuns/{{ medium.id }}/planos/{{ p.id }}/alta"
                       onsubmit="return confirm('Dar alta neste plano?')">
@@ -69,6 +70,7 @@
                       onsubmit="return confirm('Cancelar este plano?')">
                     <button type="submit" class="btn btn-perigo btn-sm">Cancelar</button>
                 </form>
+                {% endif %}
             </td>
         </tr>
         {% endfor %}
@@ -79,6 +81,7 @@
 {% endif %}
 
 <!-- Novo plano -->
+{% if pode_gerir %}
 <div class="card-form">
     <h3 style="margin-bottom:1rem;font-size:1rem">Novo plano de tratamento</h3>
     <form method="post" action="/cadastros/mediuns/{{ medium.id }}/planos/novo">
@@ -124,6 +127,7 @@
         </div>
     </form>
 </div>
+{% endif %}
 
 <!-- Planos encerrados -->
 {% if encerrados %}
@@ -144,6 +148,7 @@
                 <td>
                     {% if p.status == 'alta' %}Alta
                     {% elif p.status == 'cancelado' %}Cancelado
+                    {% elif p.status == 'concluido' %}Concluído
                     {% else %}{{ p.status }}{% endif %}
                 </td>
             </tr>

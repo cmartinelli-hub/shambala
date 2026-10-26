@@ -23,7 +23,9 @@
     <strong>Status:</strong>
         {% if plano.status == 'ativo' %}<span style="color:var(--cor-sucesso)">Ativo</span>
         {% elif plano.status == 'alta' %}<span style="color:var(--cor-info)">Alta</span>
-        {% else %}<span style="color:var(--cor-perigo)">Cancelado</span>{% endif %}
+        {% elif plano.status == 'cancelado' %}<span style="color:var(--cor-perigo)">Cancelado</span>
+        {% elif plano.status == 'concluido' %}<span style="color:var(--cor-info)">Concluído pelo cumprimento</span>
+        {% else %}<span style="color:var(--cor-texto-suave)">{{ plano.status }}</span>{% endif %}
 </div>
 
 <!-- Navegação por mês -->

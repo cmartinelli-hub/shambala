@@ -562,6 +562,10 @@ async def editar_plano(
             return RedirectResponse(url=f"/cadastros/pessoas/{pessoa_id}", status_code=303)
         campos = {"sessoes_total": sessoes_total, "sessoes_realizadas": sessoes_realizadas,
                   "frequencia": frequencia, "sessoes_com_passe": banco.calcular_sessoes_com_passe(sessoes_total, sessoes_com_passe)}
+        # TASK_018: a previsão estável é copiada do total SÓ quando alguém
+        # edita o total explicitamente (replanejamento visível na tela) —
+        # cancelamento e reagendamento nunca passam por aqui.
+        campos["sessoes_previstas"] = sessoes_total
         if data_inicio:
             campos["data_inicio"] = data_inicio
         sets = ", ".join(f"{k} = %s" for k in campos)

@@ -1,0 +1,29 @@
+# baseline DEV — banco efetivo shambala (config: /var/run/postgresql:5432)
+
+planos_tratamento: 1912 linhas  conteudo_md5=533913a75392134286a6a7506763461d
+  por status: {'alta': 17, 'ativo': 1866, 'cancelado': 29}
+agendamentos:      2980 linhas  conteudo_md5=1cda8bfa5606750ff7261b707be15716
+  por status: {'agendado': 231, 'cancelado': 315, 'faltou': 840, 'realizado': 1594}
+checkins:          2920 linhas (2198 realizadas)
+pessoas:           678 linhas
+planos de 1 sessão (o "avulso"): 1801   plano_pessoas: 1912
+
+schema planos_tratamento:  17 colunas md5=8fe380962cc7030425637c4d6b7e9fcd
+schema agendamentos:       7 colunas md5=7a50b7c52f7204ab78840a7bf5ad1404
+colunas TASK_018 presentes: sessoes_previstas=sim, sessoes_adicionais=sim, regra_conclusao=sim, concluido_em=sim, concluido_por=sim, conclusao_origem=sim, conclusao_desfeita_em=sim, conclusao_desfeita_por=sim, adicionada=sim
+  previstas NULL=0  com_extra=0  prospectivo=0  concluido=0  concluido_em=0
+  agendamentos adicionada=1: 0
+
+## demais tabelas (contagens) — coletado após a 2ª subida, que produziu baseline idêntica à 1ª
+financeiro_movimentacoes: 862
+caixas: 5
+contas_financeiras: 4
+vendas_pdv: 1859
+doacoes_cestas: 0
+fiado_credito_mov: 4
+fiado_alocacao: 0
+operacao_idempotencia: 1
+plano_chave_idempotencia: 18
+dias_atendimento: 2
+mediuns: 20
+grupos_permissoes: 23

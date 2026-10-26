@@ -223,7 +223,8 @@ def planos_ativos_da_pessoa(conn, pessoa_id: int) -> list:
     """Planos de tratamento com status='ativo' nos quais a pessoa está vinculada."""
     return conn.execute(
         """SELECT pt.id, pt.medium_id, pt.data_inicio, pt.sessoes_total,
-                  pt.sessoes_realizadas, pt.status
+                  pt.sessoes_realizadas, pt.status, pt.sessoes_previstas,
+                  pt.sessoes_adicionais, pt.regra_conclusao
            FROM planos_tratamento pt
            JOIN plano_pessoas pp ON pp.plano_id = pt.id
            WHERE pp.pessoa_id = %s AND pt.status = 'ativo'
@@ -683,6 +684,23 @@ def _migrar(conn):
         ("fiado_credito_mov", "venda_id", "INTEGER REFERENCES vendas_pdv(id) ON DELETE RESTRICT"),
         ("fiado_credito_mov", "financeiro_id",
          "INTEGER REFERENCES financeiro_movimentacoes(id) ON DELETE RESTRICT"),
+        # TASK_018: representação estável da quantidade a cumprir do plano e a
+        # fronteira prospectiva persistida. `sessoes_previstas` é a quota
+        # ORIGINAL (não muda com cancelamento nem com reagendamento);
+        # `sessoes_adicionais` é a extensão líquida válida (cancelar extensão
+        # pendente revoga o +1); `regra_conclusao` diz se o plano nasceu sob a
+        # regra automática (1) ou é legado (0) — nunca se decide pela data.
+        ("planos_tratamento", "sessoes_previstas", "INTEGER"),
+        ("planos_tratamento", "sessoes_adicionais", "INTEGER NOT NULL DEFAULT 0"),
+        ("planos_tratamento", "regra_conclusao", "INTEGER NOT NULL DEFAULT 0"),
+        ("planos_tratamento", "concluido_em", "TEXT"),
+        ("planos_tratamento", "concluido_por", "INTEGER REFERENCES atendentes(id)"),
+        ("planos_tratamento", "conclusao_origem", "TEXT"),
+        ("planos_tratamento", "conclusao_desfeita_em", "TEXT"),
+        ("planos_tratamento", "conclusao_desfeita_por", "INTEGER REFERENCES atendentes(id)"),
+        # Linha de extensão (acrescentada ao plano) — permite a revogação pelo
+        # cancelamento sem sobrecarregar `encaixe`, que é marcação da tela.
+        ("agendamentos", "adicionada", "INTEGER NOT NULL DEFAULT 0"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:
@@ -694,6 +712,14 @@ def _migrar(conn):
         if existe > 0:
             continue
         conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+
+    # TASK_018: cópia única da quota original para quem já existia (legado).
+    # Planos criados depois nascem com `sessoes_previstas` preenchida, então o
+    # WHERE IS NULL nunca reescreve um fato futuro nem em reexecução.
+    conn.execute(
+        "UPDATE planos_tratamento SET sessoes_previstas = sessoes_total "
+        "WHERE sessoes_previstas IS NULL"
+    )
 
     # Sincroniza status com campo legado concluido
     conn.execute(

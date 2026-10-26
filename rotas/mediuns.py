@@ -65,6 +65,28 @@ def _guard(request: Request):
     return guarda_modulo(request, "cadastros.mediuns")
 
 
+def _guard_planos(request: Request):
+    """Planos de atendimento e agenda: administração de médiuns OU o módulo
+    próprio da Recepção (cadastros.mediuns.planos). Leitura exige 'ler',
+    gravação exige 'escrever' em um dos dois."""
+    from rotas.permissoes import guarda_modulos
+    return guarda_modulos(request, ["cadastros.mediuns", "cadastros.mediuns.planos"])
+
+
+def _pode_gerir_mediuns(atendente) -> bool:
+    """Se pode mostrar ações de administração (formulário, alta/cancelamento)."""
+    from rotas.permissoes import usuario_pode
+    return usuario_pode(atendente["id"], "cadastros.mediuns", "ler")
+
+
+def _plano_do_medium(conn, plano_id: int, medium_id: int):
+    """O plano pertence ao médium da URL? (URL trocada não atravessa a tela)."""
+    return conn.execute(
+        "SELECT 1 FROM planos_tratamento WHERE id = %s AND medium_id = %s",
+        (plano_id, medium_id)
+    ).fetchone() is not None
+
+
 # ── Regra do passe nas sessões do plano ───────────────────────────────────────
 
 def _agendamentos_do_passe(conn, plano_id: int) -> list:
@@ -115,7 +137,7 @@ def _reaplicar_requer_passe(conn, plano_id: int, requeridos: list) -> None:
 
 @router.get("", response_class=HTMLResponse)
 async def listar(request: Request):
-    atendente, redir = _guard(request)
+    atendente, redir = _guard_planos(request)
     if redir:
         return redir
     with conectar() as conn:
@@ -126,6 +148,7 @@ async def listar(request: Request):
         "request": request,
         "atendente": atendente,
         "mediuns": [dict(r) for r in rows],
+        "pode_gerir": _pode_gerir_mediuns(atendente),
     })
 
 
@@ -270,7 +293,7 @@ async def salvar_editar(
 
 @router.get("/{id}/planos", response_class=HTMLResponse)
 async def listar_planos(request: Request, id: int, erro: str = Query("")):
-    atendente, redir = _guard(request)
+    atendente, redir = _guard_planos(request)
     if redir:
         return redir
     with conectar() as conn:
@@ -317,6 +340,7 @@ async def listar_planos(request: Request, id: int, erro: str = Query("")):
         "planos": planos_com_pessoas,
         "todas_pessoas": [dict(p) for p in todas_pessoas],
         "hoje": date.today().isoformat(),
+        "pode_gerir": _pode_gerir_mediuns(atendente),
         "erro": urllib.parse.unquote(erro) if erro else None,
     })
 
@@ -360,10 +384,11 @@ async def novo_plano(
             )
         cur = conn.execute(
             """INSERT INTO planos_tratamento
-               (medium_id, sessoes_total, data_inicio, frequencia, sessoes_com_passe, status)
-               VALUES (%s, %s, %s, %s, %s, 'ativo')
+               (medium_id, sessoes_total, sessoes_previstas, data_inicio,
+                frequencia, sessoes_com_passe, status, regra_conclusao)
+               VALUES (%s, %s, %s, %s, %s, %s, 'ativo', 1)
                RETURNING id""",
-            (id, sessoes_total, inicio.isoformat(), frequencia, sessoes_com_passe)
+            (id, sessoes_total, sessoes_total, inicio.isoformat(), frequencia, sessoes_com_passe)
         )
         plano_id = cur.fetchone()["id"]
         for pessoa_id in pessoas_ids:
@@ -418,7 +443,7 @@ _MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
 @router.get("/{id}/planos/{plano_id}/agenda", response_class=HTMLResponse)
 async def ver_agenda(request: Request, id: int, plano_id: int,
                      mes: str = Query(None)):
-    atendente, redir = _guard(request)
+    atendente, redir = _guard_planos(request)
     if redir:
         return redir
 
@@ -508,13 +533,17 @@ async def novo_agendamento(
     requer_passe: int = Form(0),
     encaixe: int = Form(0),
 ):
-    atendente, redir = _guard(request)
+    atendente, redir = _guard_planos(request)
     if redir:
         return redir
     from banco import data_atendimento_valida
+    import servico_conclusao_planos
     destino = f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda"
     with conectar() as conn:
-        # Sessão só pode cair em dia de atendimento cadastrado (R4). O
+        # O plano precisa pertencer ao médium da URL — troca indevida nega.
+        if not _plano_do_medium(conn, plano_id, id):
+            return HTMLResponse(status_code=403, content="Acesso negado.")
+        # Sessão só cai em dia de atendimento cadastrado (R4). O
         # parâmetro `encaixe` não libera a restrição: qualquer exceção
         # precisaria de decisão expressa do proprietário.
         if not data_atendimento_valida(conn, data):
@@ -524,10 +553,38 @@ async def novo_agendamento(
                 ),
                 status_code=303,
             )
-        conn.execute(
-            "INSERT INTO agendamentos (plano_id, data, status, requer_passe, encaixe) VALUES (%s,%s,%s,%s,%s)",
-            (plano_id, data, "agendado", 1 if requer_passe else 0, 1 if encaixe else 0)
+        # TASK_018: a sessão extra entra pela transição única do plano (trava
+        # inclusa). Plano concluído/alto/cancelado não se reabre por aqui.
+        plano = conn.execute("SELECT status FROM planos_tratamento WHERE id = %s",
+                             (plano_id,)).fetchone()
+        if not plano or plano["status"] != "ativo":
+            return RedirectResponse(
+                url=f"{destino}?erro=" + urllib.parse.quote(
+                    "Este plano não está ativo — sessões não podem ser "
+                    "acrescentadas. Se for caso, faça um novo atendimento."
+                ),
+                status_code=303,
+            )
+        res = servico_conclusao_planos.acrescentar_sessao(
+            conn, plano_id, data, requer_passe=int(requer_passe),
+            encaixe=int(encaixe), tipo="adicao", autor_id=atendente["id"],
         )
+        if res == "data_ja_agendada":
+            return RedirectResponse(
+                url=f"{destino}?erro=" + urllib.parse.quote(
+                    "Este plano já tem sessão agendada nesta data."
+                ),
+                status_code=303,
+            )
+        if res == "plano_nao_ativo":
+            # concluído/alto/cancelado entre a tela e a escrita (ex.: a última
+            # realização fechou o plano concorrente) — não reabre, não duplica.
+            return RedirectResponse(
+                url=f"{destino}?erro=" + urllib.parse.quote(
+                    "Este plano acabou de sair da situação ativa. Recarregue a página."
+                ),
+                status_code=303,
+            )
         # A obrigatoriedade das 3 primeiras sessões não pode ser removida por
         # este formulário: reaplica o piso ao conjunto do plano.
         _reaplicar_piso_passe(conn, plano_id)
@@ -536,26 +593,33 @@ async def novo_agendamento(
 
 @router.post("/{id}/planos/{plano_id}/agenda/{ag_id}/cancelar")
 async def cancelar_agendamento(request: Request, id: int, plano_id: int, ag_id: int):
-    atendente, redir = _guard(request)
+    atendente, redir = _guard_planos(request)
     if redir:
         return redir
+    import servico_conclusao_planos
     with conectar() as conn:
-        conn.execute(
-            "UPDATE agendamentos SET status='cancelado' WHERE id=%s AND plano_id=%s",
-            (ag_id, plano_id)
+        if not _plano_do_medium(conn, plano_id, id):
+            return HTMLResponse(status_code=403, content="Acesso negado.")
+        # TASK_018: cancelar extensão ainda pendente revoga a extensão
+        # (+1−1, registrado); cancelar sessão prevista NÃO vira cumprimento
+        # — a obrigação permanece e o plano não conclui por cancelamento.
+        servico_conclusao_planos.cancelar_sessao(
+            conn, plano_id, ag_id, autor_id=atendente["id"]
         )
     return RedirectResponse(url=f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda", status_code=303)
 
 
 @router.post("/{id}/planos/{plano_id}/agenda/{ag_id}/falta")
 async def registrar_falta(request: Request, id: int, plano_id: int, ag_id: int):
-    atendente, redir = _guard(request)
+    atendente, redir = _guard_planos(request)
     if redir:
         return redir
     from datetime import date as _date
     import banco
     hoje = _date.today().isoformat()
     with conectar() as conn:
+        if not _plano_do_medium(conn, plano_id, id):
+            return HTMLResponse(status_code=403, content="Acesso negado.")
         conn.execute(
             "UPDATE agendamentos SET status='faltou' WHERE id=%s AND plano_id=%s",
             (ag_id, plano_id)
@@ -573,13 +637,16 @@ async def reagendar(
     ag_id: int,
     nova_data: str = Form(...),
 ):
-    atendente, redir = _guard(request)
+    atendente, redir = _guard_planos(request)
     if redir:
         return redir
     from datetime import date as _date, timedelta as _td
     from banco import data_atendimento_valida, datas_agendamento, _dias_atendimento
     destino = f"/cadastros/mediuns/{id}/planos/{plano_id}/agenda"
     with conectar() as conn:
+        # O plano precisa pertencer ao médium da URL — troca indevida nega.
+        if not _plano_do_medium(conn, plano_id, id):
+            return HTMLResponse(status_code=403, content="Acesso negado.")
         ag = conn.execute(
             "SELECT data, requer_passe FROM agendamentos WHERE id=%s AND plano_id=%s",
             (ag_id, plano_id)
