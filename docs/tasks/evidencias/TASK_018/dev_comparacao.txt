@@ -30,3 +30,16 @@ Smoke anônimo após cada subida: / 303→/menu, /menu 303→/login, /login 200,
 /cadastros/mediuns/1/planos, /cadastros/mediuns/1/planos/1/agenda,
 /biblioteca, /financeiro → 303→/login (nenhum acesso anônimo novo). Log de
 subida: 'Application startup complete', 0 ocorrências de error/traceback.
+
+## smoke reapresentado APÓS a 2ª subida (pid 2389867):
+  / -> 303
+  /menu -> 303
+  /login -> 200
+  /agenda -> 303
+  /dia -> 303
+  /cadastros/mediuns -> 303
+  /cadastros/permissoes -> 303
+  /cadastros/mediuns/1/planos -> 303
+  /cadastros/mediuns/1/planos/1/agenda -> 303
+  /biblioteca -> 303
+  /financeiro -> 303
