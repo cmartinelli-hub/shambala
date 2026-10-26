@@ -8,7 +8,11 @@ o dono decidiu (2026-10-21):
 
   Caixas    → caixa (ler, escrever)
   Financeiro→ relatorios (ler, escrever), caixa (ler, escrever)
-  Recepção  → checkin.trabalhadores (ler, escrever)
+  Recepção  → checkin.trabalhadores (ler, escrever),
+              cadastros.mediuns.planos (ler, escrever) — decisão do dono
+              (2026-10-26): a Recepção acessa os planos de atendimento dos
+              médiuns e lança agendamentos pelo próprio grupo, sem Cambonas
+              e sem vínculo individual; não administração de médiuns.
   Cambonas  → cadastros.pessoas (ler), agenda.medium (ler, escrever)
 
 Nunca altera linhas existentes (ON CONFLICT DO NOTHING) e nunca toca no
@@ -31,6 +35,7 @@ SEED = [
     ("Financeiro", "relatorios",            True,  True,  False),
     ("Financeiro", "caixa",                 True,  True,  False),
     ("Recepção",   "checkin.trabalhadores", True,  True,  False),
+    ("Recepção",   "cadastros.mediuns.planos", True, True,  False),
     ("Cambonas",   "cadastros.pessoas",     True,  False, False),
     ("Cambonas",   "agenda.medium",        True,  True,  False),
 ]

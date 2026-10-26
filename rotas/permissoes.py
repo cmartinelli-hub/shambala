@@ -29,6 +29,12 @@ ROTULOS_ROTA = {
     "dia.fraterno": "Atendimento Fraterno",
     "cadastros.pessoas": "Cadastros → Pessoas",
     "cadastros.mediuns": "Cadastros → Médiuns",
+    # Acesso aos planos de atendimento dos médiuns e às operações de agenda
+    # (sessão avulsa, reagendar, cancelar agendamento, falta). Decisão do dono
+    # (2026-10-26): a Recepção lança agendamentos pelos próprios grupos, sem
+    # vínculo com o médium. NÃO libera administração de médiuns, criação/alta/
+    # cancelamento de plano (decisão clínica) nem exclusões.
+    "cadastros.mediuns.planos": "Cadastros → Planos de atendimento (agenda)",
     "cadastros.usuarios": "Cadastros → Usuários",
     "cadastros.trabalhadores": "Cadastros → Trabalhadores",
     "cadastros.permissoes": "Cadastros → Permissões",
@@ -95,6 +101,22 @@ def guarda_modulo(request: Request, modulo: str):
     if not usuario_pode(atendente["id"], modulo, acao):
         return None, HTMLResponse(status_code=403, content="Acesso negado.")
     return atendente, None
+
+
+def guarda_modulos(request: Request, modulos: list):
+    """Como guarda_modulo, mas basta ter a ação em QUALQUER dos módulos.
+
+    Usado por telas que pertencem a mais de um papel (ex.: agenda do plano é
+    administrada por quem cuida de médiuns e pela Recepção, via
+    cadastros.mediuns.planos, sem abrir a administração completa).
+    """
+    atendente = obter_atendente_logado(request)
+    if not atendente:
+        return None, RedirectResponse(url="/login", status_code=303)
+    acao = "ler" if request.method in ("GET", "HEAD") else "escrever"
+    if any(usuario_pode(atendente["id"], modulo, acao) for modulo in modulos):
+        return atendente, None
+    return None, HTMLResponse(status_code=403, content="Acesso negado.")
 
 
 def pode_acessar(grupo_id: int, modulo: str, acao: str = "ler") -> bool:

@@ -113,7 +113,7 @@
         </a>
     </div>
 </div>
-{% elif permissoes.get('cadastros.trabalhadores') or permissoes.get('cadastros.mediuns') %}
+{% elif permissoes.get('cadastros.trabalhadores') or permissoes.get('cadastros.mediuns') or permissoes.get('cadastros.mediuns.planos') %}
 <!-- Cadastros com permissão explícita -->
 <div class="menu-secao-admin">
     <h2 class="menu-secao-titulo">Cadastros</h2>
@@ -128,6 +128,12 @@
         <a href="/cadastros/mediuns" class="menu-card menu-card-admin">
             <span class="menu-card-icon menu-card-icon-img"><img src="/static/medium.svg" alt="Médiuns"></span>
             <span class="menu-card-label">Médiuns</span>
+        </a>
+        {% elif permissoes.get('cadastros.mediuns.planos') %}
+        <!-- A Recepção chega aos planos pelo próprio grupo, sem administração de médiuns -->
+        <a href="/cadastros/mediuns" class="menu-card menu-card-admin">
+            <span class="menu-card-icon menu-card-icon-img"><img src="/static/medium.svg" alt="Planos"></span>
+            <span class="menu-card-label">Planos de atendimento</span>
         </a>
         {% endif %}
     </div>

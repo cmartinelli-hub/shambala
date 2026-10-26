@@ -151,7 +151,8 @@ async def pagina_menu(request: Request):
         for mod in ["dia.painel", "cadastros.pessoas", "agenda", "agenda.medium",
                     "relatorios", "checkin.trabalhadores", "financeiro",
                     "financeiro.compras", "doacoes", "biblioteca", "mala.direta",
-                    "caixa", "cadastros.trabalhadores", "cadastros.mediuns"]:
+                    "caixa", "cadastros.trabalhadores", "cadastros.mediuns",
+                    "cadastros.mediuns.planos"]:
             permissoes[mod] = usuario_pode(atendente["id"], mod)
     return templates.TemplateResponse("menu.html", {
         "request": request,

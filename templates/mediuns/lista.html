@@ -8,7 +8,9 @@
         <h1>Médiuns</h1>
         <p class="subtitulo">{{ mediuns|length }} médium{{ 's' if mediuns|length != 1 }} cadastrado{{ 's' if mediuns|length != 1 }}</p>
     </div>
+    {% if pode_gerir %}
     <a href="/cadastros/mediuns/novo" class="btn btn-primario">{{ icone("plus") }} Novo médium</a>
+    {% endif %}
 </div>
 
 {% if mediuns %}
@@ -43,13 +45,17 @@
             {% endif %}
         </div>
         <div class="medium-acoes">
+            {% if pode_gerir %}
             <a href="/cadastros/mediuns/{{ m.id }}/editar" class="btn btn-sm btn-editar">{{ icone("pencil") }}️ Editar</a>
+            {% endif %}
             <a href="/cadastros/mediuns/{{ m.id }}/planos" class="btn btn-sm btn-planos">{{ icone("heart-pulse") }} Planos</a>
+            {% if pode_gerir %}
             <form method="post" action="/cadastros/mediuns/{{ m.id }}/toggle-ativo" class="medium-form-toggle">
                 <button type="submit" class="btn-toggle {% if m.ativo %}btn-desativar{% else %}btn-ativar{% endif %}">
                     {{ 'Desativar' if m.ativo else 'Ativar' }}
                 </button>
             </form>
+            {% endif %}
         </div>
     </div>
     {% endfor %}
