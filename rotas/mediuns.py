@@ -442,7 +442,8 @@ _MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
 
 @router.get("/{id}/planos/{plano_id}/agenda", response_class=HTMLResponse)
 async def ver_agenda(request: Request, id: int, plano_id: int,
-                     mes: str = Query(None)):
+                     mes: str = Query(None),
+                     erro: str = Query(""), msg: str = Query("")):
     atendente, redir = _guard_planos(request)
     if redir:
         return redir
@@ -506,6 +507,12 @@ async def ver_agenda(request: Request, id: int, plano_id: int,
             "SELECT 1 FROM agendamentos WHERE plano_id=%s AND status='agendado' AND data >= %s LIMIT 1",
             (plano_id, mes_fim)
         ).fetchone() is not None
+        # TASK_018 (complemento §2): quantas sessões previstas não aconteceram
+        # e seguem sem substituta. É isso que libera a tela a oferecer
+        # "reposição" em vez de "sessão extra".
+        import servico_conclusao_planos
+        vagas_repor = (servico_conclusao_planos.vagas_a_repor(conn, plano_id)
+                       if plano["status"] == "ativo" else 0)
 
     return templates.TemplateResponse("mediuns/agenda.html", {
         "request": request,
@@ -521,6 +528,9 @@ async def ver_agenda(request: Request, id: int, plano_id: int,
         "mes_prox": mes_prox,
         "tem_ant": tem_ant,
         "tem_prox": tem_prox,
+        "vagas_repor": vagas_repor,
+        "erro": erro,
+        "msg": msg,
     })
 
 
@@ -532,6 +542,7 @@ async def novo_agendamento(
     data: str = Form(...),
     requer_passe: int = Form(0),
     encaixe: int = Form(0),
+    tipo: str = Form("adicao"),
 ):
     atendente, redir = _guard_planos(request)
     if redir:
@@ -567,12 +578,32 @@ async def novo_agendamento(
             )
         res = servico_conclusao_planos.acrescentar_sessao(
             conn, plano_id, data, requer_passe=int(requer_passe),
-            encaixe=int(encaixe), tipo="adicao", autor_id=atendente["id"],
+            encaixe=int(encaixe), tipo=tipo, autor_id=atendente["id"],
         )
         if res == "data_ja_agendada":
             return RedirectResponse(
                 url=f"{destino}?erro=" + urllib.parse.quote(
                     "Este plano já tem sessão agendada nesta data."
+                ),
+                status_code=303,
+            )
+        if res == "sem_vaga_para_repor":
+            # A vaga em aberto é o que distingue repor de acrescer: sem ela a
+            # sessão seria extensão e aumentaria o que precisa ser cumprido.
+            return RedirectResponse(
+                url=f"{destino}?erro=" + urllib.parse.quote(
+                    "Não há sessão prevista em aberto para repor neste plano — as "
+                    "que não aconteceram já têm substituta. O que se acrescenta "
+                    "agora é sessão EXTRA (extensão): escolha \"sessão extra\" no "
+                    "formulário se for isso mesmo."
+                ),
+                status_code=303,
+            )
+        if res == "tipo_invalido":
+            return RedirectResponse(
+                url=f"{destino}?erro=" + urllib.parse.quote(
+                    "Tipo de sessão desconhecido. Recarregue a página e escolha "
+                    "entre sessão extra e reposição."
                 ),
                 status_code=303,
             )
@@ -588,7 +619,15 @@ async def novo_agendamento(
         # A obrigatoriedade das 3 primeiras sessões não pode ser removida por
         # este formulário: reaplica o piso ao conjunto do plano.
         _reaplicar_piso_passe(conn, plano_id)
-    return RedirectResponse(url=destino, status_code=303)
+        aviso = (
+            "Reposição agendada: a sessão substitui uma prevista que não "
+            "aconteceu e não aumenta o que o plano precisa cumprir."
+            if tipo == "reposicao" else
+            "Sessão extra agendada: ela aumenta o que o plano precisa cumprir."
+        )
+    return RedirectResponse(
+        url=f"{destino}?msg=" + urllib.parse.quote(aviso), status_code=303
+    )
 
 
 @router.post("/{id}/planos/{plano_id}/agenda/{ag_id}/cancelar")

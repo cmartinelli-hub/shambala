@@ -51,6 +51,27 @@ def estado_plano(conn, plano_id):
     ).fetchone()
 
 
+def vagas_a_repor(conn, plano_id) -> int:
+    """Sessões previstas que não aconteceram e ainda não foram repostas.
+
+    Uma vaga está descoberta quando a linha original (não extensão, não
+    reposição) ficou `faltou` ou `cancelado` e ainda não há reposição em curso
+    ou cumprida para ela. É isso que autoriza uma reposição: sem vaga, o
+    acréscimo é sessão extra e aumenta o que precisa ser cumprido.
+    """
+    r = conn.execute(
+        """SELECT
+             (SELECT COUNT(*) FROM agendamentos
+               WHERE plano_id = %s AND adicionada = 0 AND repoe = 0
+                 AND status IN ('faltou', 'cancelado')) AS descobertas,
+             (SELECT COUNT(*) FROM agendamentos
+               WHERE plano_id = %s AND repoe = 1
+                 AND status IN ('agendado', 'realizado')) AS repostas""",
+        (plano_id, plano_id),
+    ).fetchone()
+    return max(0, r["descobertas"] - r["repostas"])
+
+
 # ── avaliação central ─────────────────────────────────────────────────────────
 
 def _deve_concluir(conn, plano):
@@ -201,19 +222,33 @@ def desfazer_realizado(conn, plano_id, agendamento_id, autor_id=None):
     return "nada"
 
 
+TIPOS_SESSAO = ("adicao", "reposicao")
+
+
 def acrescentar_sessao(conn, plano_id, data, requer_passe=0, encaixe=0,
                        tipo="adicao", autor_id=None):
-    """Acrescenta uma sessão ao plano. `tipo='adicao'` (sessão extra) aumenta
-    a extensão líquida; `tipo='reposicao'` (substituir uma já vencida) não.
-    Retorna 'ok', 'data_ja_agendada' ou 'plano_nao_ativo'. O status é conferido
-    DEPOIS da trava: se a última realização concluir o plano entre a tela e
-    esta escrita, a inclusão espera e é recusada (sem reabrir, sem parcial)."""
+    """Acrescenta uma sessão ao plano.
+
+    `tipo='adicao'` é sessão EXTRA: aumenta a extensão líquida
+    (`sessoes_adicionais`) e, com ela, o que precisa ser cumprido.
+    `tipo='reposicao'` substitui uma sessão prevista que não aconteceu
+    (`faltou`/`cancelado`): persegue a quota ORIGINAL, então não é extensão e
+    exige vaga em aberto (`vagas_a_repor > 0`).
+
+    Retorna 'ok', 'data_ja_agendada', 'plano_nao_ativo', 'sem_vaga_para_repor'
+    ou 'tipo_invalido'. O status é conferido DEPOIS da trava: se a última
+    realização concluir o plano entre a tela e esta escrita, a inclusão espera
+    e é recusada (sem reabrir, sem parcial)."""
+    if tipo not in TIPOS_SESSAO:
+        return "tipo_invalido"
     _travar(conn, plano_id)
     plano = conn.execute(
         "SELECT status, regra_conclusao FROM planos_tratamento WHERE id = %s", (plano_id,)
     ).fetchone()
     if not plano or plano["status"] != "ativo":
         return "plano_nao_ativo"
+    if tipo == "reposicao" and vagas_a_repor(conn, plano_id) <= 0:
+        return "sem_vaga_para_repor"
     duplicada = conn.execute(
         """SELECT 1 FROM agendamentos
            WHERE plano_id = %s AND data = %s AND status = 'agendado' LIMIT 1""",
@@ -223,10 +258,10 @@ def acrescentar_sessao(conn, plano_id, data, requer_passe=0, encaixe=0,
         return "data_ja_agendada"
     conn.execute(
         """INSERT INTO agendamentos
-           (plano_id, data, status, requer_passe, encaixe, adicionada)
-           VALUES (%s, %s, 'agendado', %s, %s, %s)""",
+           (plano_id, data, status, requer_passe, encaixe, adicionada, repoe)
+           VALUES (%s, %s, 'agendado', %s, %s, %s, %s)""",
         (plano_id, data, 1 if requer_passe else 0, 1 if encaixe else 0,
-         1 if tipo == "adicao" else 0),
+         1 if tipo == "adicao" else 0, 1 if tipo == "reposicao" else 0),
     )
     if tipo == "adicao":
         conn.execute(
@@ -240,10 +275,13 @@ def acrescentar_sessao(conn, plano_id, data, requer_passe=0, encaixe=0,
 def cancelar_sessao(conn, plano_id, agendamento_id, autor_id=None):
     """Cancela uma sessão. Cancelar extensão ainda não realizada revoga a
     extensão (+1 volta); cancelar sessão prevista NÃO reduz a previsão —
-    cancelamento não é cumprimento. Retorna a linha afetada para auditoria."""
+    cancelamento não é cumprimento. Cancelar uma REPOSIÇÃO pendente reabre a
+    vaga correspondente (a conta de repostas só considera agendado/realizado),
+    então a obrigação original volta a pedir substituição. Retorna a linha
+    afetada para auditoria."""
     _travar(conn, plano_id)
     linha = conn.execute(
-        "SELECT status, adicionada FROM agendamentos WHERE id = %s AND plano_id = %s",
+        "SELECT status, adicionada, repoe FROM agendamentos WHERE id = %s AND plano_id = %s",
         (agendamento_id, plano_id),
     ).fetchone()
     if not linha or linha["status"] == "cancelado":

@@ -84,6 +84,26 @@
             conclusão automática: continua funcionando normalmente, mas não se encerra sozinho
             quando as sessões se completam — o encerramento é feito por alta ou cancelamento.</p>
         {% endif %}
+        <div style="margin-top:.8rem">
+            <label style="display:block;margin-bottom:.4rem"><strong>Tipo de sessão</strong></label>
+            <label style="display:block;margin-bottom:.3rem">
+                <input type="radio" name="tipo_{{ p.id }}" value="adicao" checked>
+                Sessão extra — acrescenta uma obrigação ao plano
+            </label>
+            {% if p.vagas_repor %}
+            <label style="display:block;margin-bottom:.3rem">
+                <input type="radio" name="tipo_{{ p.id }}" value="reposicao">
+                Reposição — substitui
+                {{ 'a sessão' if p.vagas_repor == 1 else 'uma das sessões' }}
+                prevista{{ '' if p.vagas_repor == 1 else 's' }} não cumprida
+                ({{ p.vagas_repor }} em aberto) e cumpre a obrigação original, sem
+                virar extensão
+            </label>
+            {% else %}
+            <p class="subtitulo" style="margin:.3rem 0 0">Sem sessão prevista em aberto para
+                repor neste plano.</p>
+            {% endif %}
+        </div>
         {% if pode_abrir_agenda_plano %}
         <p style="margin-top:.6rem">
             <a href="/cadastros/mediuns/{{ p.medium_id }}/planos/{{ p.id }}/agenda"
@@ -101,7 +121,8 @@
     <div class="fin-rolo">
     <table class="tabela">
         <thead>
-            <tr><th></th><th>Médium</th><th>Início</th><th>Situação das sessões</th><th></th></tr>
+            <tr><th></th><th>Médium</th><th>Início</th><th>Situação das sessões</th>
+                <th>Tipo de sessão</th><th></th></tr>
         </thead>
         <tbody>
             {% for p in planos %}
@@ -110,6 +131,20 @@
                 <td>{{ p.medium_nome }}</td>
                 <td>{{ p.inicio_br }}</td>
                 <td>{{ p.resumo }}{% if p.legado %} · antes da regra automática{% endif %}</td>
+                <td style="white-space:nowrap">
+                    <label style="display:block">
+                        <input type="radio" name="tipo_{{ p.id }}" value="adicao" checked>
+                        extra
+                    </label>
+                    {% if p.vagas_repor %}
+                    <label style="display:block">
+                        <input type="radio" name="tipo_{{ p.id }}" value="reposicao">
+                        reposição ({{ p.vagas_repor }})
+                    </label>
+                    {% else %}
+                    <span class="subtitulo">sem vaga para repor</span>
+                    {% endif %}
+                </td>
                 <td>
                     {% if pode_abrir_agenda_plano %}
                     <a href="/cadastros/mediuns/{{ p.medium_id }}/planos/{{ p.id }}/agenda"

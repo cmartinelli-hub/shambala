@@ -7,7 +7,8 @@ plano, tentar agendar de novo. Espera reproduzir a mensagem
 "Pessoa já possui plano ativo…" e provar que quem permanece ativo é o PLANO
 (sessions canceladas não encerram o plano).
 
-Uso: SHAMBALA_SUITES=repro_incidente_agenda_plano_sem_sessoes bash tests/rodar_testes.sh
+Uso: SHAMBALA_SUITES=repro_incidente_agenda_plano_sem_sessoes.py bash tests/rodar_testes.sh
+(Não está em `SUITE_PADRAO`: é prova de reprodução de incidente, rodada à parte.)
 """
 import traceback
 from datetime import date, timedelta

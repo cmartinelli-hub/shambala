@@ -1,0 +1,32 @@
+== Ambiente de teste (contrato TASK_010) ==
+  config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
+  banco ...: shambala_test_passes
+  porta ...: 9011
+  token ...: t010-20261026135503-2560361 (identifica ESTA execução nas provas)
+  árvore ..: ca54fac9fcd7b4ae40edca8a8905b21882881324-dirty (código validado por esta execução)
+== Registrando o estado do DEV (apenas leitura) ==
+  DEV (shambala): pessoas=678 checkins=2920
+  porta 9011 livre: ok
+== Recriando o banco de teste (conexão de manutenção validada) ==
+  shambala_test_passes criado e selado para esta execução
+== Confrontando a identidade efetiva (mesma configuração do app) ==
+  [ok] banco efetivo=shambala_test_passes usuário efetivo=shambala token=t010-20261026135503-2560361
+== Subindo o app de teste ==
+[TESTE] Ambiente descartável confirmado: {'banco': 'shambala_test_passes', 'usuario': 'shambala', 'servidor': '/var/run/postgresql', 'banco_efetivo': 'shambala_test_passes', 'usuario_efetivo': 'shambala', 'token': 't010-20261026135503-2560361'}
+  app no ar: destino confirmado pelo próprio app, vinculado ao token
+== Executando as suítes ==
+-- repro_incidente_agenda_plano_sem_sessoes.py
+  PASS  RB1 fluxo do dono: plano pela Agenda → cancelar TODAS as sessões → novo agendamento é BLOQUEADO
+  PASS  RB2 caminho que destrava (sem apagar nada): agenda do plano aceita encaixe com plano ativo
+  PASS  RB3 encerrar o plano (cancelar plano) destrava a Agenda — diferença para cancelar sessão
+  PASS  RB4 correção TASK_018: destino apresentado por referência humana, com porta para o plano
+  PASS  RB5 permissão respeitada: sem acesso às telas de plano, a oferta do link não aparece
+
+5/5 testes passaram (reprodução do bloqueio)
+== Sumário por suíte (contagens reais nos logs acima) ==
+repro_incidente_agenda_plano_sem_sessoes.py: rc=0
+tests/rodar_testes.sh, linha 89: 2560418 Morto                   SHAMBALA_ENV_FILE="$ARQ_ENV" SHAMBALA_MODO_TESTE=1 SHAMBALA_EXEC_TOKEN="$TOKEN" SHAMBALA_FALHA_DISCO_COMPRA=1 setsid nohup "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$PORTA" > "$LOG" 2>&1 < /dev/null
+== Conferência final do DEV ==
+  antes : pessoas=678 checkins=2920
+  depois: pessoas=678 checkins=2920
+  DEV inalterado: ok

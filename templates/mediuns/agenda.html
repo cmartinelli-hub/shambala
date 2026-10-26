@@ -28,6 +28,16 @@
         {% else %}<span style="color:var(--cor-texto-suave)">{{ plano.status }}</span>{% endif %}
 </div>
 
+{% if erro %}
+<div class="form-erro">
+    <span class="form-erro-icone">{{ icone("triangle-alert") }}</span>
+    <span>{{ erro }}</span>
+</div>
+{% endif %}
+{% if msg %}
+<div class="sucesso">{{ icone("circle-check") }} {{ msg }}</div>
+{% endif %}
+
 <!-- Navegação por mês -->
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
     {% if tem_ant %}
@@ -62,6 +72,9 @@
             <td>
                 {{ ag.data | data_br }}
                 {% if ag.data == hoje %}<strong> ← hoje</strong>{% endif %}
+                {% if ag.repoe %}<span style="color:var(--cor-info);font-size:.8rem"> · reposição</span>
+                {% elif ag.adicionada %}<span style="color:var(--cor-texto-suave);font-size:.8rem"> · extra</span>
+                {% endif %}
             </td>
             <td>{{ 'Sim' if ag.requer_passe else 'Não' }}</td>
             <td>{{ 'Sim' if ag.encaixe else 'Não' }}</td>
@@ -102,13 +115,35 @@
 <!-- Adicionar avulso -->
 {% if plano.status == 'ativo' %}
 <div class="card-form" style="margin-bottom:2rem">
-    <h3 style="margin-bottom:.8rem;font-size:.95rem">Adicionar sessão avulsa / encaixe</h3>
+    <h3 style="margin-bottom:.8rem;font-size:.95rem">Adicionar sessão ao plano</h3>
+    {% if vagas_repor %}
+    <p class="subtitulo" style="margin-bottom:.8rem">
+        {{ icone("triangle-alert") }}
+        {% if vagas_repor == 1 %}
+        1 sessão prevista não foi cumprida (faltou ou foi cancelada) e está sem substituta.
+        {% else %}
+        {{ vagas_repor }} sessões previstas não foram cumpridas (faltaram ou foram
+        canceladas) e estão sem substituta.
+        {% endif %}
+        Agendar como <strong>reposição</strong> cumpre a obrigação original; agendar
+        como <strong>sessão extra</strong> acrescenta uma obrigação nova ao plano.
+    </p>
+    {% endif %}
     <form method="post"
           action="/cadastros/mediuns/{{ medium.id }}/planos/{{ plano.id }}/agenda/novo"
           style="display:flex;gap:.8rem;align-items:flex-end;flex-wrap:wrap">
         <div class="campo">
             <label>Data</label>
             <input type="date" name="data" required>
+        </div>
+        <div class="campo">
+            <label>Tipo de sessão</label>
+            <select name="tipo">
+                <option value="adicao">Sessão extra (extensão)</option>
+                {% if vagas_repor %}
+                <option value="reposicao">Reposição de sessão não cumprida</option>
+                {% endif %}
+            </select>
         </div>
         <div class="campo">
             <label>Requer passe?</label>
@@ -137,7 +172,7 @@
     </summary>
     <table style="margin-top:.5rem;opacity:.7">
         <thead>
-            <tr><th>Data</th><th>Status</th><th>Passe</th><th>Encaixe</th></tr>
+            <tr><th>Data</th><th>Status</th><th>Tipo</th><th>Passe</th><th>Encaixe</th></tr>
         </thead>
         <tbody>
             {% for ag in passados %}
@@ -148,6 +183,9 @@
                     {% elif ag.status == 'faltou' %}<span style="color:var(--cor-alerta)">Faltou</span>
                     {% else %}<span style="color:var(--cor-texto-suave)">Cancelado</span>{% endif %}
                 </td>
+                <td>{% if ag.repoe %}Reposição
+                    {% elif ag.adicionada %}Extra
+                    {% else %}Prevista{% endif %}</td>
                 <td>{{ 'Sim' if ag.requer_passe else 'Não' }}</td>
                 <td>{{ 'Sim' if ag.encaixe else 'Não' }}</td>
             </tr>

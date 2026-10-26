@@ -701,6 +701,11 @@ def _migrar(conn):
         # Linha de extensão (acrescentada ao plano) — permite a revogação pelo
         # cancelamento sem sobrecarregar `encaixe`, que é marcação da tela.
         ("agendamentos", "adicionada", "INTEGER NOT NULL DEFAULT 0"),
+        # Linha de REPOSIÇÃO: substitui uma sessão prevista que não aconteceu
+        # (faltou/cancelado). Persegue a quota ORIGINAL, por isso não é
+        # extensão e não aumenta `sessoes_adicionais`. Linhas antigas ficam 0 —
+        # nada é reinterpretado retroativamente.
+        ("agendamentos", "repoe", "INTEGER NOT NULL DEFAULT 0"),
     ]
 
     for tabela, coluna, tipo in para_adicionar:

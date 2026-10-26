@@ -212,10 +212,11 @@ Backfill na migração: `sessoes_previstas = sessoes_total WHERE sessoes_previst
 | ativo 5/5 cumpridos? não — antes disso: acrescenta 1 extra | previstas 5, adicionais 1 → a cumprir 6; plano ativo |
 | 5 realizados + extra pendente | ativo (5 < 6) |
 | extra realizada | **concluido** (6 ≥ 6) |
-| extra cancelada antes de realizar (plano ativo) | revoga: adicionais 0 → a cumprir 5 (prática da TASK_017 “acrescentar e cancelar deixa o plano como estava” preservada) |
+| extra cancelada antes de realizar (plano ativo) | revoga: `sessoes_adicionais` 1 → 0, a cumprir volta a 5. **Fundamento: decisão específica desta tarefa** (§1 — a extensão só existe enquanto a sessão extra estiver de pé; cancelar antes de realizar desfaz o `+1`), que **preserva o histórico**: a linha fica registrada como `cancelado` e apenas o contador líquido recua. Não é princípio da TASK_017 — a TASK_017 liberou a agenda dos planos à Recepção e não define revogação de extensão; atribuir a regra àquela tarefa seria inventar fundamento |
 | 4 realizados + 1 sessão original cancelada | ativo — cancelamento não cumpre e a previsão não se reduz (decisão 6) |
 | falta | nunca cumpre; 2 faltas consecutivas seguem encerrando como 'cancelado' (regra própria intacta) |
-| reposição/reagendamento | mesma linha, sem mudar previstas nem adicionais |
+| reagendamento | mesma linha, sem mudar previstas nem adicionais |
+| **reposição** de prevista não cumprida | linha **nova** marcada `agendamentos.repoe=1`, com `adicionada=0`: cumpre a obrigação original, `sessoes_previstas` e `sessoes_adicionais` intactos (§19). Cancelar a reposição pendente reabre a vaga |
 | plano 'concluido' recebe tentativa de nova sessão | recusa explícita, sem reabrir, sem criar plano na mesma operação |
 | desfazer do último realizado de plano concluído automaticamente | reavalia: se incompleto e sem outro plano ativo → volta a 'ativo', conclusão marcada como desfeita; se houver outro plano ativo → recusa sem efeitos |
 
@@ -231,17 +232,19 @@ Consumidores de status: `planos_ativos_da_pessoa` e demais filtros `status='ativ
 |---|---|---|
 | `ReavaliarRecusado` | 20 | exceção que **anula toda a transação** quando reabrir geraria dois planos ativos |
 | `estado_plano` | 44 | leitura da situação (previstas, adicionais, cumpridas, pendentes, status, origem) |
-| `_deve_concluir` | 56 | a conjunção da §11: `ativo ∧ regra_conclusao=1 ∧ previstas NOT NULL ∧ a_cumprir>0 ∧ cumpridas ≥ a_cumprir ∧ zero 'agendado'` |
-| `reavaliar` | 89 | fecha por cumprimento ou reabre por correção de fato, sempre com auditoria; recusa quando a reabertura duplicaria ativo |
-| `_travar` | 143 | `SELECT id … FOR UPDATE` na linha do plano — **toda** entrada do serviço começa por aqui |
-| `marcar_realizado` | 149 | linha→'realizado' + contador +1, **idempotente** (reenvio não conta duas vezes) |
-| `desfazer_realizado` | 177 | desfaz o realizado e reavalia; só reabre conclusão de origem automática |
-| `acrescentar_sessao` | 204 | insere linha de extensão (`adicionada=1`) e `+1` em `sessoes_adicionais`; revalida `ativo` **sob a trava** |
-| `cancelar_sessao` | 240 | linha→'cancelado'; se era extensão ainda pendente, revoga o `+1` (`GREATEST(0, …-1)`) |
+| `vagas_a_repor` | 54 | sessões previstas (`adicionada=0`, `repoe=0`) que ficaram `faltou`/`cancelado` **menos** as reposições em curso ou cumpridas (`repoe=1`, `agendado`/`realizado`) — é o que autoriza uma reposição (§19) |
+| `_deve_concluir` | 77 | a conjunção da §11: `ativo ∧ regra_conclusao=1 ∧ previstas NOT NULL ∧ a_cumprir>0 ∧ cumpridas ≥ a_cumprir ∧ zero 'agendado'` |
+| `reavaliar` | 110 | fecha por cumprimento ou reabre por correção de fato, sempre com auditoria; recusa quando a reabertura duplicaria ativo |
+| `_travar` | 164 | `SELECT id … FOR UPDATE` na linha do plano — **toda** entrada do serviço começa por aqui |
+| `marcar_realizado` | 170 | linha→'realizado' + contador +1, **idempotente** (reenvio não conta duas vezes) |
+| `desfazer_realizado` | 198 | desfaz o realizado e reavalia; só reabre conclusão de origem automática |
+| `TIPOS_SESSAO` | 225 | contrato fechado de tipos: `adicao` (extensão) e `reposicao` (§19); qualquer outro valor é recusado sem escrever |
+| `acrescentar_sessao` | 228 | insere linha de extensão (`adicionada=1`, `+1` em `sessoes_adicionais`) **ou** de reposição (`repoe=1`, contadores intactos, exige vaga); revalida `ativo` **sob a trava** |
+| `cancelar_sessao` | 275 | linha→'cancelado'; se era extensão ainda pendente, revoga o `+1` (`GREATEST(0, …-1)`); se era reposição pendente, reabre a vaga |
 
 Ordem de travas sempre plano → sessões → contadores. `ORIGEM_AUTOMATICA = "cumprimento_automatico"` (15) marca o que o automático fez; o campo está pronto para uma origem de revisão manual futura, que **não** existe ainda. Nada no serviço é chamado em GET/render/startup.
 
-**Migração (`banco.py`)** — oito colunas novas em `planos_tratamento` + `agendamentos.adicionada`, todas por `para_adicionar` de `_migrar` (685–705): `ADD COLUMN` idempotente, sem tocar DDL de tabela existente; backfill único `sessoes_previstas = sessoes_total WHERE sessoes_previstas IS NULL` (714–721). `planos_ativos_da_pessoa` (224–227) passou a expor as três colunas de contrato para as telas decidirem sem nova consulta.
+**Migração (`banco.py`)** — oito colunas novas em `planos_tratamento` + `agendamentos.adicionada` + `agendamentos.repoe` (§19), todas por `para_adicionar` de `_migrar`: `ADD COLUMN` idempotente, sem tocar DDL de tabela existente; backfill único `sessoes_previstas = sessoes_total WHERE sessoes_previstas IS NULL`. `planos_ativos_da_pessoa` passou a expor as três colunas de contrato para as telas decidirem sem nova consulta.
 
 **Pontos de transição (chamadas reais, todas com `autor_id = atendente`):**
 
@@ -250,12 +253,14 @@ Ordem de travas sempre plano → sessões → contadores. `ORIGEM_AUTOMATICA = "
 | realizado (Atendimento do dia) | `rotas/dia.py:693` | pelo serviço; conclui na mesma transação |
 | realizado (Fraterno/passe) | `rotas/dia.py:1150` | idem, mesmo caminho de contagem |
 | desfazer realizado | `rotas/dia.py:725` | reavalia; recusa com `conn.rollback()` explícito (:728) — **sem efeitos parciais** |
-| acrescentar sessão — `/agenda/novo` confirmado | `rotas/agenda.py:329` | entra no plano escolhido; recusa plano não-ativo sem reabrir |
-| acrescentar sessão — `/agenda/medium` lançar | `rotas/agenda.py:712` | mesmo serviço (Caso 1 da tela do médium) |
-| acrescentar sessão — agenda do plano | `rotas/mediuns.py:568` | idem, com `_plano_do_medium` validando URL↔plano |
-| cancelar sessão do plano | `rotas/mediuns.py:606` | revogação da extensão pendente (decisão §11) |
-| criação de plano (Agenda) | `rotas/agenda.py:388–395` | INSERT com `sessoes_previstas` e `regra_conclusao=1` |
-| criação de plano (cadastro de médiuns) | `rotas/mediuns.py:384–391` | idem |
+| acrescentar sessão — `/agenda/novo` confirmado | `rotas/agenda.py:336` | entra no plano escolhido; o **tipo** (extra × reposição) vem da escolha feita por plano no formulário (:332); recusa plano não-ativo sem reabrir |
+| acrescentar sessão — `/agenda/medium` lançar | `rotas/agenda.py:740` | mesmo serviço (Caso 1 da tela do médium), com `tipo` do formulário |
+| acrescentar sessão — agenda do plano | `rotas/mediuns.py:579` | idem, com `_plano_do_medium` validando URL↔plano e `tipo` do formulário (§19) |
+| cancelar sessão do plano | `rotas/mediuns.py:645` | revogação da extensão pendente (decisão §11); reposição pendente reabre a vaga (§19) |
+| criação de plano (Agenda, sem plano ativo) | `rotas/agenda.py:410` | INSERT com `sessoes_previstas` e `regra_conclusao=1` |
+| criação de plano (lançamento do médium, caso 3) | `rotas/agenda.py:807` | idem |
+| criação de plano (acolhimento fraterno) | `rotas/dia.py:1470` | idem, sob a chave de idempotência do acolhimento |
+| criação de plano (cadastro de médiuns) | `rotas/mediuns.py:386` | idem |
 | edição manual de `sessoes_total` | `rotas/pessoas.py:565–568` | reespelha `sessoes_previstas` — só por edição explícita na tela |
 
 **Telas:** `templates/agenda/confirmar_plano.html` (novo) apresenta o destino em três modos — `confirmar` (um plano compatível), `escolha` (vários, um rádio por plano, referenciados por médium + início + situação) e `conflito` (plano ativo de outro médium) — sempre preservando os campos preenchidos e escrevendo nada até confirmar; `rotas/agenda.py:189–211` (`_referencia_plano`) é o único lugar que fabrica essa referência humana, e `:48` (`_pode_abrir_agenda_plano`) decide se a porta “Abrir agenda deste plano” aparece. `templates/agenda/index.html:11–23` mostra o aviso de destino e a porta; `templates/mediuns/planos.html:151`, `templates/mediuns/agenda.html:26–28`, `templates/pessoas/ficha.html:110–113` e `templates/dia/fraterno.html:145` leem o status `concluido` como “Concluído (pelo cumprimento)”. As tabelas novas rolam dentro do próprio container `.fin-rolo` (padrão existente), sem rolagem horizontal do documento.
@@ -264,35 +269,41 @@ Ordem de travas sempre plano → sessões → contadores. `ORIGEM_AUTOMATICA = "
 
 ## 13. Matriz de testes (casos da §7 → teste → resultado real)
 
-Suíte nova `tests/test_conclusao_planos_task018.py` — **15/15 aprovados** (banco selado `shambala_test_passes`, porta 9011, `SHAMBALA_MODO_TESTE=1`), no runner e isoladamente. Ela exerce **as rotas reais** (`POST /dia/atendimento/{id}/realizado`, `/desfazer`, `/cancelar`, `/falta`, `/reagendar`, `/agenda/novo`, `/cadastros/mediuns/{m}/planos/{p}/agenda/novo`), não só o serviço.
+Suíte nova `tests/test_conclusao_planos_task018.py` — **19/19 aprovados** (banco selado `shambala_test_passes`, porta 9011, `SHAMBALA_MODO_TESTE=1`), no runner e isoladamente. Ela exerce **as rotas reais** (`POST /dia/atendimento/{id}/realizado`, `/desfazer`, `/cancelar`, `/falta`, `/reagendar`, `/agenda/novo`, `/agenda/medium/lancar`, `/cadastros/mediuns/{m}/planos/{p}/agenda/novo`, `/dia/fraterno/{checkin}`, `/cadastros/mediuns/{m}/planos/novo`), não só o serviço. Os quatro testes acrescentados depois da primeira entrega (K13–K16) existem porque o dono recusou a prova pelo serviço como suficiente — §19.
 
 | Caso §7 | Teste(s) | O que mede |
 |---|---|---|
 | 1 | K1 | 5 previstos → o 5º realizado conclui **uma** vez; reenvio não repete efeito nem muda `concluido_em` |
-| 2 | K2 | 4 realizados + 1 falta **não** conclui; reposição por `acrescentar_sessao(tipo="reposicao")` não vira extensão (`sessoes_adicionais` segue 0) e conclui em 5 |
+| 2 | K2 (contrato no serviço) + **K14/K15/K16** (formulário e POST reais) | 4 realizados + 1 falta **não** conclui; a reposição daquela prevista cumpre a obrigação original sem mexer em `sessoes_adicionais` e conclui em 5. K2 prova o contrato; K14–K16 provam o caminho que a recepção usa (§19.2) |
 | 3 | K3 | extra antes da última realização ⇒ a cumprir 6 e plano aberto; inclusão duplicada recusada; **reagendar mantém `(1, 6, 1)`**; realizar a extra conclui em 6 |
 | 4 | K4 | vazio, incompleto, sem meta (`sessoes_previstas IS NULL`) e legado (`regra_conclusao=0`) — nenhum conclui por suposição |
 | 5 | K5 + navegador | um plano ⇒ confirmação; vários ⇒ dois rádios referenciados por **início**; médium incompatível ⇒ conflito; `plano_destino` de outra pessoa (navegador adulterado/obsoleto) é rejeitado no servidor |
 | 6 | K6 + navegador | plano `concluido` recusa inclusão pela rota **e** pelo serviço; tela lê “Concluído pelo cumprimento”; caminho habitual sem plano ativo cria plano **novo** com `regra_conclusao=1, sessoes_previstas=2` |
 | 7 | K7 ordem 1 e 2 | disputa real com duas conexões do pool, travessa por `threading.Event` e evidência de espera em `pg_stat_activity` (`wait_event_type='Lock'`): realização vence ⇒ `'plano_nao_ativo'` e estado final `(5,5,0,0)`; inclusão vence ⇒ plano segue `ativo` `(6,5,1)` com 1 extensão. Nenhum efeito parcial nos dois sentidos |
 | 8 | K8 + navegador (RB5) | Recepção grava; somente-leitura 403; sem módulo 403; médium trocado na URL 403; usuário “Só Agenda” recebe a página de destino **sem** a porta que ele não atravessa |
-| 9 | K9 + §15 | `banco._migrar` duas vezes: `agendamentos` byte a byte idênticos, legado com `regra_conclusao=0` e `sessoes_previstas=sessoes_total`, alta legada preservada, legado **não** conclui sozinho; tela avisa “iniciado antes da regra de…” |
-| 10 | suíte de navegador | 28 verificações aprovadas, 0 falhas, 8 PNGs — §14 |
+| 9 | K9 + §15 | `banco._migrar` duas vezes: as linhas de `agendamentos` **inteiras** idênticas (coluna a coluna, com `adicionada` e `repoe` já na leitura — nenhuma sessão histórica reclassificada), legado com `regra_conclusao=0` e `sessoes_previstas=sessoes_total`, alta legada preservada, legado **não** conclui sozinho; tela avisa “iniciado antes da regra de…” |
+| 10 | suíte de navegador | 44 verificações aprovadas, 0 falhas, 11 PNGs — §14 |
 | 11 | runner completo | §13.1 |
+| — (§19.1) | K13 | cada um dos **quatro criadores** de plano pelo POST real do seu caminho: `/agenda/novo` sem plano ativo, `/agenda/medium/lancar` caso 3, acolhimento fraterno (`POST /dia/fraterno/{checkin}`) e o plano criado pela tela do médium (`POST /cadastros/mediuns/{m}/planos/novo`). Lê a linha gravada no banco — `regra_conclusao=1`, `sessoes_previstas` igual a `sessoes_total`, `status='ativo'` — e conduz um deles até a conclusão para provar que o metadado não é decorativo. Inclui a idempotência do acolhimento (reenvio não cria segundo plano) |
+| — (§19.2) | K14 | reposição **pelo formulário e POST da agenda do plano**: cancelar a prevista → a vaga existe → POST com `tipo=reposicao` → linha `repoe=1`, `sessoes_adicionais` intacto, `adicionada=0` → realizar → plano conclui na quota original |
+| — (§19.2) | K15 | recusas pela rota: `sem_vaga_para_repor` (sem vaga, e depois que a vaga é coberta), `tipo_invalido` (não escreve nada), cancelar a reposição pendente **reabre** a vaga, cancelar uma prevista também a abre |
+| — (§19.2) | K16 | `/agenda/novo` com dois planos ativos: o tipo é escolhido **por plano** (`tipo_<id>`) e aplicado só ao plano escolhido; `/agenda/medium/lancar` repõe com a mensagem “sem virar extensão” e `GET /agenda/medium/situacao` devolve `vagas_repor` coerente com a vaga real |
 
 Regras de conclusão que não têm teste próprio seriam suposição, então também estão cobertas: K10 reabertura auditada (`conclusao_desfeita_em/por` escritos), K10 alta clínica e encerramento manual **não** revertidos, K10 desfazer com outro plano ativo ⇒ recusa com `atendimento_realizado=1` e contadores intactos, K11 cancelar extensão revoga / cancelar prevista não reduz a previsão, K12 seis GETs (agenda, plano, ficha, médiuns) deixam um plano imediatamente concluível intacto.
 
 ### 13.1 Runner exigido pelo projeto (caso 11)
 
-`bash tests/rodar_testes.sh`, log completo congelado em `docs/tasks/evidencias/TASK_018/runner_completo.txt` (o runner escreve no `.log` vivo, ignorado pelo git; o `.txt` é cópia idêntica no momento da entrega). Árvore e banco efetivos registrados pelo próprio runner:
+`bash tests/rodar_testes.sh` **depois do complemento** (§19), log completo congelado em `docs/tasks/evidencias/TASK_018/runner_completo.txt` (o runner escreve no `.log` vivo, ignorado pelo git; o `.txt` é cópia idêntica no momento da entrega — `wc -l` 1532 nos dois). Árvore e banco efetivos registrados pelo próprio runner:
 
 ```
 config ..: /nc/projetos/shambala/.env.test (autoridade do destino)
 banco ...: shambala_test_passes        porta ...: 9011
-token ...: t010-20261026125948-2339998 árvore ..: 4a2a3a67…-dirty
+token ...: t010-20261026134422-2508346 árvore ..: ca54fac9…-dirty
 ```
 
-**28 suítes, todas `rc=0`, `RC=0` no fim, 0 pulados.** As relevantes para esta entrega: `test_conclusao_planos_task018.py 15/15`, `test_conclusao_navegador_task018.py aprovadas=28 falhas=0`, `test_tres_passes.py 27/27`, `test_plano_unico.py 12/12`, `test_agenda_medium.py 10/10`, `test_recepcao_planos.py 8/8` (TASK_017), `test_permissoes.py 8/8`. Conferência final do runner: DEV `pessoas=678 checkins=2920` antes e depois — **inalterado**. As duas suítes novas entraram em `tests/rodar_testes.sh` (`SUITE_PADRAO`), então passam a rodar em todo runner daqui para frente. O suite de reprodução do incidente (`tests/repro_incidente_agenda_plano_sem_sessoes.py`) está 5/5 (RB1–RB5).
+**28 suítes, todas `rc=0`, nenhum `rc≠0` no sumário, script terminando com código de saída 0, 0 pulados.** As relevantes para esta entrega: `test_conclusao_planos_task018.py **19/19**`, `test_conclusao_navegador_task018.py **aprovadas=44 falhas=0**`, `test_tres_passes.py 27/27`, `test_plano_unico.py 12/12`, `test_agenda_medium.py 10/10`, `test_recepcao_planos.py 8/8` (TASK_017), `test_permissoes.py 8/8`, `test_repro_incidente… 5/5 (RB1–RB5)`. Regressões vizinhas também verdes: presença/correções/PDV/caixa/financeiro (TASK_001–012, 014, 016) e o teste negativo de isolamento (16/16 cenários recusando o banco do DEV). Conferência final do runner: DEV `pessoas=678 checkins=2920` antes e depois — **inalterado**. As duas suítes novas entraram em `tests/rodar_testes.sh` (`SUITE_PADRAO`), então passam a rodar em todo runner daqui para frente.
+
+Ruído honesto do log: no desmonte da instância de teste o shell registra `linha 89: … Morto` — é o `uvicorn` do ambiente descartável sendo morto pelo próprio runner, não uma falha de suíte (todas as 28 fecharam `rc=0` antes disso).
 
 Nada foi contado como aprovado por estar “quebrado de origem”: os pulados são zero e não há suíte em regime de permissão.
 
@@ -309,6 +320,11 @@ Nada foi contado como aprovado por estar “quebrado de origem”: os pulados s�
 | `05-agenda-plano-concluido.png` | agenda do plano “Concluído pelo cumprimento”, sem oferta de acrescentar sessão |
 | `06-ficha-pessoa-concluida.png` | ficha da pessoa com a situação Concluído (distinta de Cancelado) |
 | `07-destino-1366.png` / `07-destino-412.png` | mesma tela sem rolagem horizontal do documento em 1366, 1024, 768 e 412 — a tabela rola dentro do próprio container |
+| `08-agenda-oferece-reposicao.png` | agenda do plano com uma prevista cancelada vencida: aviso “1 sessão prevista não foi cumprida … sem substituta”, o texto que distingue reposição de sessão extra e o `<select>` com a opção **Reposição** disponível (nada gravado ainda) |
+| `09-reposicao-agendada-na-agenda.png` | depois do POST com `tipo=reposicao`: banner “Reposição agendada”, a linha nova aparece no mês dela marcada `· reposição`, a coluna Tipo do Histórico diz “Reposição”, e a oferta some (vaga coberta) |
+| `10-vaga-reaberta-apos-cancelar-reposicao.png` | cancelar a reposição ainda pendente: a vaga reabre, o aviso volta e a opção fica disponível de novo — sem tocar em `sessoes_adicionais` |
+
+Total: **11 PNGs**, 44 verificações (`aprovadas=44 falhas=0` no runner, §13.1).
 
 ## 15. Aplicação no DEV (porta 9000, serviço existente)
 
@@ -329,6 +345,26 @@ Nada foi contado como aprovado por estar “quebrado de origem”: os pulados s�
 
 **Baseline depois** — `dev_depois.txt` e `dev_depois_2.txt` (segunda subida, **byte a byte idênticas** entre si), comparação em `dev_comparacao.txt`:
 
+> **O que os md5 “idênticos” comparam, dito sem rodeio:** o hash de conteúdo é
+> calculado sobre **as colunas históricas** de cada tabela — em
+> `planos_tratamento`: `medium_id, sessoes_total, sessoes_realizadas,
+> data_inicio, concluido, frequencia, status, sessoes_com_passe`; em
+> `agendamentos`: `plano_id, data, status, requer_passe, encaixe`. **Não** é
+> hash de todas as colunas da tabela ampliada: as colunas novas
+> (`sessoes_previstas`, `sessoes_adicionais`, `regra_conclusao`,
+> `concluido_em/por`, `conclusao_origem`, `conclusao_desfeita_em/por`,
+> `adicionada`) foram **preenchidas com metadado** por esta entrega
+> (backfill `sessoes_previstas = sessoes_total`, demais com o padrão), então um
+> hash que as incluísse mudaria por definição e não diria nada sobre os fatos.
+> A prova é portanto: *os fatos históricos não mudaram*; o metadado novo é
+> conferido à parte, na contagem logo abaixo e no esquema (9→17 e 6→7 colunas).
+> Nem “idêntico” nem “byte a byte” quer dizer *tabela inteira*: o que o script
+> compara é o subconjunto listado acima, e é isso que §19 traz explicitado. No
+> complemento (§19.5) a tabela `agendamentos` foi de **7 → 8 colunas** pela
+> adição de `repoe`, com baseline e comparação próprias
+> (`dev_antes_repoe.txt`, `dev_depois_repoe.txt`, `dev_depois_repoe_2.txt`,
+> `dev_comparacao_repoe.txt`); os fatos das duas subidas continuam os mesmos.
+
 | Fato | Antes | Depois |
 |---|---|---|
 | `planos_tratamento` | 1912 linhas, md5 de conteúdo `533913a7…` | **mesmas 1912, mesmo md5** |
@@ -340,6 +376,8 @@ Nada foi contado como aprovado por estar “quebrado de origem”: os pulados s�
 | demais 12 tabelas (financeiro, vendas, permissões, dias de atendimento, médiuns) | — | **contagens idênticas** antes e depois |
 | esquema `planos_tratamento` | 9 colunas, md5 `16c043c3…` | **17 colunas**, md5 `8fe38096…` |
 | esquema `agendamentos` | 6 colunas, md5 `1a3651cb…` | **7 colunas**, md5 `7a50b7c5…` |
+
+(Nota: a tabela acima é a conferência da **primeira** aplicação. O complemento pedido depois (§19.5) acrescentou `agendamentos.repoe` e levou essa tabela a **8** colunas, com baseline e comparação próprias.)
 
 Estado dos metadados novos no DEV: `sessoes_previstas` preenchida em 1912 (0 NULL, backfill = `sessoes_total`), `sessoes_adicionais=0` em todos, `regra_conclusao=1` em **0** (todo o existente ficou legado), `status='concluido'` 0, `concluido_em` 0, `agendamentos.adicionada=1` 0. **Nenhum plano histórico foi fechado, reaberto ou reclassificado pela migração nem pelas duas subidas** — exatamente a fronteira prospectiva da decisão 5/§11.
 
@@ -356,10 +394,12 @@ Smoke anônimo após cada subida: `/` 303→`/menu`, `/menu` 303→`/login`, `/l
 4. **Não** clicar em “Confirmar e acrescentar sessão” — a conferência aqui é só de apresentação. (Clicar gravaria uma sessão real.)
 5. Abrir a agenda de um plano e a ficha da pessoa: os planos existentes aparecem como antes (a regra nova não alcança o legado).
 6. Abrir num celular (412 px): a tabela de destinos rola dentro de si, a página não rola na horizontal.
+7. Abrir a agenda de um plano que tenha sessão prevista em `faltou` ou `cancelado` sem substituta (medido: 743 planos ativos nessa situação, §19.5): deve aparecer o aviso “… sessão prevista não foi cumprida … sem substituta”, a distinção entre **reposição** e **sessão extra** e o seletor com a opção “Reposição”. Só ler não grava. A coluna **Tipo** do Histórico deve diferenciar Prevista / Extra / Reposição — em todo o DEV hoje só existe “Prevista”, porque `adicionada` e `repoe` estão em 0.
+8. Abrir `/agenda/medium` e buscar um atendida com plano ativo: o quadro de situação deve dizer se há vaga a repor **sem** oferecer nada no lugar errado. **Não** clicar em “Lançar”: aqui a conferência também é só de apresentação.
 
-**B. Com dados fictícios, no ambiente descartável** (nada toca o DEV): `python3 tests/test_conclusao_navegador_task018.py` — semear fixtures `T018N`, dirige Chromium, produz os PNGs de §14 e remove tudo ao final; ou `python3 tests/test_conclusao_planos_task018.py` para os doze contratos de serviço/rota.
+**B. Com dados fictícios, no ambiente descartável** (nada toca o DEV): `python3 tests/test_conclusao_navegador_task018.py` — semear fixtures `T018N`, dirige Chromium, produz os PNGs de §14 (incluído o da reposição) e remove tudo ao final; ou `python3 tests/test_conclusao_planos_task018.py` para os dezessete contratos de serviço/rota. Os dois rodam pelo runner: `SHAMBALA_SUITES="test_conclusao_planos_task018.py test_conclusao_navegador_task018.py" bash tests/rodar_testes.sh`.
 
-**C. Ciclo completo, se quiser ver a conclusão acontecer** (use uma pessoa fictícia criada para teste): plano de 5 sessões pelo caminho habitual → realizar as 5 pelo Dia → a situação passa a “Concluído (pelo cumprimento)” na agenda do plano, na lista de planos do médium e na ficha; acrescentar sessão nesse plano é recusado; um novo atendimento para a mesma pessoa cria plano **novo**.
+**C. Ciclo completo, se quiser ver a conclusão acontecer** (use uma pessoa fictícia criada para teste): plano de 5 sessões pelo caminho habitual → realizar 4 e deixar a 5ª **faltar/cancelar** → a agenda do plano passa a oferecer reposição → agendar como **reposição** e realizar → a situação vira “Concluído (pelo cumprimento)” com `sessoes_adicionais = 0` (a quota original foi cumprida, não ampliada). Acrescentar sessão nesse plano concluído é recusado; um novo atendimento para a mesma pessoa cria plano **novo**.
 
 ## 17. Proposta de revisão do histórico (**não executada**)
 
@@ -385,11 +425,107 @@ Enquanto isso, os 9 planos da pessoa do incidente permanecem como estão: contin
 
 ## 18. Status, desvios e pendências
 
-**Status: implementada, testada e aplicada no DEV** (migração idempotente nas duas subidas, fatos idênticos, serviço da 9000 reiniciado e somente ele). **Não homologada pelo dono** — a conferência operacional (§16) é de quem decide; produção **intocada**, sem push e sem deploy (a autorização da TASK_017 não se estendeu a esta tarefa).
+**Status: complemento do dono implementado, testado e aplicado no DEV** (K13–K16 na suíte de serviço/rota, cenário `n_reposicao` no navegador, runner completo com as 28 suítes `rc=0` e 0 pulados — §13.1; segunda migração idempotente nas duas subidas, fatos idênticos, `agendamentos` 7→8 colunas, serviço da 9000 reiniciado e somente ele — §19.5). Continua **não homologada pelo dono**: a conferência operacional (§16) é de quem decide; produção **intocada**, sem push e sem deploy (a autorização da TASK_017 não se estendeu a esta tarefa).
+
+Da primeira entrega, permanece: implementada e testada (K1–K12), aplicada no DEV com backup conferido (§15), não homologada.
 
 Achado durante os testes, corrigido: `POST /dia/atendimento/{id}/desfazer` capturava `ReavaliarRecusado` **dentro** do `with conectar()`, e o commit do final do bloco publicava as escritas parciais (contador −1 e linha de volta a `agendado`) exatamente quando a operação devia ser recusada “sem efeitos parciais”. Agora há `conn.rollback()` explícito (`rotas/dia.py:728`); K10 cobre a recusa com `atendimento_realizado=1` e contadores intactos.
 
 Desvio registrado no commit: a árvore continha, **ainda não commitadas no `main`**, as mudanças da TASK_017 (`rotas/auth.py`, `rotas/permissoes.py` — de onde `guarda_modulos` é importado pelas telas de plano —, `semear_permissoes.py`, `templates/menu.html`, `tests/test_recepcao_planos.py`). Sem elas o código desta tarefa não importa nem roda. Foram registradas em commit próprio, anterior, rotulado TASK_017; o commit da TASK_018 leva os arquivos desta tarefa, incluindo `rotas/mediuns.py` e `templates/mediuns/planos.html`, cujas linhas de gate da Recepção e de status concluído não são separáveis por arquivo — está dito na mensagem do commit. A documentação da TASK_017 (tarefa e evidências) ficou de fora: pertence ao fechamento daquela tarefa, com a homologação pendente.
 
-Pendências que não são desta tarefa: homologação da TASK_017; decisão sobre os 9 planos da pessoa do incidente e os 1155 legados (§17); limpeza da instância de teste órfã na porta 9021 (pid 1284936); publicação em produção (autorização específica).
+Pendências que não são desta tarefa: homologação da TASK_017; decisão sobre os 9 planos da pessoa do incidente e os 1155 legados (§17) — agora também visíveis como **1155 vagas a repor** em 743 planos ativos (§19.4/§19.5), que a tela oferece e ninguém é obrigado a usar; publicação em produção (autorização específica).
+
+Instância órfã da porta 9021: pid **1284936** registrado na §15 como resto de teste de outra sessão. Esta tarefa **não a encerrou** (pertence ao dono, e encerrar processo alheio não é limpeza de recurso próprio) — foi apenas conferido que ela não é o serviço da 9000 e que esta entrega usou somente a 9000 e o banco selado de teste.
+
+## 19. Complemento pedido pelo dono antes de encerrar (26/10)
+
+Quatro itens, todos aceitos como falha real desta entrega — não como esclarecimento. Dois eram lacuna de comportamento (1 e 2), dois eram texto que dizia mais do que provava (3 e 4).
+
+### 19.1 Item 1 — os quatro criadores de plano, provados pelos caminhos reais
+
+Procura por `INSERT INTO planos_tratamento` no código de aplicação dá exatamente **quatro** criadores, e os quatro já gravavam `sessoes_previstas` e `regra_conclusao=1`:
+
+| Criador | Arquivo:linha | Prova (rota real) |
+|---|---|---|
+| `POST /agenda/novo` sem plano ativo | `rotas/agenda.py:410` | K13 · 1 |
+| `POST /agenda/medium/lancar` (caso 3, sem plano em nenhum médium) | `rotas/agenda.py:807` | K13 · 2 |
+| `POST /dia/fraterno/{checkin}` (acolhimento) | `rotas/dia.py:1470` | K13 · 3 |
+| `POST /cadastros/mediuns/{id}/planos/novo` | `rotas/mediuns.py:386` | K13 · 4 |
+
+Nenhum caminho precisou de correção — o que faltava era a **prova por rota**, que não existia (K6 tocava só o primeiro). `K13` agora percorre os quatro POSTs autenticados, para pessoas distintas, e em cada um confere: um único plano criado (`_planos_da_pessoa`), `regra_conclusao=1`, `sessoes_previstas == sessoes_total`, `sessoes_adicionais=0`, agenda gerada com o previsto e — a parte que importa, porque coluna preenchida não é comportamento — **cumprido o previsto pelas transições reais, o plano conclui** com `conclusao_origem='cumprimento_automatico'`. Reenvio do acolhimento (mesmo checkin+médium+início) continua num plano só, com a quota intacta.
+
+### 19.2 Item 2 — a reposição existia só no serviço; a recepção não tinha como usá-la
+
+Diagnóstico: `acrescentar_sessao(..., tipo="reposicao")` era aceito pelo serviço, mas **nenhum formulário ou POST o emitia** — as três telas passavam `tipo="adicao"` fixo. Na prática, toda reposição que a recepção marcava virava **extensão** (`sessoes_adicionais +1`), elevando a obrigação e impedindo a conclusão para sempre. O teste direto do serviço (K2) não mostrava isso porque exercia justamente o caminho que ninguém percorre.
+
+Contrato agora explícito:
+
+| Peça | O que é |
+|---|---|
+| `agendamentos.repoe INTEGER NOT NULL DEFAULT 0` | a linha **substitui** uma prevista que não aconteceu. Linhas antigas ficam 0; nada é reinterpretado |
+| `vagas_a_repor(conn, plano_id)` (serviço:54) | previstas (`adicionada=0`, `repoe=0`) em `faltou`/`cancelado` **menos** reposições em curso ou cumpridas (`repoe=1` em `agendado`/`realizado`). É o que autoriza repor |
+| `TIPOS_SESSAO = ("adicao", "reposicao")` | contrato fechado; valor fora disso → `'tipo_invalido'`, **sem escrever** |
+| `'sem_vaga_para_repor'` | reposição sem vaga é recusada — sem vaga, o acréscimo é extensão e aumentaria a obrigação |
+| `cancelar_sessao` de uma reposição pendente | reabre a vaga (a linha fica `cancelado` com `repoe=1`: histórico preservado, contadores intactos) |
+
+Onde a recepção escolhe: (a) **agenda do plano** — `templates/mediuns/agenda.html`: o formulário passou a ter “Tipo de sessão”, com a opção *Reposição de sessão não cumprida* oferecida **somente** quando `vagas_a_repor > 0`, precedida de aviso em linguagem corrente (“1 sessão prevista não foi cumprida … agendar como reposição cumpre a obrigação original; agendar como sessão extra acrescenta uma obrigação nova”); (b) **`/agenda/novo`** — a página de confirmação traz o tipo **por plano** (`tipo_<id>`), porque com vários planos uma escolha global seria adivinhação; (c) **`/agenda/medium` lançar** — a JSON `GET /agenda/medium/situacao` passou a reportar `vagas_repor` e o formulário mostra o seletor quando o plano do médium tem vaga. Os três POSTs revalidam no servidor (a tela não é autorização) e devolvem a recusa **na tela**: `ver_agenda` aceitou `erro`/`msg` e o template os renderiza — até aqui os redirects da agenda do plano respondiam com `?erro=` que nenhuma página mostrava.
+
+Prova (rota real, navegador real):
+
+| Teste | O que mede |
+|---|---|
+| K14 | sem falta a tela **não** oferece reposição; falta pela rota abre vaga (`vagas_a_repor` 0→1) e a oferta aparece; o POST do formulário grava `repoe=1, adicionada=0`, `sessoes_adicionais` segue 0, previstas seguem 5; cumpridas as 4 previstas + a reposição o plano **conclui em 5** (não em 6), com a falta preservada como falta |
+| K15 | sem vaga, o POST recusa com a explicação **renderizada na página de destino** e nada é gravado (3 linhas, 0 extras, 0 reposições); `tipo=invencao` recusado sem escrita; cancelar a reposição reabre a vaga e a tela volta a oferecê-la; cancelar a **prevista** também abre vaga sem encurtar a obrigação |
+| K16 | `/agenda/novo`: a página de confirmação traz `tipo_<plano>` e o POST confirmado repõe; com **dois** planos ativos a escolha é por plano — o escolhido repõe, o outro segue com a vaga dele aberta e nenhum dos dois vira extensão; `/agenda/medium/lancar`: a JSON informa `vagas_repor=1`, o POST com `tipo=reposicao` repõe, o mesmo POST sem vaga recusa na tela, e **sem** o campo o comportamento habitual (extensão) permanece |
+| navegador `n_reposicao` | 16 verificações no Chromium: cancelar a prevista vencida na tela → aviso e opção aparecem → escolher reposição e enviar → mensagem “Reposição agendada”, linha marcada “· reposição” no mês dela, opção some (vaga coberta) → cancelar a reposição → vaga reabre e a opção volta. Evidências `08-`, `09-`, `10-` |
+
+### 19.3 Itens 3 e 4 — texto que dizia mais do que provava
+
+- **§11**: a linha “extra cancelada antes de realizar” atribuía a revogação do `+1` a uma “prática da TASK_017”. Falso: a TASK_017 liberou a agenda dos planos à Recepção e não define revogação de extensão. Reescrita com o fundamento correto — **decisão específica desta tarefa** (§1), que preserva o histórico (a linha fica `cancelado`; só o contador líquido recua).
+- **§15**: os md5 “idênticos” foram explicados: o hash de conteúdo cobre **as colunas históricas** (`planos_tratamento`: medium_id, sessoes_total, sessoes_realizadas, data_inicio, concluido, frequencia, status, sessoes_com_passe; `agendamentos`: plano_id, data, status, requer_passe, encaixe — exatamente as colunas que `baseline_dev.py` seleciona), **não** a tabela ampliada. Houve preenchimento de metadado novo, então um hash com as colunas novas mudaria por definição. O que se prova com eles é “os fatos não mudaram”; o metadado é conferido à parte.
+
+### 19.4 Limites e achados registrados (não corrigidos aqui)
+
+- `registrar_falta` (`rotas/mediuns.py:652`) e a marcação em bloco de faltas do dia (`rotas/dia.py:287–298`) escrevem `status='faltou'` direto, sem `reavaliar`. Consequência medida: um plano que já cumpriu a quota e cuja última linha pendente vira falta continua `ativo` até a próxima transição do serviço. **Nada é fechado por suposição** — é conclusão que tarda, não conclusão errada. Ficou fora deste complemento porque mexer no caminho das faltas toca a regra das duas faltas → `cancelado`, que a §12 declara intocada; registrado como pendência para decisão do dono.
+- `GET /agenda/medium/situacao` escolhe `planos[0]` sem ordenação quando a pessoa tem vários planos ativos (comportamento anterior à TASK_018): a informação da tela pode dizer respeito a um plano diferente do que o POST vai usar. O POST, ele sim, decide com revalidação por plano e pelo `tipo_<id>` escolhido, então não há escrita errada. Registrado, não alterado.
+- A coluna `repoe` é **metadado de linha**, não fato clínico: a migração a cria com 0 em todas as 2980 sessões existentes; nenhuma sessão histórica foi reclassificada como reposição.
+- Medido no DEV, somente leitura, depois da migração: as **1155** vagas a repor existem hoje **só em planos legados** (`regra_conclusao=0`) — 743 planos `ativo` (1009 vagas), 28 `cancelado` (136), 9 `alta` (10); ainda não há nenhum plano prospectivo no DEV (`regra_conclusao=1` em 0). Consequência visível: a oferta de reposição aparece nessas agendas, o POST grava a linha de reposição e o plano **não** conclui por isso (a regra prospectiva continua sem alcançá-lo) — é reposição de obrigação, não gatilho de fechamento. Se o dono preferir suprimir o aviso nos legados, é decisão de tela, não de contrato, e não foi tomada aqui.
+- A suíte de reprodução do incidente (`tests/repro_incidente_agenda_plano_sem_sessoes.py`) **não** está em `SUITE_PADRAO`: é rodada à parte (`SHAMBALA_SUITES=repro_incidente_agenda_plano_sem_sessoes.py bash tests/rodar_testes.sh`) — 5/5 (RB1–RB5) na árvore deste complemento, log em `repro_incidente.txt`. O uso no cabeçalho do arquivo dizia o nome sem `.py` e por isso falhava; corrigido.
+
+### 19.5 Aplicação do complemento no DEV (segunda migração)
+
+Mesmas regras da §8: somente o serviço existente da porta 9000, nenhum fato histórico alterado, nada de produção, nenhum push.
+
+**Backup durável antes da migração** — `docs/tasks/backups/task018b-repoe-dev-2026-10-26/` espelhado em `~/Documentos/backup-shamballa/task018b-repoe-dev-2026-10-26/`, sha256 **iguais** nas duas cópias (arquivo `SHA256.txt` no original, `SHA256.mirror.txt` no espelho):
+
+| Arquivo | sha256 |
+|---|---|
+| `shambala_pre_task018_repoe_dev.dump` (`pg_dump -Fc`, 376.338 B) | `93d245f00db7934aa52525276aa11c8516f29143725913ef49aa3562e8719d91` |
+| `shambala_pre_task018_repoe_dev.sql` (1.209.308 B) | `6f471d75e0fb2b207b09bedb224ffeb738394d6985502cc39e049f21448e230f` |
+
+**Restauração conferida, não só o hash**: o `.dump` foi restaurado no banco efêmero `shambala_verifica_backup_t018b` e lido com o mesmo `baseline_dev.py --db …`. Conteúdo idêntico ao DEV de origem — `planos_tratamento 1912 / md5 533913a7…`, `agendamentos 2980 / md5 1cda8bfa…`, checkins 2920, pessoas 678, `planos_tratamento` 17 colunas e `agendamentos` **7** (sem `repoe` — exatamente o estado pré-migração). Registro honesto em `backup_restaurado_repoe.txt`: o `pg_restore` ignorou 2 erros, ambos de `ALTER DEFAULT PRIVILEGES FOR ROLE postgres`, que o papel `shambala` não pode executar; nenhuma tabela, linha ou coluna depende dessas frases (daí os hashes idênticos). O banco de conferência foi descartado em seguida (`dropdb`, confirmado por `pg_database` = 0).
+
+**Posse provada antes de reiniciar**: listener da 9000 = pid **2389867** (`.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 9000`, cwd `/nc/projetos/shambala`, usuário `claudio`, sem `SHAMBALA_MODO_TESTE`/`SHAMBALA_ENV_FILE` no ambiente → banco efetivo `shambala`), e o `/tmp/shambala_dev.pid` batia com o socket. A posse veio do socket, não do arquivo.
+
+**Duas subidas, com guarda fail-closed** (a mesma da primeira aplicação: `SIGTERM`, espera, **não relança se a porta continuar ocupada**; a porta ficou livre nas duas vezes): pid **2389867 → 2549348 → 2552123**. Logs `dev-startup-task018b.txt` e `dev-startup-task018b-2.txt`: `Application startup complete`, **0** ocorrências de error/traceback/exception. `/tmp/shambala_dev.pid` atualizado para o pid vivo.
+
+**Baseline antes/depois** — `dev_antes_repoe.txt`, `dev_depois_repoe.txt`, `dev_depois_repoe_2.txt` (segunda subida **byte a byte idêntica** à primeira), comparação e leitura em `dev_comparacao_repoe.txt`:
+
+| | Antes | Depois (duas subidas) |
+|---|---|---|
+| `planos_tratamento` | 1912 linhas, md5 `533913a7…` | **mesmas 1912, mesmo md5** |
+| `agendamentos` | 2980 linhas, md5 `1cda8bfa…` | **mesmas 2980, mesmo md5** |
+| status de planos / sessões | alta 17 / ativo 1866 / cancelado 29 — agendado 231 / cancelado 315 / faltou 840 / realizado 1594 | idênticos, **0** planos `concluido` |
+| checkins / pessoas / `plano_pessoas` / planos de 1 sessão | 2920 (2198) / 678 / 1912 / 1801 | idênticos |
+| esquema `planos_tratamento` | 17 colunas, md5 `8fe38096…` | **17 colunas, mesmo md5** (nada novo nesta etapa) |
+| esquema `agendamentos` | 7 colunas, md5 `7a50b7c5…` | **8 colunas**, md5 `b1745708…` — apenas `repoe INTEGER NOT NULL DEFAULT 0` |
+| metadado | `adicionada=1` em 0 | `adicionada=1` 0, **`repoe=1` 0**; `regra_conclusao=1` 0, `concluido_em` 0, `sessoes_previstas` NULL 0 |
+
+Os md5 de conteúdo cobrem as colunas históricas (§15, item 4 do pedido): não são hash da tabela ampliada. O que muda entre as duas tabelas acima é **esquema**, e nada mais.
+
+Smoke anônimo após a segunda subida: `/` 303→`/menu`, `/menu` 303→`/login`, `/login` 200, e `/agenda`, `/dia`, `/cadastros/mediuns`, `/cadastros/permissoes`, `/cadastros/mediuns/1/planos`, `/cadastros/mediuns/1/planos/1/agenda`, `/biblioteca`, `/financeiro` todos 303→`/login` — nenhum acesso anônimo novo.
+
+**A limitação da §15 continua valendo**: a conferência autenticada das telas no DEV é do dono (não há credenciais dele aqui); o que se provou no DEV foi schema, fatos, idempotência da migração e acesso anônimo. O comportamento de tela com login foi provado no ambiente descartável com Chromium (§14).
+
+
 

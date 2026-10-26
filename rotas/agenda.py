@@ -207,6 +207,9 @@ def _referencia_plano(conn, plano) -> dict:
         "inicio_br": date.fromisoformat(plano["data_inicio"]).strftime("%d/%m/%Y"),
         "resumo": resumo,
         "legado": (plano["regra_conclusao"] or 0) != 1,
+        # TASK_018 (complemento §2): vagas em aberto é o que permite oferecer
+        # "reposição" nesta tela — sem supor nada no POST.
+        "vagas_repor": servico_conclusao_planos.vagas_a_repor(conn, plano["id"]),
     }
 
 
@@ -320,6 +323,10 @@ async def novo_agendamento(
                     erro="Este plano não está mais entre os planos ativos da "
                          "pessoa. Recarregue a agenda e tente novamente.",
                 )
+            # O tipo (extra × reposição) é escolhido POR plano na tela — com
+            # vários planos, um único campo global não representaria a escolha.
+            form = await request.form()
+            tipo = str(form.get(f"tipo_{alvo[0]['id']}", "adicao") or "adicao")
             if not data_atendimento_valida(conn, data):
                 return _pagina(
                     "escolha" if len(refs) > 1 else "confirmar", refs,
@@ -328,13 +335,26 @@ async def novo_agendamento(
                 )
             res = servico_conclusao_planos.acrescentar_sessao(
                 conn, alvo[0]["id"], data, requer_passe=0, encaixe=0,
-                tipo="adicao", autor_id=atendente["id"],
+                tipo=tipo, autor_id=atendente["id"],
             )
             if res == "data_ja_agendada":
                 return _pagina(
                     "escolha" if len(refs) > 1 else "confirmar", refs,
                     erro=f"Já existe atendimento agendado neste plano em "
                          f"{data_inicio.strftime('%d/%m/%Y')}.",
+                )
+            if res == "sem_vaga_para_repor":
+                return _pagina(
+                    "escolha" if len(refs) > 1 else "confirmar", refs,
+                    erro="Este plano não tem sessão prevista em aberto para repor "
+                         "— as que não aconteceram já têm substituta. O que se "
+                         "acrescenta agora é sessão EXTRA (extensão).",
+                )
+            if res == "tipo_invalido":
+                return _pagina(
+                    "escolha" if len(refs) > 1 else "confirmar", refs,
+                    erro="Tipo de sessão desconhecido. Recarregue a agenda e "
+                         "escolha entre sessão extra e reposição.",
                 )
             if res == "plano_nao_ativo":
                 # Plano saiu de ativo entre a tela e a escrita (ex.: a última
@@ -347,8 +367,9 @@ async def novo_agendamento(
             _reaplicar_piso_passe(conn, alvo[0]["id"])
             ref = _referencia_plano(conn, alvo[0])
             msg = (
-                f"Atendimento de {pessoa['nome_completo']} acrescentado ao plano "
-                f"com {ref['medium_nome']}, iniciado em {ref['inicio_br']}."
+                f"Atendimento de {pessoa['nome_completo']} "
+                + ("reposto no" if tipo == "reposicao" else "acrescentado ao")
+                + f" plano com {ref['medium_nome']}, iniciado em {ref['inicio_br']}."
             )
             return RedirectResponse(
                 url=f"/agenda?{params}&msg={urllib.parse.quote(msg)}"
@@ -632,21 +653,27 @@ async def agenda_medium_situacao(request: Request, pessoa_id: int = Query(0), me
         return redir
     with conectar() as conn:
         planos = conn.execute(
-            """SELECT pt.medium_id, m.nome_completo
+            """SELECT pt.id, pt.medium_id, m.nome_completo
                FROM planos_tratamento pt
                JOIN plano_pessoas pp ON pp.plano_id = pt.id
                JOIN mediuns m ON m.id = pt.medium_id
                WHERE pp.pessoa_id = %s AND pt.status = 'ativo'""",
             (pessoa_id,)
         ).fetchall()
+        # TASK_018 (complemento §2): a tela só oferece "reposição" onde há
+        # sessão prevista não cumprida em aberto neste plano.
+        mesmo = bool(planos) and planos[0]["medium_id"] == medium_id
+        vagas_repor = (servico_conclusao_planos.vagas_a_repor(conn, planos[0]["id"])
+                       if mesmo else 0)
     if not planos:
         return JSONResponse({"tem_plano": False, "medium_id": None, "medium_nome": None})
     p = planos[0]
     return JSONResponse({
         "tem_plano": True,
-        "mesmo_medium": p["medium_id"] == medium_id,
+        "mesmo_medium": mesmo,
         "medium_id": p["medium_id"],
         "medium_nome": p["nome_completo"],
+        "vagas_repor": vagas_repor,
     })
 
 
@@ -658,6 +685,7 @@ async def agenda_medium_lancar(
     data: str = Form(...),
     qtd_sessoes: int = Form(10),
     frequencia: str = Form("semanal"),
+    tipo: str = Form("adicao"),
 ):
     atendente, redir = _guard(request)
     if redir:
@@ -711,17 +739,33 @@ async def agenda_medium_lancar(
         if plano:
             res = servico_conclusao_planos.acrescentar_sessao(
                 conn, plano["id"], data_iso, requer_passe=0, encaixe=0,
-                tipo="adicao", autor_id=atendente["id"],
+                tipo=tipo, autor_id=atendente["id"],
             )
             if res == "data_ja_agendada":
                 return _voltar(erro="Pessoa já possui atendimento agendado nesta data.")
+            if res == "sem_vaga_para_repor":
+                return _voltar(erro=(
+                    "Este plano não tem sessão prevista em aberto para repor — as "
+                    "que não aconteceram já têm substituta. Lance como sessão extra "
+                    "se for isso mesmo."
+                ))
+            if res == "tipo_invalido":
+                return _voltar(erro=(
+                    "Tipo de sessão desconhecido. Recarregue a agenda e escolha "
+                    "entre sessão extra e reposição."
+                ))
             if res == "plano_nao_ativo":
                 return _voltar(erro=(
                     "O plano acabou de sair da situação ativa. "
                     "Recarregue a agenda antes de lançar."
                 ))
             _reaplicar_piso_passe(conn, plano["id"])
-            return _voltar(msg=f"Sessão de {pessoa['nome_completo']} acrescentada ao plano em {date.fromisoformat(data_iso).strftime('%d/%m/%Y')}.")
+            return _voltar(msg=(
+                f"Sessão de {pessoa['nome_completo']} "
+                + ("reposta no" if tipo == "reposicao" else "acrescentada ao")
+                + f" plano em {date.fromisoformat(data_iso).strftime('%d/%m/%Y')}"
+                + (" — sem virar extensão." if tipo == "reposicao" else ".")
+            ))
 
         # Caso 2: plano ativo em OUTRO médium → não duplica (regra do plano único).
         outro = conn.execute(

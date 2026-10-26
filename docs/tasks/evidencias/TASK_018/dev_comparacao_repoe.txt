@@ -1,0 +1,41 @@
+# TASK_018 complemento — comparação da migração `agendamentos.repoe` no DEV (26/10/2026)
+# antes: docs/tasks/evidencias/TASK_018/dev_antes_repoe.txt   depois: docs/tasks/evidencias/TASK_018/dev_depois_repoe.txt (1ª subida) e dev_depois_repoe_2.txt (2ª subida, byte a byte idêntica)
+
+## diff antes → depois
+  --- docs/tasks/evidencias/TASK_018/dev_antes_repoe.txt	2026-10-26 13:51:06.023483826 -0300
+  +++ docs/tasks/evidencias/TASK_018/dev_depois_repoe.txt	2026-10-26 13:52:02.998179236 -0300
+  @@ -9,7 +9,9 @@
+   planos de 1 sessão (o "avulso"): 1801   plano_pessoas: 1912
+   
+   schema planos_tratamento:  17 colunas md5=8fe380962cc7030425637c4d6b7e9fcd
+  -schema agendamentos:       7 colunas md5=7a50b7c52f7204ab78840a7bf5ad1404
+  -colunas TASK_018 presentes: sessoes_previstas=sim, sessoes_adicionais=sim, regra_conclusao=sim, concluido_em=sim, concluido_por=sim, conclusao_origem=sim, conclusao_desfeita_em=sim, conclusao_desfeita_por=sim, adicionada=sim, repoe=nao
+  +schema agendamentos:       8 colunas md5=b174570825f1f851bd03b66f9d94d684
+  +colunas TASK_018 presentes: sessoes_previstas=sim, sessoes_adicionais=sim, regra_conclusao=sim, concluido_em=sim, concluido_por=sim, conclusao_origem=sim, conclusao_desfeita_em=sim, conclusao_desfeita_por=sim, adicionada=sim, repoe=sim
+     previstas NULL=0  com_extra=0  prospectivo=0  concluido=0  concluido_em=0
+     agendamentos adicionada=1: 0
+  +  agendamentos repoe=1: 0
+  +  vagas a repor no DEV (somente leitura): descobertas=1155 repostas=0 saldo=1155
+
+## diff 1ª subida → 2ª subida (idempotência da migração)
+  (sem diferença — nenhuma)
+
+## leitura
+  Fatos: planos_tratamento 1912 linhas / md5 533913a7…, agendamentos 2980 linhas /
+  md5 1cda8bfa…, checkins 2920 (2198 realizadas), pessoas 678, plano_pessoas 1912,
+  planos de 1 sessão 1801, distribuição por status — **idênticos antes e depois, nas
+  duas subidas**. Os md5 são de conteúdo das colunas históricas (§15), não da tabela
+  ampliada: o metadado novo é conferido à parte, abaixo.
+  Schema: único movimento esperado — `agendamentos` de 7 para **8** colunas
+  (md5 do esquema 7a50b7c5… → b1745708…), pela adição de `repoe`
+  `INTEGER NOT NULL DEFAULT 0`. `planos_tratamento` permanece 17 colunas (md5 igual).
+  Metadado: `adicionada=1` em 0 linhas, `repoe=1` em 0 linhas — nenhuma sessão
+  histórica foi reclassificada como extensão nem como reposição. `regra_conclusao=1`
+  em 0 planos, `status='concluido'` 0, `concluido_em` 0, `sessoes_previstas` NULL 0:
+  a fronteira prospectiva está intacta; nenhum plano existente foi fechado, reaberto
+  ou reclassificado pela migração nem pelas duas subidas.
+  Vagas a repor medidas hoje (somente leitura): 1155 linhas previstas em
+  `faltou`/`cancelado` sem substituta, repartidas em 743 planos `ativo` legado
+  (1009 vagas), 28 `cancelado` (136) e 9 `alta` (10). Todos com
+  `regra_conclusao=0`, porque ainda não existe plano prospectivo no DEV. O efeito
+  visual é a oferta de reposição nessas agendas; nenhuma escrita decorre de medir.

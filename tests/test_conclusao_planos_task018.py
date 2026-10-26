@@ -24,6 +24,17 @@ Cobre a matriz de validação §7 da tarefa:
       previsão nem conta como cumprimento.
   K12 GET/render não avaliam nem fecham plano; a conclusão acontece só na
       transição real.
+  K13 os QUATRO criadores de plano (Agenda, lançamento do médium, acolhimento
+      fraterno, tela do médium) gravam `regra_conclusao` e `sessoes_previstas`
+      pelos caminhos reais e concluem ao cumprir o previsto.
+  K14 reposição pelo formulário da agenda do plano: a falta abre vaga, a tela
+      oferece a reposição, o POST grava `repoe` sem tocar em `sessoes_adicionais`
+      e o plano fecha cumprindo a obrigação original.
+  K15 recusas reais: sem vaga a rota explica na tela, tipo inválido não escreve,
+      cancelar a reposição reabre a vaga.
+  K16 reposição pelos outros dois POSTs da recepção (/agenda/novo com escolha
+      por plano e /agenda/medium/lancar, com a JSON de situação informando a
+      vaga).
 
 Roda contra o banco descartável de teste (trava em test_tres_passes). Nenhum
 atendimento real é tocado.
@@ -35,6 +46,8 @@ import sys
 import threading
 import time
 import traceback
+import urllib.parse
+import urllib.request
 from datetime import date, timedelta
 
 from psycopg2.extras import RealDictCursor
@@ -44,7 +57,7 @@ from psycopg2.extras import RealDictCursor
 import test_tres_passes as tp
 from test_tres_passes import (
     Ctx, assert_eq, preparar_banco, limpar_banco,
-    _http, _login, _garantir_admin, _planos_da_pessoa,
+    _http, _login, _garantir_admin, _planos_da_pessoa, BASE, _sessao,
 )
 from test_permissoes import _nova_sessao, _grupo, _perm, _usuario_em_grupo
 
@@ -106,7 +119,8 @@ def _contagens(ctx, pid):
                   count(*) FILTER (WHERE status = 'agendado')  AS agendadas,
                   count(*) FILTER (WHERE status = 'cancelado') AS canceladas,
                   count(*) FILTER (WHERE status = 'faltou')    AS faltas,
-                  count(*) FILTER (WHERE adicionada = 1)       AS extras
+                  count(*) FILTER (WHERE adicionada = 1)       AS extras,
+                  count(*) FILTER (WHERE repoe = 1)            AS reposicoes
            FROM agendamentos WHERE plano_id = %s""", (pid,)).fetchone()
     return dict(r)
 
@@ -114,7 +128,7 @@ def _contagens(ctx, pid):
 def _sessoes(ctx, pid):
     ctx.conn.commit()
     return ctx.conn.execute(
-        "SELECT id, data, status, adicionada FROM agendamentos WHERE plano_id=%s "
+        "SELECT id, data, status, adicionada, repoe FROM agendamentos WHERE plano_id=%s "
         "ORDER BY data, id", (pid,)).fetchall()
 
 
@@ -149,12 +163,91 @@ def _realizar(ctx, pid, med, pes, ag_id, codigo, dia_id):
     return ck
 
 
-def _post_agenda_novo(pes, med, data, confirmar=0, destino=0, qtd=1):
-    return _http("POST", "/agenda/novo", {
+def _post_agenda_novo(pes, med, data, confirmar=0, destino=0, qtd=1, tipo=None):
+    campos = {
         "pessoa_id": str(pes), "data": data, "medium_id": str(med),
         "data_de": "", "data_ate": "", "dia_semana": "-1", "pessoa_nome": "",
         "qtd_sessoes": str(qtd), "frequencia": "semanal",
-        "confirmar": str(confirmar), "plano_destino": str(destino)})
+        "confirmar": str(confirmar), "plano_destino": str(destino)}
+    if tipo is not None:
+        campos[f"tipo_{destino}"] = tipo
+    return _http("POST", "/agenda/novo", campos)
+
+
+def _post_agenda_plano(med, pid, data, tipo="adicao", requer=0, encaixe=0):
+    """O formulário "Adicionar sessão ao plano" da agenda do plano."""
+    return _http("POST", f"/cadastros/mediuns/{med}/planos/{pid}/agenda/novo", {
+        "data": data, "tipo": tipo, "requer_passe": str(requer),
+        "encaixe": str(encaixe)})
+
+
+def _post_lancar_medium(pes, med, data, qtd=10, tipo=None):
+    campos = {"pessoa_id": str(pes), "medium_id": str(med), "data": data,
+              "qtd_sessoes": str(qtd), "frequencia": "semanal"}
+    if tipo is not None:
+        campos["tipo"] = tipo
+    return _http("POST", "/agenda/medium/lancar", campos)
+
+
+def _post_fraterno(ck, med, total, inicio, passe=1):
+    return _http("POST", f"/dia/fraterno/{ck}", [
+        ("medium_id", str(med)), ("sessoes_total", str(total)),
+        ("frequencia", "semanal"), ("sessoes_com_passe", str(passe)),
+        ("data_inicio", inicio.isoformat()),
+        ("observacao_acolhimento", "")])
+
+
+def _post_plano_medium(med, pes, total, inicio):
+    return _http("POST", f"/cadastros/mediuns/{med}/planos/novo", [
+        ("sessoes_total", str(total)), ("frequencia", "semanal"),
+        ("sessoes_com_passe", "3"), ("data_inicio", inicio.isoformat()),
+        ("pessoas_ids", str(pes)), ("next", "")])
+
+
+def _plano_da_pessoa(ctx, pes):
+    """O plano recém-criado da pessoa (mais recente) — usado para conferir o
+    que os criadores gravaram. A contagem é conferida separadamente."""
+    ctx.conn.commit()
+    return ctx.conn.execute(
+        """SELECT pt.* FROM planos_tratamento pt
+           JOIN plano_pessoas pp ON pp.plano_id = pt.id
+           WHERE pp.pessoa_id = %s ORDER BY pt.id DESC LIMIT 1""",
+        (pes,)).fetchone()
+
+
+class _CapturaRedirect(urllib.request.HTTPRedirectHandler):
+    local = None
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self.local = urllib.parse.urljoin(req.full_url, newurl or "")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_REDIRECIONA = _CapturaRedirect()
+_OPENER_DESTINO = None
+
+
+def _http_ate_o_destino(method, path, data=None):
+    """POST real SEGUINDO o 303 até a página de destino — é assim que a
+    recepção efetivamente lê a mensagem (a rota responde com redirect).
+    Devolve (status_final, url_de_destino, corpo_renderizado)."""
+    global _OPENER_DESTINO
+    if _OPENER_DESTINO is None:
+        cj = None
+        for h in _sessao().handlers:
+            if isinstance(h, urllib.request.HTTPCookieProcessor):
+                cj = h.cookiejar
+        assert cj is not None, "cookie jar da sessão de teste"
+        _OPENER_DESTINO = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(cj), _REDIRECIONA)
+    body = urllib.parse.urlencode(data).encode() if data else None
+    req = urllib.request.Request(BASE + path, data=body, method=method)
+    _REDIRECIONA.local = None
+    try:
+        with _OPENER_DESTINO.open(req) as r:
+            return r.status, _REDIRECIONA.local, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, _REDIRECIONA.local, e.read().decode("utf-8", "replace")
 
 
 # ── K1 · cinco previstos → conclusão única ───────────────────────────────────
@@ -969,8 +1062,366 @@ def k12(ctx):
               "a conclusão acontece no ponto de transição, não na tela")
 
 
-# ── Execução ──────────────────────────────────────────────────────────────────
+# ── K13 · os quatro criadores de plano, pelos caminhos reais ─────────────────
 
+def _datas_atendimento(ctx, n=1, a_partir=0):
+    """Datas que são dia de atendimento cadastrado (sem depender de plano)."""
+    ctx.conn.commit()
+    permitidos = {r["dia_semana"] for r in ctx.conn.execute(
+        "SELECT dia_semana FROM dias_atendimento").fetchall()}
+    out, i = [], 0
+    while len(out) < n and i < 200:
+        dia = HOJE + timedelta(days=a_partir + i)
+        i += 1
+        if dia.weekday() in permitidos:
+            out.append(dia)
+    assert_eq(len(out), n, "datas de atendimento disponíveis")
+    return out
+
+
+def _conferir_plano_novo(ctx, nome, pid, med, pes, dia_id, total, base):
+    """O plano criado vive sob a regra: metadado persistido E conclusão
+    automática ao cumprir o previsto — não basta a coluna estar preenchida."""
+    p = _plano(ctx, pid)
+    assert_eq(p["regra_conclusao"], 1, f"{nome}: nasce sob a regra de conclusão")
+    assert_eq(p["sessoes_previstas"], total, f"{nome}: quota original persistida")
+    assert_eq(p["sessoes_total"], total, f"{nome}: total coincide com a quota")
+    assert_eq(p["sessoes_adicionais"], 0, f"{nome}: nasce sem extensão")
+    assert_eq(p["status"], "ativo", f"{nome}: nasce ativo")
+    sg = _sessoes(ctx, pid)
+    assert_eq(len(sg), total, f"{nome}: agenda gerada com o previsto")
+    for i, s in enumerate(sg):
+        _realizar(ctx, pid, med, pes, s["id"], base + i, dia_id)
+    p = _plano(ctx, pid)
+    assert_eq((p["status"], p["sessoes_realizadas"]), ("concluido", total),
+              f"{nome}: cumprido o previsto, conclui automaticamente")
+    assert_eq(p["conclusao_origem"], sc.ORIGEM_AUTOMATICA, f"{nome}: origem registrada")
+
+
+@teste("K13 os quatro criadores de plano gravam regra_conclusao e sessoes_previstas pelos caminhos reais")
+def k13(ctx):
+    ctx.reset(dias_semana=(0, 1, 2, 3, 4))
+    med = ctx.medium()
+    dia_id = ctx.dia()
+    total = 3
+
+    # 1 · POST /agenda/novo sem plano ativo — a tela cria o plano (caso do
+    #     incidente: era aqui que nascia o plano paralelo).
+    pes1 = ctx.pessoa("k13-agenda")
+    d1 = _datas_atendimento(ctx, 1)[0]
+    st, _ = _post_agenda_novo(pes1, med, d1.isoformat(), qtd=total)
+    assert_eq(st, 303, "POST /agenda/novo criou o plano")
+    assert_eq(_planos_da_pessoa(ctx, pes1), 1, "um plano só")
+    pid1 = _plano_da_pessoa(ctx, pes1)["id"]
+    _conferir_plano_novo(ctx, "/agenda/novo", pid1, med, pes1, dia_id, total, 11)
+
+    # 2 · POST /agenda/medium/lancar sem plano ativo — lançamento de papel.
+    pes2 = ctx.pessoa("k13-medium")
+    d2 = _datas_atendimento(ctx, 1)[0]
+    st, _ = _post_lancar_medium(pes2, med, d2.isoformat(), qtd=total)
+    assert_eq(st, 303, "POST /agenda/medium/lancar criou o plano")
+    assert_eq(_planos_da_pessoa(ctx, pes2), 1, "um plano só")
+    pid2 = _plano_da_pessoa(ctx, pes2)["id"]
+    _conferir_plano_novo(ctx, "/agenda/medium/lancar", pid2, med, pes2, dia_id,
+                         total, 21)
+
+    # 3 · POST /dia/fraterno/{checkin} — acolhimento fraterno.
+    pes3 = ctx.pessoa("k13-fraterno")
+    ck3 = ctx.checkin(dia_id, pes3, "301")
+    d3 = _datas_atendimento(ctx, 1)[0]
+    st, _ = _post_fraterno(ck3, med, total, d3)
+    assert_eq(st, 303, "POST /dia/fraterno criou o plano")
+    assert_eq(_planos_da_pessoa(ctx, pes3), 1, "um plano só")
+    pid3 = _plano_da_pessoa(ctx, pes3)["id"]
+    _conferir_plano_novo(ctx, "/dia/fraterno", pid3, med, pes3, dia_id, total, 31)
+
+    # 4 · POST /cadastros/mediuns/{id}/planos/novo — plano pela tela do médium.
+    pes4 = ctx.pessoa("k13-medium-plano")
+    d4 = _datas_atendimento(ctx, 1)[0]
+    st, _ = _post_plano_medium(med, pes4, total, d4)
+    assert_eq(st, 303, "POST /cadastros/mediuns/{m}/planos/novo criou o plano")
+    assert_eq(_planos_da_pessoa(ctx, pes4), 1, "um plano só")
+    pid4 = _plano_da_pessoa(ctx, pes4)["id"]
+    _conferir_plano_novo(ctx, "/cadastros/mediuns/{m}/planos/novo", pid4, med,
+                         pes4, dia_id, total, 41)
+
+    # Reenvio do acolhimento (mesmo checkin+médium+início) não cria segundo
+    # plano nem metadado divergente.
+    st, _ = _post_fraterno(ck3, med, total, d3)
+    assert_eq(_planos_da_pessoa(ctx, pes3), 1, "idempotência preservada")
+    assert_eq(_plano(ctx, pid3)["sessoes_previstas"], total, "quota inalterada")
+
+
+# ── K14 · reposição pelo formulário da agenda do plano ───────────────────────
+
+@teste("K14 reposição pelo formulário da recepção: cumpre a obrigação original sem virar extensão")
+def k14(ctx):
+    ctx.reset(dias_semana=(0, 1, 2, 3, 4))
+    med, pes = ctx.medium(), ctx.pessoa("k14")
+    dia_id = ctx.dia()
+    pid = _plano_prospectivo(ctx, med, pes, 5)
+    ctx.conn.commit()
+    sg = _sessoes(ctx, pid)
+    agenda = f"/cadastros/mediuns/{med}/planos/{pid}/agenda"
+
+    assert_eq(sc.vagas_a_repor(ctx.conn, pid), 0, "sem falta, nenhuma vaga")
+    st, corpo = _http("GET", agenda)
+    assert_eq(st, 200, "GET da agenda do plano")
+    assert_eq('value="reposicao"' in corpo, False,
+              "sem vaga em aberto o formulário não oferece reposição")
+
+    # Falta registrada pela rota real da agenda do plano.
+    st, _ = _http("POST", f"{agenda}/{sg[0]['id']}/falta")
+    assert_eq(st, 303, "rota de falta")
+    ctx.conn.commit()
+    assert_eq(sc.vagas_a_repor(ctx.conn, pid), 1, "a falta abriu vaga de reposição")
+    st, corpo = _http("GET", agenda)
+    assert_eq('value="reposicao"' in corpo, True,
+              "a tela passou a oferecer a reposição")
+    assert_eq("Reposição de sessão não cumprida" in corpo, True,
+              "a opção nomeia o que é, sem jargão de extensão")
+
+    # POST exatamente como o formulário o envia (mesmo action e campos).
+    d_rep = _livres(ctx, pid, 1)[0]
+    st, local, corpo = _http_ate_o_destino(
+        "POST", f"{agenda}/novo",
+        {"data": d_rep, "tipo": "reposicao", "requer_passe": "0", "encaixe": "0"})
+    assert_eq(st, 200, "o redirect levou a uma página renderizada")
+    assert_eq(agenda in (local or ""), True, f"voltou para a agenda do plano: {local}")
+    assert_eq("Reposição agendada" in corpo, True,
+              "a mensagem de reposição aparece na tela")
+    linhas = _sessoes(ctx, pid)
+    rep = [s for s in linhas if s["repoe"] == 1]
+    assert_eq(len(rep), 1, "uma linha marcada como reposição")
+    assert_eq(rep[0]["adicionada"], 0, "reposição não é linha de extensão")
+    assert_eq(rep[0]["data"], d_rep, "na data escolhida")
+    p = _plano(ctx, pid)
+    assert_eq((p["sessoes_adicionais"], p["sessoes_previstas"]), (0, 5),
+              "nada aumentou o que precisa ser cumprido")
+    assert_eq(sc.vagas_a_repor(ctx.conn, pid), 0,
+              "a vaga passou a estar coberta pela reposição em curso")
+
+    # As outras quatro previstas + a reposição fecham o plano em 5 cumpridas.
+    previstas_restantes = [x for x in linhas
+                           if x["status"] == "agendado" and x["repoe"] == 0]
+    assert_eq(len(previstas_restantes), 4, "quatro previstas ainda em aberto")
+    for i, s in enumerate(previstas_restantes):
+        _realizar(ctx, pid, med, pes, s["id"], 200 + i, dia_id)
+    p = _plano(ctx, pid)
+    assert_eq(p["status"], "ativo", "4 cumpridas de 5 — ainda deve a reposição")
+    _realizar(ctx, pid, med, pes, rep[0]["id"], 299, dia_id)
+    p = _plano(ctx, pid)
+    c = _contagens(ctx, pid)
+    assert_eq(p["status"], "concluido",
+              "a reposição cumpriu a obrigação original e o plano fechou")
+    assert_eq((p["sessoes_adicionais"], p["sessoes_previstas"],
+               p["sessoes_realizadas"]), (0, 5, 5),
+              "sem extensão: 5 de 5, não 5 de 6")
+    assert_eq((c["realizadas"], c["faltas"], c["reposicoes"]), (5, 1, 1),
+              "a falta continua falta; a reposição é uma linha própria")
+
+
+# ── K15 · recusas e reabertura da vaga, pela rota real ───────────────────────
+
+@teste("K15 sem vaga a rota recusa com mensagem; cancelar a reposição reabre a vaga; tipo inválido não escreve")
+def k15(ctx):
+    ctx.reset(dias_semana=(0, 1, 2, 3, 4))
+    med, pes = ctx.medium(), ctx.pessoa("k15")
+    pid = _plano_prospectivo(ctx, med, pes, 3)
+    ctx.conn.commit()
+    agenda = f"/cadastros/mediuns/{med}/planos/{pid}/agenda"
+    sg = _sessoes(ctx, pid)
+
+    # (a) sem vaga: recusa, nada gravado, mensagem legível na tela
+    d = _livres(ctx, pid, 1)[0]
+    st, local, corpo = _http_ate_o_destino(
+        "POST", f"{agenda}/novo",
+        {"data": d, "tipo": "reposicao", "requer_passe": "0", "encaixe": "0"})
+    assert_eq(st, 200, "pagina de destino renderizada")
+    assert_eq("Não há sessão prevista em aberto para repor" in corpo, True,
+              "a recusa diz o porquê")
+    c = _contagens(ctx, pid)
+    p = _plano(ctx, pid)
+    assert_eq((c["total"], c["reposicoes"], c["extras"]), (3, 0, 0),
+              "nenhuma linha foi gravada na recusa")
+    assert_eq((p["sessoes_adicionais"], p["status"]), (0, "ativo"),
+              "e o plano não mudou")
+
+    # (b) tipo que não existe no contrato: recusado, sem escrita
+    st, local, corpo = _http_ate_o_destino(
+        "POST", f"{agenda}/novo",
+        {"data": d, "tipo": "invencao", "requer_passe": "0", "encaixe": "0"})
+    assert_eq("Tipo de sessão desconhecido" in corpo, True, "aviso de tipo inválido")
+    assert_eq(_contagens(ctx, pid)["total"], 3, "nada escrito por tipo inválido")
+
+    # (c) falta → vaga → reposição → cancelar a reposição reabre a vaga
+    st, _ = _http("POST", f"{agenda}/{sg[0]['id']}/falta")
+    assert_eq(st, 303, "falta registrada")
+    ctx.conn.commit()
+    assert_eq(sc.vagas_a_repor(ctx.conn, pid), 1, "vaga aberta pela falta")
+    st, local, corpo = _http_ate_o_destino(
+        "POST", f"{agenda}/novo",
+        {"data": d, "tipo": "reposicao", "requer_passe": "0", "encaixe": "0"})
+    assert_eq("Reposição agendada" in corpo, True, "reposição aceita")
+    ctx.conn.commit()
+    assert_eq(sc.vagas_a_repor(ctx.conn, pid), 0, "vaga coberta")
+    assert_eq(_plano(ctx, pid)["sessoes_adicionais"], 0, "segue sem extensão")
+
+    rep_id = [s["id"] for s in _sessoes(ctx, pid) if s["repoe"] == 1][0]
+    st, _ = _http("POST", f"{agenda}/{rep_id}/cancelar")
+    assert_eq(st, 303, "cancelamento da reposição")
+    ctx.conn.commit()
+    assert_eq(sc.vagas_a_repor(ctx.conn, pid), 1,
+              "cancelar a reposição reabre a vaga — a obrigação volta a pedir substituta")
+    p = _plano(ctx, pid)
+    c = _contagens(ctx, pid)
+    assert_eq((p["sessoes_adicionais"], p["sessoes_previstas"]), (0, 3),
+              "cancelar reposição não cria nem revoga extensão")
+    assert_eq((c["total"], c["canceladas"], c["reposicoes"]), (4, 1, 1),
+              "a linha repostas fica registrada como cancelada (histórico preservado)")
+    st, corpo = _http("GET", agenda)
+    assert_eq('value="reposicao"' in corpo, True,
+              "a tela volta a oferecer a reposição")
+
+    # (d) e a reposição reagendada no lugar: cancelar a PREVISTA também abre vaga
+    med2, pes2 = ctx.medium(), ctx.pessoa("k15b")
+    pid2 = _plano_prospectivo(ctx, med2, pes2, 3)
+    ctx.conn.commit()
+    agenda2 = f"/cadastros/mediuns/{med2}/planos/{pid2}/agenda"
+    sg2 = _sessoes(ctx, pid2)
+    st, _ = _http("POST", f"{agenda2}/{sg2[0]['id']}/cancelar")
+    assert_eq(st, 303, "cancelamento de sessão prevista")
+    ctx.conn.commit()
+    assert_eq(sc.vagas_a_repor(ctx.conn, pid2), 1,
+              "sessão prevista cancelada fica aguardando reposição")
+    assert_eq(_plano(ctx, pid2)["sessoes_previstas"], 3,
+              "cancelar prevista não encurta a obrigação")
+
+
+# ── K16 · reposição pelos outros dois POSTs da recepção ──────────────────────
+
+@teste("K16 a confirmação da Agenda e o lançamento do médium repõem por escolha explícita, um plano de cada vez")
+def k16(ctx):
+    ctx.reset(dias_semana=(0, 1, 2, 3, 4))
+    med, pes = ctx.medium(), ctx.pessoa("k16")
+    dia_id = ctx.dia()
+    pid = _plano_prospectivo(ctx, med, pes, 5)
+    ctx.conn.commit()
+    sg = _sessoes(ctx, pid)
+    st, _ = _http("POST",
+                  f"/cadastros/mediuns/{med}/planos/{pid}/agenda/{sg[0]['id']}/falta")
+    assert_eq(st, 303, "falta abriu vaga")
+    ctx.conn.commit()
+
+    # ── (a) /agenda/novo: a página de confirmação oferece a escolha e o POST
+    #         respeita o que foi escolhido.
+    d = _livres(ctx, pid, 1)[0]
+    st, corpo = _post_agenda_novo(pes, med, d, qtd=1)
+    assert_eq(st, 200, "página de confirmação")
+    assert_eq(f'name="tipo_{pid}"' in corpo, True,
+              "a confirmação pergunta o tipo de sessão deste plano")
+    assert_eq('value="reposicao"' in corpo, True,
+              "com vaga em aberto, a reposição é oferecida")
+    st, _ = _post_agenda_novo(pes, med, d, confirmar=1, destino=pid,
+                              tipo="reposicao")
+    assert_eq(st, 303, "POST confirmado")
+    linhas = _sessoes(ctx, pid)
+    rep = [s for s in linhas if s["repoe"] == 1]
+    assert_eq(len(rep), 1, "reposição gravada pela Agenda")
+    assert_eq(rep[0]["adicionada"], 0, "não é extensão")
+    p = _plano(ctx, pid)
+    assert_eq((p["sessoes_adicionais"], p["sessoes_previstas"]), (0, 5),
+              "a obrigação original permanece 5, não virou 6")
+    _realizar(ctx, pid, med, pes, rep[0]["id"], 320, dia_id)
+    assert_eq(_plano(ctx, pid)["status"], "ativo", "ainda faltam as outras previstas")
+    for i, s in enumerate([x for x in _sessoes(ctx, pid)
+                           if x["status"] == "agendado"]):
+        _realizar(ctx, pid, med, pes, s["id"], 330 + i, dia_id)
+    p = _plano(ctx, pid)
+    c = _contagens(ctx, pid)
+    assert_eq((p["status"], c["realizadas"], p["sessoes_realizadas"]),
+              ("concluido", 5, 5), "5 cumpridas de 5, com a falta preservada")
+
+    # ── (b) dois planos ativos: a escolha é POR plano, e só o escolhido repõe.
+    med2, pes2 = ctx.medium(), ctx.pessoa("k16b")
+    a = _plano_prospectivo(ctx, med2, pes2, 4)
+    b = _plano_prospectivo(ctx, med2, pes2, 3, inicio=HOJE + timedelta(days=7))
+    ctx.conn.commit()
+    sa, sb = _sessoes(ctx, a), _sessoes(ctx, b)
+    for pid_x, sg_x in ((a, sa), (b, sb)):
+        st, _ = _http("POST",
+                      f"/cadastros/mediuns/{med2}/planos/{pid_x}/agenda/{sg_x[0]['id']}/falta")
+        assert_eq(st, 303, "falta em cada plano")
+    ctx.conn.commit()
+    d2 = _livres(ctx, a, 1)[0]
+    st, corpo = _post_agenda_novo(pes2, med2, d2, qtd=1)
+    assert_eq(st, 200, "escolha de plano")
+    assert_eq(f'name="tipo_{a}"' in corpo and f'name="tipo_{b}"' in corpo, True,
+              "cada linha da escolha tem o seu próprio tipo de sessão")
+    st, _ = _post_agenda_novo(pes2, med2, d2, confirmar=1, destino=b,
+                              tipo="reposicao")
+    assert_eq(st, 303, "reposição no plano escolhido")
+    ctx.conn.commit()
+    assert_eq([s["repoe"] for s in _sessoes(ctx, b)].count(1), 1,
+              "o plano escolhido recebeu a reposição")
+    assert_eq([s["repoe"] for s in _sessoes(ctx, a)].count(1), 0,
+              "o outro plano não foi tocado")
+    assert_eq((_plano(ctx, b)["sessoes_adicionais"],
+               _plano(ctx, a)["sessoes_adicionais"]), (0, 0),
+              "nenhum dos dois virou extensão")
+    assert_eq(sc.vagas_a_repor(ctx.conn, a), 1, "a vaga do outro plano segue aberta")
+
+    # ── (c) /agenda/medium/lancar: a JSON de situação informa a vaga e o POST
+    #         do formulário repõe.
+    med3, pes3 = ctx.medium(), ctx.pessoa("k16c")
+    pid3 = _plano_prospectivo(ctx, med3, pes3, 3)
+    ctx.conn.commit()
+    sg3 = _sessoes(ctx, pid3)
+    st, _ = _http("POST",
+                  f"/cadastros/mediuns/{med3}/planos/{pid3}/agenda/{sg3[0]['id']}/cancelar")
+    assert_eq(st, 303, "sessão prevista cancelada")
+    ctx.conn.commit()
+    st, corpo = _http("GET", f"/agenda/medium/situacao?pessoa_id={pes3}&medium_id={med3}")
+    assert_eq(st, 200, "situação do lançamento")
+    import json as _json
+    situacao = _json.loads(corpo)
+    assert_eq((situacao["tem_plano"], situacao["mesmo_medium"]), (True, True),
+              "plano ativo no médium escolhido")
+    assert_eq(situacao["vagas_repor"], 1,
+              "a tela é informada de que há vaga de reposição")
+    d3 = _livres(ctx, pid3, 1)[0]
+    st, local, corpo = _http_ate_o_destino(
+        "POST", "/agenda/medium/lancar",
+        {"pessoa_id": str(pes3), "medium_id": str(med3), "data": d3,
+         "qtd_sessoes": "1", "frequencia": "semanal", "tipo": "reposicao"})
+    assert_eq(st, 200, "página do medium renderizada")
+    assert_eq("reposta no plano" in corpo, True, f"mensagem de reposição: {corpo[:200]}")
+    linhas3 = _sessoes(ctx, pid3)
+    assert_eq([s["repoe"] for s in linhas3].count(1), 1, "reposição gravada")
+    assert_eq(_plano(ctx, pid3)["sessoes_adicionais"], 0, "sem extensão")
+
+    # sem vaga, o mesmo POST recusa; e sem o campo, o comportamento continua
+    # sendo o de sempre (sessão extra), sem adivinhar nada.
+    st, local, corpo = _http_ate_o_destino(
+        "POST", "/agenda/medium/lancar",
+        {"pessoa_id": str(pes3), "medium_id": str(med3),
+         "data": _livres(ctx, pid3, 1)[0], "qtd_sessoes": "1",
+         "frequencia": "semanal", "tipo": "reposicao"})
+    assert_eq("não tem sessão prevista em aberto para repor" in corpo, True,
+              "recusa explicada na tela")
+    st, local, corpo = _http_ate_o_destino(
+        "POST", "/agenda/medium/lancar",
+        {"pessoa_id": str(pes3), "medium_id": str(med3),
+         "data": _livres(ctx, pid3, 1)[0], "qtd_sessoes": "1",
+         "frequencia": "semanal"})
+    ctx.conn.commit()
+    assert_eq(_plano(ctx, pid3)["sessoes_adicionais"], 1,
+              "sem escolher reposição, entra como extensão (comportamento habitual)")
+    assert_eq([s["adicionada"] for s in _sessoes(ctx, pid3)].count(1), 1,
+              "a linha sabe que é extra")
+
+
+# ── Execução ──────────────────────────────────────────────────────────────────
 def main():
     preparar_banco()
     _garantir_admin()

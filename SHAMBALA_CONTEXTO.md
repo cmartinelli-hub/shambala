@@ -224,6 +224,9 @@ conclusao_desfeita_em, conclusao_desfeita_por
 cumprir é `sessoes_previstas + sessoes_adicionais`, e `regra_conclusao` é a
 fronteira **persistida por linha** — nunca derivada da data corrente. O legado
 `concluido` (INTEGER) pertence à alta: a conclusão automática não o escreve.
+`agendamentos.adicionada` (extensão) e `agendamentos.repoe` (reposição de prevista
+que não aconteceu) distinguem as **origens** dos acréscimos: só `adicionada` move
+`sessoes_adicionais`; `repoe` persegue a quota original.
 
 ### `plano_pessoas`
 ```
@@ -867,6 +870,18 @@ conclui   ⟺ status='ativo' ∧ regra_conclusao=1 ∧ sessoes_previstas NOT NUL
   acréscimo (`sessoes_adicionais −1`); cancelar sessão prevista não reduz a
   obrigação; falta nunca cumpre (e duas faltas consecutivas seguem cancelando o
   plano, regra própria intacta).
+- **Reposição ≠ sessão extra** (`agendamentos.repoe`). Uma sessão *prevista* que
+  virou `faltou` ou foi `cancelado` deixa uma **vaga a repor**
+  (`vagas_a_repor` = previstas sem substituta − reposições em curso/cumpridas).
+  Agendar contra essa vaga é **reposição** (`repoe=1`, `adicionada=0`,
+  `sessoes_adicionais` intacto): cumpre a **obrigação original**, não a amplia.
+  Agendar fora de vaga é **extensão** (`adicionada=1`, `+1` em
+  `sessoes_adicionais`). O tipo vem do formulário (`nome="tipo"` ou `tipo_<plano>`,
+  valores `adicao`/`reposicao` em `TIPOS_SESSAO`) e é **revalidado no servidor**:
+  sem vaga ⇒ `sem_vaga_para_repor`; valor desconhecido ⇒ `tipo_invalido`; nada é
+  escrito em nenhum dos dois. Cancelar a reposição ainda pendente **reabre** a
+  vaga. Em plano legado (`regra_conclusao=0`) a reposição existe e é lícita, mas
+  **não** fecha o plano — a fronteira prospectiva continua valendo.
 - **Desfazer** o último realizado reavalia: se a conclusão foi automática e o
   plano ficou incompleto, a conclusão é desfeita na mesma transação, com
   auditoria (`conclusao_desfeita_em/por`). Alta clínica e encerramento manual
@@ -1184,7 +1199,7 @@ Expressão SQL `_ORDEM_PRIORIDADE` em `rotas/dia.py`:
 | `servico_pdv.py` | Precificação do PDV no servidor (TASK_006/FIN-01): validar quantidades, consultar preço vigente com trava, somar em Decimal ROUND_HALF_UP e detectar divergência de preço sem escrever nada |
 | `servico_cancelamento.py` | Cancelamento de venda (TASK_007/FIN-02): avaliar elegibilidade pelos vínculos persistidos e reverter só efeitos comprováveis (estoque, sessão, doação) numa transação única com prova em `vendas_pdv_cancelamento` |
 | `servico_sessao.py` | Regra única da sessão de caixa (TASK_008/FIN-04): eventos com identidade, destino validado no banco, resumo/fechamento/conferência física pela mesma fórmula, travas e idempotência; recebimento em sessão `legado` é recusado antes de qualquer escrita. TASK_010/REV-02: `moeda_nao_negativa` (0 aceito, negativo rejeitado antes do arredondamento, HALF_UP a centavo, teto após) para saldo inicial e dinheiro contado; `moeda()` segue estritamente positiva para eventos |
-| `servico_conclusao_planos.py` | Regra única do plano de atendimento (TASK_018): quantidade a cumprir (`sessoes_previstas + sessoes_adicionais`), conclusão administrativa por cumprimento só para planos sob `regra_conclusao=1`, acréscimo/cancelamento/realização/desfazer com trava `FOR UPDATE` no plano na mesma transação da operação autorizada, reavaliação auditada ao desfazer e recusa sem efeitos parciais quando reabrir duplicaria plano ativo. Nada avalia ou fecha plano em GET/render/startup |
+| `servico_conclusao_planos.py` | Regra única do plano de atendimento (TASK_018): quantidade a cumprir (`sessoes_previstas + sessoes_adicionais`), conclusão administrativa por cumprimento só para planos sob `regra_conclusao=1`, acréscimo/cancelamento/realização/desfazer com trava `FOR UPDATE` no plano na mesma transação da operação autorizada, reavaliação auditada ao desfazer e recusa sem efeitos parciais quando reabrir duplicaria plano ativo. `vagas_a_repor` + `TIPOS_SESSAO` + `acrescentar_sessao(tipo=…)`: `adicao` estende (`adicionada=1`, `+1` na obrigação), `reposicao` cumpre a obrigação original de uma prevista que faltou/foi cancelada (`repoe=1`, contadores intactos) e é recusada sem vaga (`sem_vaga_para_repor`) ou com tipo desconhecido (`tipo_invalido`); cancelar reposição pendente reabre a vaga. Nada avalia ou fecha plano em GET/render/startup |
 | `tests/trava_isolamento.py` | Trava que exige banco comprovadamente descartável (`*_test*` + `SHAMBALA_MODO_TESTE=1`); usada pelo lifespan do app ANTES do `criar_tabelas` e por toda suíte antes de destruir. TASK_010: `exigir_configuracao_consoante` confronta o destino pedido no shell com o arquivo `SHAMBALA_ENV_FILE` (autoridade) e aborta sem efeitos quando divergem; validação nunca mais existe sem conexão efetiva |
 | `tests/subir_app_descartavel.sh` | Única forma segura de subir app temporário de teste: recusa iniciar ANTES do startup quando o env não é descartável (incidente TASK_008); `uvicorn` direto fica reservado ao serviço real da 9000. TASK_010/REV-03: importa `banco` só depois do env aplicado e valida `current_database()`/`current_user()` da CONEXÃO EFETIVA antes do exec |
 | `tests/rodar_testes.sh` | Runner oficial. TASK_010/REV-01: env temporário 0600 por execução como destino efetivo, sufixo `_test` exigido antes de qualquer DROP/CREATE, mata apenas o PID que ele registrou, e vincula cada suíte ao token da execução corrente (identidade provada, nunca PASS/PULADO). Registro o hash da árvore testada (`HEAD` + `-dirty`) no cabeçalho do log para a evidência auto-identificar o código validado |
@@ -1431,7 +1446,7 @@ shambala/
 - ✅ Caixa por eventos: vendas, recebimentos e dinheiro físico separados; PIX/fiado não recebido/crédito consumido fora da gaveta; destino explícito e fechamento com conferência física (TASK_008 / FIN-04)
 - ✅ Revisão técnica do financeiro da TASK_008 (TASK_009) e correções revalidadas (TASK_010): contrato de ambiente com arquivo de configuração autoritativo + token de execução provando o banco efetivo antes de qualquer DDL/seed/startup; `moeda_nao_negativa` permite abrir/fechar caixa com R$ 0,00 sem lançamento fictício; PDV sem sessão opera PIX (espécie segue condicionada à sessão aberta). Complemento da devolução do revisor dentro da TASK_010: prova nomeada de fechar × venda × recebimento × cancelamento no mesmo `FOR UPDATE` (CASO 8b), reenvio da mesma tentativa no escopo testado (recebimento de mensalidade e cancelamento convergem por identidade documental; ausência de chave HTTP no PDV documentada) (CASO 16), roteiro do dono coerente com a regra de divergência (justificativa registra e preserva o esperado) e evidência canônica commitável `docs/tasks/evidencias/TASK_010/runner_completo_final.txt` (árvore `d12dbfc`, token, rc e contagens por suíte). TASK_010 **encerrada com ressalvas** (revisor): TASK_008 tecnicamente aprovada, produção sem autorização de publicação; duplicação por reenvio cego no PDV continua risco conhecido. **Duas pendências distintas**: homologação manual do dono (roteiro fictício) e decisão explícita do dono sobre o legado — quanto a ele, estado observado: vendas e sangrias continuam permitidas em sessões legadas pela implementação atual; a manutenção ou alteração desse comportamento aguarda decisão explícita do dono (a linha l.306 da TASK_008 é descrição do executor, não autorização demonstrada)
 - ✅ Recepção com acesso às telas de plano e agenda (TASK_017, módulo `cadastros.mediuns.planos`; concedido em produção 26/10/2026, homologação pelo dono pendente)
-- ✅ Plano de atendimento: conclusão administrativa por cumprimento, sessões adicionais entrando no plano ativo com escolha por referência humana e reavaliação auditada ao desfazer (TASK_018; aplicada no DEV 26/10/2026, fronteira prospectiva — nada do histórico foi fechado). Ver seção “Planos de atendimento: conclusão e destino das sessões”
+- ✅ Plano de atendimento: conclusão administrativa por cumprimento, sessões entrando no plano ativo por escolha explícita em referências humanas, **distinção reposição × sessão extra** (`agendamentos.repoe`/`adicionada`, recusada sem vaga) e reavaliação auditada ao desfazer (TASK_018 + complemento; aplicados no DEV 26/10/2026, migração idempotente nas duas subidas, fronteira prospectiva — nada do histórico foi fechado, movido ou reclassificado). Ver seção “Planos de atendimento: conclusão e destino das sessões” e a tarefa §19
 - ✅ Mala direta via WhatsApp e email
 - ✅ Financeiro: movimentações, mensalidades, PIX, caixa_id
 - ✅ Biblioteca: acervo, ISBN, OpenLibrary, empréstimos, vendas
@@ -1454,4 +1469,6 @@ shambala/
 - 📊 Expandir relatórios com filtros de período
 - 📱 PWA para acesso mobile
 - 🧭 Planos legados: 1155 `ativo` já estariam cumpridos, 39 têm sessão pendente, 611 nunca realizaram nada e 370 pessoas têm mais de um plano ativo — a regra nova **não** alcança o histórico; revisão por decisão humana proposta na TASK_018 §17 e **não executada**
-- 🔁 Homologações pendentes pelo dono: TASK_017 (acesso da Recepção, já em produção) e TASK_018 (aplicada no DEV, roteiro na tarefa §16)
+- 🧭 As mesmas 1155 previstas em `faltou`/`cancelado` sem substituta são, hoje, **1155 vagas a repor** em 743 planos `ativo` legados (+ 28 `cancelado`, 9 `alta`): a tela oferece reposição e o serviço aceita, mas em legado nada conclui (`regra_conclusao=0`). Medido no DEV após a migração, somente leitura — suprimir o aviso nos legados seria decisão de tela, não tomada aqui
+- 🔁 Homologações pendentes pelo dono: TASK_017 (acesso da Recepção, já em produção) e TASK_018 + complemento (aplicadas no DEV, roteiro de conferência na tarefa §16 — inclui a oferta de reposição na agenda do plano); publicação em produção depende de autorização específica
+- ⚠️ Conhecido e não corrigido (TASK_018 §19.4): `registrar_falta` e a marcação em bloco de faltas do dia escrevem `status='faltou'` sem `reavaliar`, então um plano que cumpre a quota pela última linha virando falta só conclui na **próxima transição** do serviço — conclusão que tarda, não conclusão errada; mexer aí toca a regra das duas faltas → `cancelado`, intencionalmente preservada

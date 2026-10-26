@@ -5,7 +5,9 @@ As regras (conclusão automática, extensão líquida, vínculo explícito ao pl
 ativo) são provadas por serviços e rotas em `test_conclusao_planos_task018.py`.
 Aqui se valida o §7.10 da tarefa: a tela de destino, a escolha por médium e
 data, o botão de acesso ao plano, a preservação do formulário e a leitura da
-situação "Concluído" — em Chromium real, desktop e celular, sem redesign.
+situação "Concluído" — em Chromium real, desktop e celular, sem redesign — e o
+complemento §2: a vaga de reposição anunciada na tela, o formulário que repõe
+sem virar extensão e a vaga que reabre quando a reposição é cancelada.
 
 Dados fictícios com prefixo T018N em banco descartável; o destino do script E do
 servidor HTTP é provado antes de qualquer escrita (TASK_010). Ferramenta ausente
@@ -252,6 +254,13 @@ def _semear():
         FIX["pes_fim"] = pes(f"{PREFIXO} Atendida Concluída")
         FIX["plano_f"] = _plano(conn, FIX["med_a"], FIX["pes_fim"], 3,
                                 HOJE - timedelta(days=35))
+
+        # reposição: plano com sessões previstas já vencidas — a recepção
+        # cancela uma delas na tela e passa a ter vaga de reposição
+        FIX["pes_repo"] = pes(f"{PREFIXO} Atendida Reposição")
+        FIX["plano_r"] = _plano(conn, FIX["med_a"], FIX["pes_repo"], 3,
+                                HOJE - timedelta(days=60))
+        FIX["data_repo"] = _datas_livres(conn, FIX["plano_r"], 1)[0]
         admin = conn.execute(
             "SELECT id FROM atendentes WHERE nome_usuario = 'admin'").fetchone()["id"]
         for s in conn.execute(
@@ -270,8 +279,10 @@ def _semear():
 
 def _limpar():
     with conectar() as conn:
-        pids = [FIX["plano_e1"], FIX["plano_e2"], FIX["plano_c"], FIX["plano_f"]]
-        pessoas = [FIX["pes_escolha"], FIX["pes_conflito"], FIX["pes_fim"]]
+        pids = [FIX["plano_e1"], FIX["plano_e2"], FIX["plano_c"], FIX["plano_f"],
+                FIX["plano_r"]]
+        pessoas = [FIX["pes_escolha"], FIX["pes_conflito"], FIX["pes_fim"],
+                   FIX["pes_repo"]]
         meds = [FIX["med_a"], FIX["med_b"]]
         conn.execute("DELETE FROM checkins WHERE plano_id = ANY(%s)", (pids,))
         conn.execute("DELETE FROM agendamentos WHERE plano_id = ANY(%s)", (pids,))
@@ -296,7 +307,8 @@ def _conferir_rastro():
             """SELECT count(*) AS c FROM planos_tratamento pt
                JOIN plano_pessoas pp ON pp.plano_id = pt.id
                WHERE pp.pessoa_id = ANY(%s)""", (
-                [FIX["pes_escolha"], FIX["pes_conflito"], FIX["pes_fim"]],
+                [FIX["pes_escolha"], FIX["pes_conflito"], FIX["pes_fim"],
+                 FIX["pes_repo"]],
             )).fetchone()["c"]
     assert c == 0 and m == 0 and p == 0, f"resíduo: {c} pessoas, {m} médiuns, {p} planos"
 
@@ -456,6 +468,119 @@ def n_celular():
                       f"largura do documento em {largura}px")
             if largura in (1366, 412):
                 _evidencia(pagina, f"07-destino-{largura}")
+
+
+@cenario("reposição na agenda do plano: a tela oferece, o POST repõe sem virar extensão e cancelar reabre a vaga")
+def n_reposicao():
+    with conectar() as conn:
+        primeira = conn.execute(
+            """SELECT id, data FROM agendamentos WHERE plano_id = %s
+               ORDER BY data LIMIT 1""", (FIX["plano_r"],)).fetchone()
+    mes_vencido = primeira["data"][:7]
+    agenda = f"/cadastros/mediuns/{FIX['med_a']}/planos/{FIX['plano_r']}/agenda"
+    data_br = date.fromisoformat(FIX["data_repo"]).strftime("%d/%m/%Y")
+
+    with _operador() as op:
+        pagina = op.pagina
+        pagina.on("dialog", lambda d: d.accept())
+
+        # (1) ainda não há nada a repor: a tela não oferece reposição
+        pagina.goto(BASE + agenda)
+        pagina.wait_for_load_state("networkidle")
+        verificar("sem falta, o formulário não oferece reposição",
+                  pagina.locator('select[name="tipo"] '
+                                 'option[value="reposicao"]').count() == 0)
+        verificar("e oferece a sessão extra como sempre",
+                  pagina.locator('select[name="tipo"] '
+                                 'option[value="adicao"]').count() == 1)
+
+        # (2) a recepção cancela uma sessão prevista vencida, na tela
+        pagina.goto(BASE + f"{agenda}?mes={mes_vencido}")
+        pagina.wait_for_load_state("networkidle")
+        pagina.locator("tr", has_text=date.fromisoformat(primeira["data"])
+                       .strftime("%d/%m/%Y")).locator(
+            "button:has-text('Cancelar')").first.click()
+        pagina.wait_for_load_state("networkidle")
+        with conectar() as conn:
+            vagas = sc.vagas_a_repor(conn, FIX["plano_r"])
+            p = conn.execute("SELECT sessoes_adicionais, sessoes_previstas, status "
+                             "FROM planos_tratamento WHERE id = %s",
+                             (FIX["plano_r"],)).fetchone()
+        verificar("cancelar a prevista abriu vaga de reposição", vagas == 1, str(vagas))
+        verificar("cancelar prevista não encurta a obrigação nem vira extensão",
+                  (p["sessoes_previstas"], p["sessoes_adicionais"], p["status"])
+                  == (3, 0, "ativo"), str(dict(p)))
+
+        # (3) a tela passa a explicar a vaga e oferecer a reposição
+        pagina.goto(BASE + agenda)
+        pagina.wait_for_load_state("networkidle")
+        texto = pagina.inner_text("body")
+        verificar("a tela avisa da sessão prevista não cumprida",
+                  "sessão prevista não foi cumprida" in texto, texto[:300])
+        verificar("a oferta diz que reposição cumpre a obrigação original",
+                  "cumpre a obrigação original" in texto)
+        verificar("a opção de reposição apareceu",
+                  pagina.locator('select[name="tipo"] '
+                                 'option[value="reposicao"]').count() == 1)
+        _evidencia(pagina, "08-agenda-oferece-reposicao")
+
+        # (4) o formulário é enviado como a recepção o envia
+        pagina.select_option("select[name=\"tipo\"]", "reposicao")
+        pagina.fill('input[name="data"]', FIX["data_repo"])
+        pagina.click("button:has-text('Adicionar')")
+        pagina.wait_for_load_state("networkidle")
+        texto = pagina.inner_text("body")
+        verificar("a tela confirma a reposição (não uma extensão)",
+                  "Reposição agendada" in texto, texto[:300])
+        with conectar() as conn:
+            linhas = conn.execute(
+                "SELECT id, status, adicionada, repoe FROM agendamentos "
+                "WHERE plano_id = %s AND data = %s",
+                (FIX["plano_r"], FIX["data_repo"])).fetchall()
+            p = conn.execute("SELECT sessoes_adicionais, sessoes_previstas "
+                             "FROM planos_tratamento WHERE id = %s",
+                             (FIX["plano_r"],)).fetchone()
+            vagas = sc.vagas_a_repor(conn, FIX["plano_r"])
+        verificar("a linha gravada é reposição, não extensão",
+                  len(linhas) == 1 and linhas[0]["repoe"] == 1
+                  and linhas[0]["adicionada"] == 0, str([dict(x) for x in linhas]))
+        verificar("o que precisa ser cumprido não aumentou",
+                  (p["sessoes_adicionais"], p["sessoes_previstas"]) == (0, 3),
+                  str(dict(p)))
+        verificar("a vaga deixou de estar em aberto", vagas == 0, str(vagas))
+
+        # (5) a sessão de reposição é visível como tal no mês dela
+        pagina.goto(BASE + f"{agenda}?mes={FIX['data_repo'][:7]}")
+        pagina.wait_for_load_state("networkidle")
+        texto = pagina.inner_text("body")
+        verificar("a agenda mostra a sessão marcada como reposição",
+                  data_br in texto and "reposição" in texto, texto[:300])
+        verificar("e não oferece nova reposição (não há vaga)",
+                  pagina.locator('select[name="tipo"] '
+                                 'option[value="reposicao"]').count() == 0)
+        _evidencia(pagina, "09-reposicao-agendada-na-agenda")
+
+        # (6) cancelar a reposição reabre a vaga — nada virou extensão
+        pagina.locator("tr", has_text=data_br).locator(
+            "button:has-text('Cancelar')").first.click()
+        pagina.wait_for_load_state("networkidle")
+        with conectar() as conn:
+            vagas = sc.vagas_a_repor(conn, FIX["plano_r"])
+            p = conn.execute("SELECT sessoes_adicionais FROM planos_tratamento "
+                             "WHERE id = %s", (FIX["plano_r"],)).fetchone()
+            total = conn.execute(
+                "SELECT count(*) AS c FROM agendamentos WHERE plano_id = %s",
+                (FIX["plano_r"],)).fetchone()["c"]
+        verificar("cancelar a reposição reabre a vaga", vagas == 1, str(vagas))
+        verificar("sem efeito colateral na extensão líquida",
+                  p["sessoes_adicionais"] == 0 and total == 4,
+                  f"adicionais={p['sessoes_adicionais']} total={total}")
+        pagina.goto(BASE + agenda)
+        pagina.wait_for_load_state("networkidle")
+        verificar("a tela volta a oferecer a reposição",
+                  pagina.locator('select[name="tipo"] '
+                                 'option[value="reposicao"]').count() == 1)
+        _evidencia(pagina, "10-vaga-reaberta-apos-cancelar-reposicao")
 
 
 def main():

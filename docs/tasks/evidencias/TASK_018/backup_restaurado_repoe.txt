@@ -1,0 +1,25 @@
+# baseline DEV — banco efetivo shambala_verifica_backup_t018b (config: /var/run/postgresql:5432)
+
+planos_tratamento: 1912 linhas  conteudo_md5=533913a75392134286a6a7506763461d
+  por status: {'alta': 17, 'ativo': 1866, 'cancelado': 29}
+agendamentos:      2980 linhas  conteudo_md5=1cda8bfa5606750ff7261b707be15716
+  por status: {'agendado': 231, 'cancelado': 315, 'faltou': 840, 'realizado': 1594}
+checkins:          2920 linhas (2198 realizadas)
+pessoas:           678 linhas
+planos de 1 sessão (o "avulso"): 1801   plano_pessoas: 1912
+
+schema planos_tratamento:  17 colunas md5=8fe380962cc7030425637c4d6b7e9fcd
+schema agendamentos:       7 colunas md5=7a50b7c52f7204ab78840a7bf5ad1404
+colunas TASK_018 presentes: sessoes_previstas=sim, sessoes_adicionais=sim, regra_conclusao=sim, concluido_em=sim, concluido_por=sim, conclusao_origem=sim, conclusao_desfeita_em=sim, conclusao_desfeita_por=sim, adicionada=sim, repoe=nao
+  previstas NULL=0  com_extra=0  prospectivo=0  concluido=0  concluido_em=0
+  agendamentos adicionada=1: 0
+
+# nota da restauração (honesto): `pg_restore` do .dump ignorou 2 erros, ambos da
+# mesma frase de privilégios padrão — `ALTER DEFAULT PRIVILEGES FOR ROLE postgres
+# IN SCHEMA public GRANT ALL ON TABLES/SEQUENCES TO shambala` — que o papel
+# `shambala` não pode executar (não é dono do papel `postgres`). Nenhuma tabela,
+# linha, sequência ou coluna depende dessas frases: o conteúdo restaurado bate
+# linha a linha com o DEV de origem (mesmos md5 acima; `planos_tratamento` com as 17 colunas
+# já migradas na primeira aplicação e `agendamentos` com 7 colunas, `repoe`
+# ausente — exatamente o estado pré-migração). Banco descartado em
+# seguida com dropdb.

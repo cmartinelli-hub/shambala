@@ -131,6 +131,15 @@
                 </select>
             </div>
         </div>
+        <div class="medium-grid-2" id="lancar-tipo" style="display:none">
+            <div>
+                <label for="lancar-tipo-sel">Tipo de sessão neste plano</label>
+                <select id="lancar-tipo-sel" name="tipo">
+                    <option value="adicao">Sessão extra — acrescenta uma obrigação ao plano</option>
+                    <option value="reposicao" disabled>Reposição de sessão não cumprida</option>
+                </select>
+            </div>
+        </div>
         <div class="medium-status" id="lancar-status"></div>
         <button type="submit" class="btn btn-primario medium-lancar-btn" id="lancar-btn" disabled>
             {{ icone("check") }} Lançar
@@ -197,6 +206,9 @@ const divSug     = document.getElementById('lancar-sugestoes');
 const elStatus   = document.getElementById('lancar-status');
 const elBtn      = document.getElementById('lancar-btn');
 const elNovo     = document.getElementById('lancar-novoplano');
+const elTipo     = document.getElementById('lancar-tipo');
+const elTipoSel  = document.getElementById('lancar-tipo-sel');
+const elRepor    = elTipoSel.querySelector('option[value="reposicao"]');
 const elMedium   = document.getElementById('lancar-medium');
 let timer = null;
 
@@ -206,16 +218,29 @@ function atualizarSituacao() {
     fetch(`/agenda/medium/situacao?pessoa_id=${pid}&medium_id=${mid}`)
         .then(r => r.ok ? r.json() : null)
         .then(s => {
-            if (!s) { elStatus.textContent = ''; elNovo.style.display = ''; return; }
+            if (!s) { elStatus.textContent = ''; elNovo.style.display = ''; elTipo.style.display = 'none'; return; }
             if (!s.tem_plano) {
                 elStatus.textContent = 'Sem plano ativo — será criado um plano novo com as opções acima.';
                 elNovo.style.display = '';
+                elTipo.style.display = 'none';
+                elTipoSel.value = 'adicao';
             } else if (s.mesmo_medium) {
-                elStatus.textContent = `Tem plano ativo com este médium — será acrescentada 1 sessão na data.`;
+                const vagas = s.vagas_repor || 0;
+                elTipo.style.display = '';
+                elRepor.disabled = vagas === 0;
+                elRepor.textContent = vagas
+                    ? `Reposição de sessão não cumprida (${vagas} em aberto)`
+                    : 'Reposição de sessão não cumprida';
+                if (vagas === 0) elTipoSel.value = 'adicao';
+                elStatus.textContent = vagas
+                    ? `Tem plano ativo com este médium, com ${vagas} sessão prevista não cumprida em aberto — escolha entre sessão extra e reposição.`
+                    : 'Tem plano ativo com este médium — será acrescentada 1 sessão na data.';
                 elNovo.style.display = 'none';
             } else {
                 elStatus.textContent = `{{ icone("triangle-alert") }} Tem plano ativo com ${s.medium_nome}. Valide com a recepção antes de lançar aqui.`;
                 elNovo.style.display = 'none';
+                elTipo.style.display = 'none';
+                elTipoSel.value = 'adicao';
             }
         });
 }

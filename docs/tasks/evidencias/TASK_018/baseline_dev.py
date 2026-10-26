@@ -105,7 +105,8 @@ def main():
               f"md5={md5(','.join(ag_cols))}")
         print("colunas TASK_018 presentes: " + ", ".join(
             f"{c}={'sim' if c in pt_cols else 'nao'}" for c in COLUNAS_NOVAS)
-            + f", adicionada={'sim' if 'adicionada' in ag_cols else 'nao'}")
+            + f", adicionada={'sim' if 'adicionada' in ag_cols else 'nao'}"
+            + f", repoe={'sim' if 'repoe' in ag_cols else 'nao'}")
 
         if "sessoes_previstas" in pt_cols:
             m = conn.execute(
@@ -118,10 +119,22 @@ def main():
             print(f"  previstas NULL={m['nulo']}  com_extra={m['com_extra']}  "
                   f"prospectivo={m['prospectivo']}  concluido={m['concluidos']}  "
                   f"concluido_em={m['com_data']}")
-        if "adicionada" in ag_cols:
-            ex = conn.execute("SELECT count(*) AS n FROM agendamentos "
-                              "WHERE adicionada=1").fetchone()
-            print(f"  agendamentos adicionada=1: {ex['n']}")
+        for c in ("adicionada", "repoe"):
+            if c in ag_cols:
+                ex = conn.execute(f"SELECT count(*) AS n FROM agendamentos "
+                                  f"WHERE {c}=1").fetchone()
+                print(f"  agendamentos {c}=1: {ex['n']}")
+        if "repoe" in ag_cols and "adicionada" in ag_cols:
+            # Só leitura: quantas obrigações originais estão sem substituta hoje.
+            v = conn.execute(
+                "SELECT count(*) FILTER (WHERE adicionada=0 AND repoe=0 "
+                "  AND status IN ('faltou','cancelado')) AS descobertas,"
+                " count(*) FILTER (WHERE repoe=1 "
+                "  AND status IN ('agendado','realizado')) AS repostas "
+                "FROM agendamentos").fetchone()
+            print(f"  vagas a repor no DEV (somente leitura): "
+                  f"descobertas={v['descobertas']} repostas={v['repostas']} "
+                  f"saldo={max(0, v['descobertas'] - v['repostas'])}")
 
 
 if __name__ == "__main__":
