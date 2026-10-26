@@ -1,6 +1,6 @@
 # TASK_018 — Conclusão automática de planos e vínculo dos atendimentos adicionais
 
-Status: **implementada e aplicada no DEV** (migração idempotente, serviço da 9000 reiniciado, fatos idênticos). **Não homologada pelo dono**; produção intocada, sem push nem deploy. Registro da implementação em §10–§18.
+Status: **implementada, aplicada no DEV e publicada em produção** (migração idempotente, serviço da 9000 reiniciado, fatos idênticos; produção atualizada em 26/10/2026 na subida integral do `main` — `docs/PUBLICACAO_MAIN_COMPLETO_2026-10-26.md`). **Não homologada pelo dono**. Registro da implementação em §10–§18.
 Data: 26/10/2026.
 
 ## 1. Objetivo e decisões aprovadas
